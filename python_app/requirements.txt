@@ -1,0 +1,4 @@
+docling>=2.69.0
+docling-core>=2.60.0
+markdown>=3.7
+Jinja2>=3.1.4

@@ -1,0 +1,18 @@
+{
+  "name": "extract_pdf_content",
+  "description": "Reads a PDF file and extracts its content as Markdown, saving embedded images to a directory.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "pdf_file_path": {
+        "type": "string",
+        "description": "Path to the uploaded PDF file."
+      },
+      "image_output_dir": {
+        "type": "string",
+        "description": "Directory to save extracted images."
+      }
+    },
+    "required": ["pdf_file_path", "image_output_dir"]
+  }
+}

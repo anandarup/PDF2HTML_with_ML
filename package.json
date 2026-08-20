@@ -1,0 +1,28 @@
+{
+  "name": "pdf2webview",
+  "version": "1.0.0",
+  "description": "PDF to interactive HTML converter with Kiro agent integration",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "keywords": [
+    "pdf",
+    "html",
+    "markdown",
+    "converter"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@opendocsg/pdf2md": "^0.2.6",
+    "marked": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

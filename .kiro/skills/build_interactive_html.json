@@ -1,0 +1,18 @@
+{
+  "name": "build_interactive_html",
+  "description": "Compiles Markdown and images into a styled, interactive HTML document.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "markdown_content": {
+        "type": "string",
+        "description": "The raw markdown extracted from the PDF."
+      },
+      "image_paths": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
+    },
+    "required": ["markdown_content", "image_paths"]
+  }
+}

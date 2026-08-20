@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ title }}</title>
+  <style>
+    :root {
+      --color-bg: #ffffff;
+      --color-text: #1a1a2e;
+      --color-text-secondary: #4a4a6a;
+      --color-heading: #16213e;
+      --color-link: #0f4c75;
+      --color-link-hover: #3282b8;
+      --color-border: #e0e0e0;
+      --color-code-bg: #f5f5f7;
+      --color-blockquote-bg: #f8f9fa;
+      --color-blockquote-border: #3282b8;
+      --color-toc-bg: #fafbfc;
+      --color-toc-active: #0f4c75;
+      --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --font-heading: "Georgia", "Times New Roman", serif;
+      --font-mono: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+      --max-width: 780px;
+      --sidebar-width: 260px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --color-bg: #1a1a2e;
+        --color-text: #e0e0e0;
+        --color-text-secondary: #a0a0b0;
+        --color-heading: #bbe1fa;
+        --color-link: #3282b8;
+        --color-link-hover: #bbe1fa;
+        --color-border: #2a2a4a;
+        --color-code-bg: #16213e;
+        --color-blockquote-bg: #16213e;
+        --color-blockquote-border: #3282b8;
+        --color-toc-bg: #16213e;
+        --color-toc-active: #bbe1fa;
+      }
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      font-size: 16px;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-body);
+      color: var(--color-text);
+      background-color: var(--color-bg);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .document-wrapper {
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Table of Contents Sidebar */
+    .toc-sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      width: var(--sidebar-width);
+      min-width: var(--sidebar-width);
+      overflow-y: auto;
+      padding: 2rem 1rem;
+      background-color: var(--color-toc-bg);
+      border-right: 1px solid var(--color-border);
+      font-size: 0.85rem;
+    }
+
+    .toc-title {
+      font-family: var(--font-heading);
+      font-size: 1rem;
+      color: var(--color-heading);
+      margin: 0 0 1rem 0;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid var(--color-border);
+    }
+
+    .toc-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .toc-item {
+      margin: 0.25rem 0;
+    }
+
+    .toc-item a {
+      display: block;
+      padding: 0.3rem 0.5rem;
+      color: var(--color-text-secondary);
+      text-decoration: none;
+      border-radius: 4px;
+      transition: color 0.2s, background-color 0.2s;
+    }
+
+    .toc-item a:hover,
+    .toc-item a:focus {
+      color: var(--color-toc-active);
+      background-color: var(--color-border);
+      outline: none;
+    }
+
+    .toc-empty {
+      color: var(--color-text-secondary);
+      font-style: italic;
+    }
+
+    /* Main Content */
+    .content {
+      flex: 1;
+      min-width: 0;
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 3rem 3rem;
+    }
+
+    .document-header {
+      margin-bottom: 2.5rem;
+      padding-bottom: 1.5rem;
+      border-bottom: 3px solid var(--color-border);
+    }
+
+    .document-title {
+      font-family: var(--font-heading);
+      font-size: 2.25rem;
+      color: var(--color-heading);
+      margin: 0;
+      line-height: 1.3;
+    }
+
+    .document-meta {
+      margin-top: 0.75rem;
+      font-size: 0.9rem;
+      color: var(--color-text-secondary);
+    }
+
+    /* Typography */
+    .document-body h1,
+    .document-body h2,
+    .document-body h3,
+    .document-body h4,
+    .document-body h5,
+    .document-body h6 {
+      font-family: var(--font-heading);
+      color: var(--color-heading);
+      margin-top: 2em;
+      margin-bottom: 0.75em;
+      line-height: 1.3;
+    }
+
+    .document-body h1 { font-size: 1.875rem; }
+    .document-body h2 { font-size: 1.5rem; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    .document-body h3 { font-size: 1.25rem; }
+    .document-body h4 { font-size: 1.1rem; }
+
+    .document-body p {
+      margin: 0 0 1.25em;
+    }
+
+    .document-body a {
+      color: var(--color-link);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      transition: color 0.2s;
+    }
+
+    .document-body a:hover,
+    .document-body a:focus {
+      color: var(--color-link-hover);
+    }
+
+    /* Lists */
+    .document-body ul,
+    .document-body ol {
+      margin: 0 0 1.25em;
+      padding-left: 1.5em;
+    }
+
+    .document-body li {
+      margin-bottom: 0.4em;
+    }
+
+    .document-body li > ul,
+    .document-body li > ol {
+      margin-top: 0.4em;
+      margin-bottom: 0;
+    }
+
+    /* Code */
+    .document-body code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      background-color: var(--color-code-bg);
+      padding: 0.15em 0.4em;
+      border-radius: 3px;
+    }
+
+    .document-body pre {
+      background-color: var(--color-code-bg);
+      padding: 1.25rem;
+      border-radius: 6px;
+      overflow-x: auto;
+      margin: 0 0 1.5em;
+      border: 1px solid var(--color-border);
+    }
+
+    .document-body pre code {
+      background: none;
+      padding: 0;
+      font-size: 0.85rem;
+      line-height: 1.5;
+    }
+
+    /* Blockquotes */
+    .document-body blockquote {
+      margin: 0 0 1.5em;
+      padding: 1rem 1.5rem;
+      background-color: var(--color-blockquote-bg);
+      border-left: 4px solid var(--color-blockquote-border);
+      border-radius: 0 4px 4px 0;
+      color: var(--color-text-secondary);
+    }
+
+    .document-body blockquote p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* Tables */
+    .document-body table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 0 0 1.5em;
+      font-size: 0.9rem;
+    }
+
+    .document-body th,
+    .document-body td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border: 1px solid var(--color-border);
+    }
+
+    .document-body th {
+      background-color: var(--color-code-bg);
+      font-weight: 600;
+      color: var(--color-heading);
+    }
+
+    .document-body tr:nth-child(even) {
+      background-color: var(--color-blockquote-bg);
+    }
+
+    /* Images */
+    .document-body img {
+      max-width: 100%;
+      height: auto;
+      border-radius: 4px;
+      margin: 1em 0;
+      border: 1px solid var(--color-border);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+    }
+
+    /* Textbook-style floating figures */
+    .document-body .figure-wrap {
+      margin: 0.75em 0 0.75em 1.5em;
+      float: right;
+      clear: right;
+      max-width: 45%;
+      padding: 0;
+    }
+
+    .document-body .figure-wrap:nth-of-type(even) {
+      float: left;
+      margin: 0.75em 1.5em 0.75em 0;
+      clear: left;
+    }
+
+    .document-body .figure-wrap img {
+      width: 100%;
+      max-width: 100%;
+      margin: 0;
+      display: block;
+    }
+
+    .document-body .figure-wrap figcaption {
+      font-size: 0.8rem;
+      color: var(--color-text-secondary);
+      text-align: center;
+      margin-top: 0.4em;
+      font-style: italic;
+      line-height: 1.4;
+    }
+
+    /* Full-width images for very large/important diagrams */
+    .document-body .figure-full {
+      clear: both;
+      margin: 2em 0;
+      text-align: center;
+    }
+
+    .document-body .figure-full img {
+      max-width: 90%;
+      margin: 0 auto;
+      display: block;
+    }
+
+    .document-body .figure-full figcaption {
+      font-size: 0.8rem;
+      color: var(--color-text-secondary);
+      text-align: center;
+      margin-top: 0.5em;
+      font-style: italic;
+    }
+
+    /* Clearfix for sections after floated images */
+    .document-body h1,
+    .document-body h2,
+    .document-body h3 {
+      clear: both;
+    }
+
+    .document-body::after {
+      content: "";
+      display: table;
+      clear: both;
+    }
+
+    /* Horizontal Rule */
+    .document-body hr {
+      border: none;
+      border-top: 2px solid var(--color-border);
+      margin: 2.5em 0;
+    }
+
+    /* Back to Top Button */
+    .back-to-top {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 1px solid var(--color-border);
+      background-color: var(--color-bg);
+      color: var(--color-text);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s, visibility 0.3s, background-color 0.2s;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .back-to-top.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .back-to-top:hover,
+    .back-to-top:focus {
+      background-color: var(--color-code-bg);
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px) {
+      .document-wrapper {
+        flex-direction: column;
+      }
+
+      .toc-sidebar {
+        position: relative;
+        height: auto;
+        width: 100%;
+        min-width: unset;
+        border-right: none;
+        border-bottom: 1px solid var(--color-border);
+        padding: 1.5rem;
+      }
+
+      .content {
+        padding: 2rem 1.5rem;
+      }
+
+      .document-title {
+        font-size: 1.75rem;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .content {
+        padding: 1.5rem 1rem;
+      }
+
+      .document-title {
+        font-size: 1.5rem;
+      }
+
+      .document-body pre {
+        padding: 0.75rem;
+        font-size: 0.8rem;
+      }
+
+      .toc-sidebar {
+        padding: 1rem;
+      }
+
+      /* Unfloat images on small screens */
+      .document-body .figure-wrap {
+        float: none;
+        max-width: 100%;
+        margin: 1em 0;
+        clear: both;
+      }
+
+      .document-body .figure-wrap:nth-of-type(even) {
+        float: none;
+        margin: 1em 0;
+      }
+    }
+
+    /* Print */
+    @media print {
+      .toc-sidebar,
+      .back-to-top {
+        display: none;
+      }
+
+      .document-wrapper {
+        display: block;
+      }
+
+      .content {
+        max-width: 100%;
+        padding: 0;
+      }
+
+      .document-body a {
+        color: inherit;
+        text-decoration: underline;
+      }
+
+      .document-body a::after {
+        content: " (" attr(href) ")";
+        font-size: 0.8em;
+        color: #666;
+      }
+
+      .document-body pre {
+        white-space: pre-wrap;
+        border: 1px solid #ccc;
+      }
+
+      .document-body img {
+        max-width: 100%;
+        page-break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="document-wrapper">
+    <aside class="toc-sidebar" aria-label="Table of contents">
+      <nav>
+        <h2 class="toc-title">Contents</h2>
+        {% if toc %}
+        <ul class="toc-list">
+          {% for entry in toc %}
+          <li class="toc-item toc-level-{{ entry.level }}" style="padding-left:{{ (entry.level - 1) * 12 }}px">
+            <a href="#{{ entry.id }}">{{ entry.text }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="toc-empty">No headings found</p>
+        {% endif %}
+      </nav>
+    </aside>
+    <main class="content" role="main">
+      <header class="document-header">
+        <h1 class="document-title">{{ title }}</h1>
+        <div class="document-meta">
+          {{ page_count }} pages
+          {% if image_count %} &middot; {{ image_count }} images{% endif %}
+        </div>
+      </header>
+      <article class="document-body">
+        {{ body_html | safe }}
+      </article>
+    </main>
+  </div>
+
+  <button class="back-to-top" aria-label="Back to top" onclick="window.scrollTo({top:0,behavior:'smooth'})">
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M10 16V4M4 10l6-6 6 6"/>
+    </svg>
+  </button>
+
+  <script>
+    // Back to top visibility
+    (function() {
+      var btn = document.querySelector('.back-to-top');
+      if (!btn) return;
+      window.addEventListener('scroll', function() {
+        if (window.scrollY > 300) {
+          btn.classList.add('visible');
+        } else {
+          btn.classList.remove('visible');
+        }
+      }, { passive: true });
+    })();
+
+    // Active TOC highlighting
+    (function() {
+      var tocLinks = document.querySelectorAll('.toc-item a');
+      if (tocLinks.length === 0) return;
+
+      var headings = [];
+      tocLinks.forEach(function(link) {
+        var id = link.getAttribute('href');
+        if (id && id.startsWith('#')) {
+          var el = document.getElementById(id.substring(1));
+          if (el) headings.push({ el: el, link: link });
+        }
+      });
+
+      function updateActive() {
+        var scrollPos = window.scrollY + 100;
+        var active = null;
+
+        for (var i = headings.length - 1; i >= 0; i--) {
+          if (headings[i].el.offsetTop <= scrollPos) {
+            active = headings[i];
+            break;
+          }
+        }
+
+        tocLinks.forEach(function(link) {
+          link.style.color = '';
+          link.style.fontWeight = '';
+        });
+
+        if (active) {
+          active.link.style.color = 'var(--color-toc-active)';
+          active.link.style.fontWeight = '600';
+        }
+      }
+
+      window.addEventListener('scroll', updateActive, { passive: true });
+      updateActive();
+    })();
+  </script>
+</body>
+</html>
