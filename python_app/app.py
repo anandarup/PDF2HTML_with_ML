@@ -13,8 +13,10 @@ Then open http://localhost:5000 in your browser.
 from __future__ import annotations
 
 import os
+import threading
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 from flask import (
     Flask,
@@ -22,7 +24,6 @@ from flask import (
     request,
     jsonify,
     send_from_directory,
-    url_for,
 )
 
 from convert import convert_pdf_to_html
@@ -51,6 +52,14 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+# In-memory tracking for background conversion jobs, polled by the frontend
+# via GET /convert-status/<job_id>. This is intentionally simple (no
+# persistence, no TTL/eviction) — fine for a single-process local dev tool;
+# a real multi-worker deployment would need a shared store (Redis, etc.)
+# instead, since each worker process would otherwise have its own dict.
+CONVERSION_JOBS: dict = {}
+CONVERSION_JOBS_LOCK = threading.Lock()
+
 
 @app.route("/")
 def index():
@@ -61,10 +70,14 @@ def index():
 @app.route("/convert", methods=["POST"])
 def convert_pdf():
     """
-    Handle PDF upload and conversion.
+    Handle PDF upload and kick off conversion in the background.
 
-    Accepts a multipart form upload with a 'pdf' file field.
-    Returns JSON with the path to the converted HTML.
+    Accepts a multipart form upload with a 'pdf' file field. The upload
+    itself is handled synchronously (so the browser's own upload-progress
+    events stay meaningful), but the actual Docling extraction + HTML
+    generation runs in a background thread — this request returns
+    immediately with a job_id; the frontend polls GET /convert-status/<id>
+    for real stage-by-stage progress and the final result.
     """
     if "pdf" not in request.files:
         return jsonify({"error": "No PDF file provided"}), 400
@@ -85,40 +98,91 @@ def convert_pdf():
     upload_path = UPLOAD_DIR / f"{job_id}_{file.filename}"
     file.save(str(upload_path))
 
-    try:
-        # Run conversion pipeline
-        output_dir = str(OUTPUT_DIR.resolve() / f"{job_id}_{pdf_stem}")
+    with CONVERSION_JOBS_LOCK:
+        CONVERSION_JOBS[job_id] = {
+            "status": "processing",
+            "stage": "queued",
+            "detail": "Upload complete, starting conversion...",
+            "result": None,
+            "error": None,
+        }
 
-        result = convert_pdf_to_html(
-            pdf_path=str(upload_path),
-            output_dir=output_dir,
-        )
+    def run_conversion() -> None:
+        def on_progress(stage: str, detail: str) -> None:
+            with CONVERSION_JOBS_LOCK:
+                job = CONVERSION_JOBS.get(job_id)
+                if job is not None:
+                    job["stage"] = stage
+                    job["detail"] = detail
 
-        # Build URL to serve the converted HTML
-        html_path = Path(result["html_path"])
-        relative_output = html_path.parent.name
-        html_filename = html_path.name
+        try:
+            output_dir = str(OUTPUT_DIR.resolve() / f"{job_id}_{pdf_stem}")
 
-        return jsonify({
-            "success": True,
-            "title": result.get("chapter_title", pdf_stem),
-            "html_url": url_for(
-                "serve_output",
-                job_dir=relative_output,
-                filename=html_filename,
-            ),
-            "page_count": result["page_count"],
-            "image_count": result["image_count"],
-            "file_size": result["html_file_size"],
-        })
+            result = convert_pdf_to_html(
+                pdf_path=str(upload_path),
+                output_dir=output_dir,
+                progress_callback=on_progress,
+            )
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+            html_path = Path(result["html_path"])
+            relative_output = html_path.parent.name
+            html_filename = html_path.name
 
-    finally:
-        # Clean up uploaded file
-        if upload_path.exists():
-            upload_path.unlink()
+            # Built by hand rather than via url_for(): url_for needs an
+            # active request or a configured SERVER_NAME to build URLs
+            # outside of a request, neither of which this background
+            # thread has. The /output/<job_dir>/<filename> route is a
+            # fixed, simple pattern, so quoting the segments ourselves is
+            # both correct and avoids that pitfall entirely.
+            html_url = "/output/{}/{}".format(
+                quote(relative_output, safe=""), quote(html_filename, safe="")
+            )
+
+            with CONVERSION_JOBS_LOCK:
+                CONVERSION_JOBS[job_id] = {
+                    "status": "done",
+                    "stage": "done",
+                    "detail": "Conversion complete.",
+                    "error": None,
+                    "result": {
+                        "success": True,
+                        "title": result.get("chapter_title", pdf_stem),
+                        "html_url": html_url,
+                        "page_count": result["page_count"],
+                        "image_count": result["image_count"],
+                        "file_size": result["html_file_size"],
+                    },
+                }
+
+        except Exception as e:
+            with CONVERSION_JOBS_LOCK:
+                CONVERSION_JOBS[job_id] = {
+                    "status": "error",
+                    "stage": "error",
+                    "detail": str(e),
+                    "result": None,
+                    "error": str(e),
+                }
+
+        finally:
+            if upload_path.exists():
+                upload_path.unlink()
+
+    threading.Thread(target=run_conversion, daemon=True).start()
+
+    return jsonify({"job_id": job_id}), 202
+
+
+@app.route("/convert-status/<job_id>")
+def convert_status(job_id: str):
+    """Poll the status/progress of a background conversion job."""
+    with CONVERSION_JOBS_LOCK:
+        job = CONVERSION_JOBS.get(job_id)
+
+    if job is None:
+        return jsonify({"error": "Unknown job_id"}), 404
+
+    return jsonify(job)
 
 
 @app.route("/upload-media/<path:job_dir>", methods=["POST"])
@@ -596,4 +660,6 @@ def _rebuild_toc_in_html(full_html: str, body_html: str) -> str:
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=8501)
+    # threaded=True so status-polling requests are served while a
+    # background conversion thread is running (see /convert-status/<job_id>).
+    app.run(debug=True, host="0.0.0.0", port=8501, threaded=True)

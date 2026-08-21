@@ -16,15 +16,24 @@ import sys
 import time
 import re
 from pathlib import Path
+from typing import Callable, Optional
 
 from tools.extract_pdf import extract_pdf_content
 from tools.build_html import build_interactive_html
+
+# Called as progress_callback(stage, detail) at each real stage transition —
+# "real" meaning it reflects an actual point the pipeline has reached, not a
+# fabricated percentage. Docling itself doesn't expose fine-grained progress
+# within extraction, so this is coarse (a handful of stages), but every
+# message it sends is genuinely true at the moment it's sent.
+ProgressCallback = Callable[[str, str], None]
 
 
 def convert_pdf_to_html(
     pdf_path: str,
     output_dir: str | None = None,
     title: str | None = None,
+    progress_callback: Optional[ProgressCallback] = None,
 ) -> dict:
     """
     Orchestrate the full PDF → Markdown → HTML conversion pipeline.
@@ -37,6 +46,10 @@ def convert_pdf_to_html(
         pdf_path: Path to the source PDF file.
         output_dir: Directory for output files. Defaults to ./output/<pdf_stem>/.
         title: HTML document title. Defaults to the PDF filename stem.
+        progress_callback: Optional callback invoked as (stage, detail) at
+            each stage transition ("extracting", "building", "done"), for
+            callers (e.g. the web frontend) that want to surface real
+            progress instead of a fabricated one.
 
     Returns:
         Dict with html_path, image_count, page_count, html_file_size, markdown.
@@ -46,6 +59,10 @@ def convert_pdf_to_html(
         ValueError: If the PDF is empty or invalid.
         RuntimeError: If extraction or generation fails.
     """
+    def report(stage: str, detail: str) -> None:
+        if progress_callback:
+            progress_callback(stage, detail)
+
     resolved_pdf = Path(pdf_path).resolve()
     pdf_stem = resolved_pdf.stem
     document_title = title or _clean_fallback_title(pdf_stem)
@@ -64,6 +81,11 @@ def convert_pdf_to_html(
 
     # --- Step 1: Extract PDF content ---
     print("[pdf2webview] Step 1/2: Extracting PDF content...")
+    report(
+        "extracting",
+        "Extracting content with Docling AI — this is the slow part, "
+        "especially for large or scanned PDFs...",
+    )
     start = time.time()
 
     extraction = extract_pdf_content(
@@ -91,6 +113,12 @@ def convert_pdf_to_html(
 
     # --- Step 2: Build interactive HTML ---
     print("[pdf2webview] Step 2/2: Building interactive HTML...")
+    report(
+        "building",
+        f"Extracted {extraction.page_count} page"
+        f"{'s' if extraction.page_count != 1 else ''} — cleaning up and "
+        "generating the interactive HTML...",
+    )
     start = time.time()
 
     # Use fallback markdown if extraction produced nothing
@@ -115,6 +143,7 @@ def convert_pdf_to_html(
     print(f"[pdf2webview]   - HTML file: {html_result.html_path}")
     print(f"[pdf2webview]   - File size: {_format_bytes(html_result.file_size)} ({elapsed_html:.1f}s)")
     print("[pdf2webview] ✓ Conversion complete.")
+    report("done", "Conversion complete.")
 
     return {
         "html_path": html_result.html_path,

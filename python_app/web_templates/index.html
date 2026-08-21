@@ -374,14 +374,23 @@
     const cancelUpload = document.getElementById('cancelUpload');
 
     let currentXhr = null;
+    let pollTimer = null;
 
     cancelUpload.addEventListener('click', () => {
       if (currentXhr) {
         currentXhr.abort();
         currentXhr = null;
       }
+      stopPolling();
       resetUI();
     });
+
+    function stopPolling() {
+      if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+      }
+    }
 
     // Drag and drop handlers
     dropZone.addEventListener('click', () => fileInput.click());
@@ -451,30 +460,42 @@
         progressStatus.textContent = `Uploading ${file.name}... ${Math.round((e.loaded / e.total) * 100)}%`;
       });
 
-      // Upload finished; the server is now running Docling extraction and
-      // building the HTML. There's no progress signal for that phase, so
-      // show an honest "working on it" state instead of a fake percentage.
+      // Upload finished; the server accepts it and starts the actual
+      // Docling extraction + HTML generation in a background job (see
+      // /convert in app.py). We switch to an indeterminate bar — there's
+      // no byte-level progress for that phase — but the status TEXT itself
+      // is real: it comes from polling /convert-status/<job_id>, which
+      // reflects whatever stage the server has actually reached.
       xhr.upload.addEventListener('load', () => {
         progressBar.classList.add('indeterminate');
-        progressStatus.textContent = 'Extracting content and generating interactive HTML — this can take up to a couple of minutes for large or scanned PDFs...';
+        progressStatus.textContent = 'Upload complete, starting conversion...';
       });
 
       xhr.addEventListener('load', () => {
         currentXhr = null;
-        progressBar.classList.remove('indeterminate');
-        progressBar.style.width = '100%';
 
         let data;
         try {
           data = JSON.parse(xhr.responseText);
         } catch (err) {
+          progressBar.classList.remove('indeterminate');
           setTimeout(() => showError('Unexpected response from server.'), 400);
           return;
         }
 
         if (!xhr.status || xhr.status >= 400 || data.error) {
+          progressBar.classList.remove('indeterminate');
           setTimeout(() => showError(data.error || `Conversion failed (HTTP ${xhr.status}).`), 400);
+          return;
+        }
+
+        if (data.job_id) {
+          pollConversionStatus(data.job_id);
         } else {
+          // Fallback in case an older/direct server response shape is ever
+          // returned synchronously instead of a job_id.
+          progressBar.classList.remove('indeterminate');
+          progressBar.style.width = '100%';
           setTimeout(() => showResult(data), 400);
         }
       });
@@ -495,6 +516,49 @@
       xhr.send(formData);
     }
 
+    const POLL_INTERVAL_MS = 1200;
+    const MAX_POLL_ATTEMPTS = 300; // ~6 minutes — generous upper bound before giving up
+
+    function pollConversionStatus(jobId, attempt) {
+      attempt = attempt || 0;
+
+      fetch(`/convert-status/${encodeURIComponent(jobId)}`)
+        .then((res) => {
+          if (!res.ok) throw new Error(`Status check failed (HTTP ${res.status}).`);
+          return res.json();
+        })
+        .then((job) => {
+          if (job.detail) {
+            progressStatus.textContent = job.detail;
+          }
+
+          if (job.status === 'done') {
+            progressBar.classList.remove('indeterminate');
+            progressBar.style.width = '100%';
+            setTimeout(() => showResult(job.result), 300);
+            return;
+          }
+
+          if (job.status === 'error') {
+            progressBar.classList.remove('indeterminate');
+            setTimeout(() => showError(job.error || job.detail || 'Conversion failed.'), 300);
+            return;
+          }
+
+          if (attempt >= MAX_POLL_ATTEMPTS) {
+            progressBar.classList.remove('indeterminate');
+            showError('This is taking much longer than expected. The conversion may still finish in the background — check back later, or try again.');
+            return;
+          }
+
+          pollTimer = setTimeout(() => pollConversionStatus(jobId, attempt + 1), POLL_INTERVAL_MS);
+        })
+        .catch((err) => {
+          progressBar.classList.remove('indeterminate');
+          showError('Lost connection while checking conversion status: ' + err.message);
+        });
+    }
+
     function showResult(data) {
       hideAll();
       resultSection.classList.add('visible');
@@ -513,6 +577,7 @@
     }
 
     function resetUI() {
+      stopPolling();
       hideAll();
       fileInput.value = '';
       progressBar.classList.remove('indeterminate');
