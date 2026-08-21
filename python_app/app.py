@@ -317,14 +317,14 @@ def _export_to_strapi(data: dict, base_url: str, title: str, body_html: str, htt
         "Content-Type": "application/json",
     }
 
-    # Build payload — use common field names that Strapi content types typically have.
-    # Fields that don't exist on the content type are ignored by Strapi.
+    # Build payload matching the Chapter content type schema.
+    # Required fields: title, order
+    # HTML content goes into 'description' (Text field)
     payload = {
         "data": {
             "title": title,
+            "order": 0,
             "description": body_html,
-            "content": body_html,
-            "body": body_html,
         }
     }
 
