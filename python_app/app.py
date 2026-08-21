@@ -303,32 +303,65 @@ def export_cms():
 
 
 def _export_to_strapi(data: dict, base_url: str, title: str, body_html: str, http_client) -> tuple:
-    """Push content to Strapi v4/v5 REST API."""
+    """Push content to Strapi v4/v5 REST API, splitting into Chapter + Sections."""
+    import re as _re
+
     api_token = data.get("api_token", "")
     content_type = data.get("content_type", "chapters")
 
-    # Strip trailing slashes — Strapi returns 405 on double slashes
     base_url = base_url.rstrip("/")
     content_type = content_type.strip().strip("/")
 
-    endpoint = f"{base_url}/api/{content_type}"
     headers = {
         "Authorization": f"Bearer {api_token}",
         "Content-Type": "application/json",
     }
 
-    # Build payload matching the Chapter content type schema.
-    # Required fields: title, order
-    # HTML content goes into 'description' (Text field)
-    payload = {
+    # Split HTML into sections by h1/h2 headings
+    sections = _split_html_into_sections(body_html)
+
+    # Step 1: Create Section entries
+    section_ids: list = []
+    for idx, section in enumerate(sections):
+        section_payload = {
+            "data": {
+                "title": section["title"],
+                "order": idx + 1,
+            }
+        }
+        sec_resp = http_client.post(
+            f"{base_url}/api/sections",
+            json=section_payload,
+            headers=headers,
+            timeout=30,
+        )
+        if sec_resp.status_code in (200, 201):
+            sec_data = sec_resp.json()
+            sec_id = sec_data.get("data", {}).get("id")
+            if sec_id:
+                section_ids.append(sec_id)
+        else:
+            error_msg = sec_resp.text[:200]
+            return jsonify({
+                "error": f"Failed creating section '{section['title']}': {error_msg}"
+            }), sec_resp.status_code
+
+    # Step 2: Create Chapter entry with linked sections
+    chapter_payload = {
         "data": {
             "title": title,
-            "order": 0,
-            "description": body_html,
+            "order": 1,
+            "description": "",
+            "sections": section_ids,
         }
     }
 
-    resp = http_client.post(endpoint, json=payload, headers=headers, timeout=30)
+    resp = http_client.post(
+        f"{base_url}/api/{content_type}",
+        json=chapter_payload,
+        headers=headers,
+        timeout=30,
+    )
 
     if resp.status_code in (200, 201):
         resp_data = resp.json()
@@ -336,25 +369,62 @@ def _export_to_strapi(data: dict, base_url: str, title: str, body_html: str, htt
         return jsonify({
             "success": True,
             "url": f"{base_url}/api/{content_type}/{entry_id}",
-            "message": f"Created {content_type} entry #{entry_id}",
+            "message": f"Created chapter with {len(section_ids)} sections",
         }), 200
     elif resp.status_code == 405:
         return jsonify({
             "error": (
                 "Method Not Allowed (405). Check Strapi configuration:\n"
-                "1. Ensure the content type API ID is correct (e.g., 'articles' not 'article')\n"
-                "2. In Strapi Admin → Settings → Roles → select the token's role → "
-                "enable 'create' permission for this content type\n"
-                "3. Ensure the Base URL has no trailing slash"
+                "1. Ensure the content type API ID is correct\n"
+                "2. Enable 'create' permission for this content type"
             )
         }), 405
     elif resp.status_code == 403:
         return jsonify({
-            "error": "Forbidden (403). The API token doesn't have 'create' permission for this content type."
+            "error": "Forbidden (403). The API token doesn't have 'create' permission."
         }), 403
     else:
         error_msg = resp.text[:300] if resp.text else f"HTTP {resp.status_code}"
         return jsonify({"error": f"Strapi error ({resp.status_code}): {error_msg}"}), resp.status_code
+
+
+def _split_html_into_sections(html: str) -> list:
+    """
+    Split HTML content into sections based on h1/h2 headings.
+
+    Each section has a title (from the heading) and content (HTML until
+    the next heading of same or higher level).
+    """
+    import re as _re
+
+    # Split on h1 or h2 tags
+    parts = _re.split(r'(<h[12][^>]*>.*?</h[12]>)', html, flags=_re.IGNORECASE | _re.DOTALL)
+
+    sections: list = []
+    current_title = "Introduction"
+    current_content = ""
+
+    for part in parts:
+        heading_match = _re.match(r'<h[12][^>]*>(.*?)</h[12]>', part, flags=_re.IGNORECASE | _re.DOTALL)
+        if heading_match:
+            # Save previous section if it has content
+            if current_content.strip():
+                sections.append({"title": current_title, "content": current_content.strip()})
+            # Start new section
+            current_title = _re.sub(r'<[^>]+>', '', heading_match.group(1)).strip()
+            current_content = ""
+        else:
+            current_content += part
+
+    # Don't forget the last section
+    if current_content.strip():
+        sections.append({"title": current_title, "content": current_content.strip()})
+
+    # If no sections were created, treat the whole thing as one
+    if not sections:
+        sections.append({"title": "Content", "content": html})
+
+    return sections
 
 
 def _export_to_wordpress(data: dict, base_url: str, title: str, body_html: str, http_client) -> tuple:
