@@ -1720,7 +1720,7 @@
         formData.append('file', file);
         formData.append('type', mediaType || 'video');
 
-        return fetch('/upload-media/' + encodeURIComponent(jobDir), {
+        return fetch('/upload-media/' + encodeURI(jobDir), {
           method: 'POST',
           body: formData
         })
