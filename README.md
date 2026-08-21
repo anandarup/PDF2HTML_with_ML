@@ -33,7 +33,7 @@ An AI-powered document conversion application that transforms PDF files into int
 - **H5P Extraction** — .h5p files extracted and served via h5p-standalone player
 
 ### CMS Export
-- **Strapi (DIKSHA CMS)** — Full integration with content-manager API:
+- **Strapi ** — Full integration with content-manager API:
   - Creates Chapter linked to an existing Textbook (via documentId)
   - Splits content into Sections by headings
   - Each section contains `content_blocks` dynamic zone with proper block types
@@ -57,7 +57,7 @@ An AI-powered document conversion application that transforms PDF files into int
 python_app/
 ├── app.py                  # Flask web server + API endpoints
 ├── convert.py              # Orchestrator: PDF → Markdown → HTML pipeline
-├── strapi_export.py        # DIKSHA Strapi CMS export module
+├── strapi_export.py        # Strapi CMS export module
 ├── tools/
 │   ├── extract_pdf.py      # Docling + RapidOCR extraction
 │   └── build_html.py       # Markdown → HTML with Jinja2 + cleanup
@@ -114,12 +114,12 @@ print(result["chapter_title"])
 
 ## CMS Export
 
-### Strapi (DIKSHA)
+### Strapi
 
 1. Click **Export** button on any converted document
 2. Select **Strapi** platform
 3. Enter:
-   - CMS Base URL: `https://strapi.diksha.gov.in`
+   - CMS Base URL: `https://xyz.com`
    - Admin JWT Token (from `POST /admin/login`)
    - Textbook Document ID (parent textbook's `documentId`)
    - Chapter Order number
