@@ -1578,8 +1578,21 @@
       function initSectionMedia() {
         var headings = docBody.querySelectorAll('h1, h2, h3');
         headings.forEach(function(heading) {
-          // Skip if already has media bar
-          if (heading.nextElementSibling && heading.nextElementSibling.classList.contains('section-media')) return;
+          // If media bar already exists (saved from previous edit), attach click handlers
+          if (heading.nextElementSibling && heading.nextElementSibling.classList.contains('section-media')) {
+            var existingBar = heading.nextElementSibling;
+            existingBar.querySelectorAll('.media-icon').forEach(function(btn) {
+              var mediaKey = btn.getAttribute('data-media-type');
+              var matchedType = MEDIA_TYPES.find(function(t) { return t.key === mediaKey; });
+              if (matchedType) {
+                btn.addEventListener('click', function(e) {
+                  e.stopPropagation();
+                  handleMediaClick(btn, matchedType);
+                });
+              }
+            });
+            return;
+          }
 
           var mediaBar = document.createElement('div');
           mediaBar.className = 'section-media';
