@@ -1713,18 +1713,26 @@
         // Determine the job directory from the current page URL
         var pathParts = window.location.pathname.split('/');
         // URL pattern: /output/<job_dir>/<filename>.html
+        // pathParts = ['', 'output', '<job_dir>', '<filename>.html']
         var jobDir = pathParts.slice(2, pathParts.length - 1).join('/');
 
         var formData = new FormData();
         formData.append('file', file);
 
-        return fetch('/upload-media/' + jobDir, {
+        return fetch('/upload-media/' + encodeURIComponent(jobDir), {
           method: 'POST',
           body: formData
         })
         .then(function(res) {
           if (!res.ok) {
-            return res.json().then(function(d) { throw new Error(d.error || 'Upload failed'); });
+            return res.text().then(function(text) {
+              try {
+                var data = JSON.parse(text);
+                throw new Error(data.error || 'Upload failed');
+              } catch(parseErr) {
+                throw new Error('Server error: ' + res.status);
+              }
+            });
           }
           return res.json();
         });
