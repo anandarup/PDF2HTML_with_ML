@@ -305,7 +305,7 @@ def export_cms():
 def _export_to_strapi(data: dict, base_url: str, title: str, body_html: str, http_client) -> tuple:
     """Push content to Strapi v4/v5 REST API."""
     api_token = data.get("api_token", "")
-    content_type = data.get("content_type", "articles")
+    content_type = data.get("content_type", "chapters")
 
     # Strip trailing slashes — Strapi returns 405 on double slashes
     base_url = base_url.rstrip("/")
@@ -316,10 +316,15 @@ def _export_to_strapi(data: dict, base_url: str, title: str, body_html: str, htt
         "Authorization": f"Bearer {api_token}",
         "Content-Type": "application/json",
     }
+
+    # Build payload — use common field names that Strapi content types typically have.
+    # Fields that don't exist on the content type are ignored by Strapi.
     payload = {
         "data": {
             "title": title,
+            "description": body_html,
             "content": body_html,
+            "body": body_html,
         }
     }
 
