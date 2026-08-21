@@ -11,6 +11,8 @@
     };
   </script>
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+  <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
+  <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
   <style>
     :root {
       --color-bg: #ffffff;
@@ -1774,7 +1776,14 @@
         var content = '';
         switch (type.key) {
           case 'video':
-            content = '<div style="position:relative;width:100%;padding-bottom:56.25%;background:#000;border-radius:6px;overflow:hidden;"><video controls preload="auto" src="' + escapeAttr(src) + '" style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:contain;">Your browser does not support video playback.</video></div>';
+            var videoId = 'vjs-popup-' + Date.now();
+            content = '<video id="' + videoId + '" class="video-js vjs-big-play-centered vjs-fluid" controls preload="auto" data-setup=\'{}\'>' +
+              '<source src="' + escapeAttr(src) + '" type="video/mp4" />' +
+              '<p class="vjs-no-js">To view this video please enable JavaScript or use a browser that supports HTML5 video.</p>' +
+              '</video>';
+            if (window.location.protocol === 'file:') {
+              content += '<p style="text-align:center;margin-top:0.75rem;font-size:0.85rem;color:var(--color-text-secondary);">If video does not play, open this page via <strong>http://localhost:8501</strong> instead of file://</p>';
+            }
             break;
           case 'audio':
             content = '<audio controls autoplay src="' + escapeAttr(src) + '" style="width:100%;">Your browser does not support audio playback.</audio>';
@@ -1814,10 +1823,22 @@
         popupBody.innerHTML = content;
         popup.classList.add('visible');
 
+        // Initialize Video.js if a video element was added
+        var vjsEl = popupBody.querySelector('.video-js');
+        var vjsPlayer = null;
+        if (vjsEl && window.videojs) {
+          vjsPlayer = videojs(vjsEl.id);
+        }
+
         // Close handlers
         function closePopup() {
           popup.classList.remove('visible');
-          // Stop any playing media
+          // Dispose Video.js player if active
+          if (vjsPlayer) {
+            vjsPlayer.dispose();
+            vjsPlayer = null;
+          }
+          // Stop any non-vjs media
           var media = popupBody.querySelector('video, audio');
           if (media) media.pause();
           popupBody.innerHTML = '';
