@@ -95,6 +95,9 @@ def build_interactive_html(
     # Fix numbered list structure (MCQ options as sub-items)
     processed_markdown = _fix_numbered_lists(processed_markdown)
 
+    # Remove QR code images from the Markdown
+    processed_markdown = _remove_qr_code_images(processed_markdown)
+
     # Convert Markdown to HTML
     md = markdown.Markdown(
         extensions=[
@@ -142,6 +145,87 @@ def build_interactive_html(
         image_count=len(image_paths),
         file_size=file_size,
     )
+
+
+def _remove_qr_code_images(markdown_text: str) -> str:
+    """
+    Detect and remove QR code image references from Markdown.
+
+    Uses OpenCV's QRCodeDetector to check each referenced image file.
+    If a QR code is detected, the entire Markdown image line is removed.
+    This prevents QR codes (publisher links, digital resource codes)
+    from cluttering the converted HTML output.
+    """
+    import cv2
+    import numpy as np
+    from PIL import Image as PILImage
+
+    img_pattern = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+    qr_detector = cv2.QRCodeDetector()
+
+    lines = markdown_text.split("\n")
+    cleaned: list = []
+
+    for line in lines:
+        match = img_pattern.search(line)
+        if match:
+            img_path = match.group(1)
+            if _is_qr_code(img_path, qr_detector):
+                continue
+        cleaned.append(line)
+
+    return "\n".join(cleaned)
+
+
+def _is_qr_code(image_path: str, detector: "cv2.QRCodeDetector") -> bool:
+    """
+    Check whether an image file contains a QR code.
+
+    Uses OpenCV QRCodeDetector for reliable detection. Also applies
+    heuristics: QR codes are typically small, square images.
+
+    Args:
+        image_path: Path to the image file.
+        detector: Pre-initialized cv2.QRCodeDetector instance.
+
+    Returns:
+        True if the image contains a QR code.
+    """
+    import cv2
+
+    try:
+        if not os.path.isfile(image_path):
+            return False
+
+        img = cv2.imread(image_path)
+        if img is None:
+            return False
+
+        # QR codes are typically square-ish and small
+        height, width = img.shape[:2]
+        aspect_ratio = min(width, height) / max(width, height)
+
+        # If image is not roughly square (ratio < 0.6), skip detection
+        if aspect_ratio < 0.6:
+            return False
+
+        # Attempt QR code detection
+        data, points, _ = detector.detectAndDecode(img)
+
+        # If data was decoded, it's definitely a QR code
+        if data:
+            return True
+
+        # Also check with just detection (some QR codes decode fails but detect works)
+        retval, points = detector.detect(img)
+        if retval and points is not None:
+            return True
+
+    except (OSError, cv2.error):
+        # Best-effort: if detection fails, assume it's not a QR code
+        pass
+
+    return False
 
 
 def _wrap_images_as_figures(html: str) -> str:
@@ -243,8 +327,10 @@ def _clean_pdf_artifacts(markdown_text: str) -> str:
     for line in lines:
         stripped = line.strip()
 
-        # Skip standalone page numbers
+        # Skip standalone page numbers (single number, or number-dash-number)
         if stripped and re.match(r"^\d{1,4}$", stripped):
+            continue
+        if stripped and re.match(r"^\d{1,3}\s*[-–—]\s*\d{1,3}$", stripped):
             continue
 
         # Skip detected running headers/footers

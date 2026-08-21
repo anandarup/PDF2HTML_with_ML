@@ -16,7 +16,10 @@ from typing import List
 from docling_core.types.doc import ImageRefMode, PictureItem, TableItem
 
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
+from docling.datamodel.pipeline_options import (
+    PdfPipelineOptions,
+    RapidOcrOptions,
+)
 from docling.document_converter import DocumentConverter, PdfFormatOption
 
 logging.basicConfig(level=logging.WARNING)
@@ -24,6 +27,12 @@ _log = logging.getLogger(__name__)
 
 # Resolution scale for extracted images (2.0 = ~144 DPI)
 IMAGE_RESOLUTION_SCALE = 2.0
+
+# OCR confidence threshold — text below this score is discarded
+OCR_TEXT_SCORE_THRESHOLD = 0.4
+
+# Minimum bitmap area (fraction of page) to trigger OCR on an image region
+OCR_BITMAP_AREA_THRESHOLD = 0.02
 
 
 @dataclass
@@ -91,11 +100,27 @@ def extract_pdf_content(
     # Ensure image output directory exists
     image_dir.mkdir(parents=True, exist_ok=True)
 
-    # Configure Docling pipeline for rich extraction
+    # Detect if PDF is predominantly scanned/image-based
+    is_scanned = _is_scanned_pdf(str(resolved_path))
+
+    # Configure Docling pipeline for rich extraction with RapidOCR
+    ocr_options = RapidOcrOptions(
+        # Force full-page OCR for scanned PDFs; selective for text-based PDFs
+        force_full_page_ocr=is_scanned,
+        bitmap_area_threshold=OCR_BITMAP_AREA_THRESHOLD,
+        text_score=OCR_TEXT_SCORE_THRESHOLD,
+        lang=["english"],
+    )
+
+    if is_scanned:
+        _log.info("Detected scanned/image-based PDF — enabling full-page OCR")
+
     pipeline_options = PdfPipelineOptions()
     pipeline_options.images_scale = IMAGE_RESOLUTION_SCALE
     pipeline_options.generate_page_images = True
     pipeline_options.generate_picture_images = True
+    pipeline_options.do_ocr = True
+    pipeline_options.ocr_options = ocr_options
 
     doc_converter = DocumentConverter(
         format_options={
@@ -199,3 +224,43 @@ def _get_first_page_text(pdf_path: str) -> str:
     except Exception:
         pass
     return ""
+
+
+# Threshold: if average text per page is below this, the PDF is likely scanned
+_SCANNED_TEXT_THRESHOLD = 50  # characters per page
+
+
+def _is_scanned_pdf(pdf_path: str) -> bool:
+    """
+    Detect whether a PDF is predominantly scanned/image-based.
+
+    Samples the first few pages and checks if embedded text content is
+    below a threshold. Scanned PDFs have minimal or no extractable text
+    from the PDF stream, requiring full-page OCR.
+
+    Args:
+        pdf_path: Path to the PDF file.
+
+    Returns:
+        True if the PDF appears to be scanned (needs full-page OCR).
+    """
+    import pymupdf
+
+    try:
+        doc = pymupdf.open(pdf_path)
+        pages_to_check = min(doc.page_count, 5)
+        total_text_len = 0
+
+        for i in range(pages_to_check):
+            page = doc[i]
+            text = page.get_text().strip()
+            total_text_len += len(text)
+
+        doc.close()
+
+        avg_text_per_page = total_text_len / max(pages_to_check, 1)
+        return avg_text_per_page < _SCANNED_TEXT_THRESHOLD
+
+    except Exception as exc:
+        _log.warning(f"Could not detect PDF type: {exc}")
+        return False
