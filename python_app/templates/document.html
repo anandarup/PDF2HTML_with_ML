@@ -1127,6 +1127,91 @@
       font-size: 0.7rem;
       opacity: 0.6;
     }
+
+    /* Flip Card Deck (multi-card) */
+    .flip-card-deck {
+      position: relative;
+      max-width: 450px;
+      margin: 1.5rem auto;
+    }
+
+    .flip-card-deck .flip-card {
+      display: none;
+    }
+
+    .flip-card-deck .flip-card.active {
+      display: block;
+    }
+
+    .flip-card-nav {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 0.75rem;
+    }
+
+    .flip-card-nav button {
+      padding: 0.4rem 0.8rem;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      background: var(--color-bg);
+      cursor: pointer;
+      font-size: 0.9rem;
+      color: var(--color-text);
+    }
+
+    .flip-card-nav button:hover {
+      background: var(--color-code-bg);
+      border-color: var(--color-link);
+    }
+
+    .flip-card-nav .card-counter {
+      font-size: 0.85rem;
+      color: var(--color-text-secondary);
+    }
+
+    /* Flip Card Modal Rows */
+    .flip-card-row {
+      display: flex;
+      gap: 0.5rem;
+      align-items: start;
+      margin-bottom: 0.5rem;
+      padding: 0.5rem;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      background: var(--color-code-bg);
+    }
+
+    .flip-card-row input {
+      flex: 1;
+      padding: 0.5rem;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      font-size: 0.85rem;
+      background: var(--color-bg);
+      color: var(--color-text);
+    }
+
+    .flip-card-row input:focus {
+      outline: 2px solid var(--color-link);
+      border-color: transparent;
+    }
+
+    .flip-card-row .remove-row {
+      padding: 0.4rem;
+      border: none;
+      background: none;
+      cursor: pointer;
+      color: #ef4444;
+      font-size: 1.1rem;
+      line-height: 1;
+    }
+
+    .flip-card-row .remove-row:hover {
+      background: rgba(239,68,68,0.1);
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -1304,6 +1389,20 @@
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="mediaInputCancel">Cancel</button>
         <button type="button" class="btn-save" id="mediaInputSubmit">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Flip Card Creator Modal -->
+  <div class="modal-overlay" id="flipCardModal">
+    <div class="modal-dialog" style="max-width:560px">
+      <h3>Create Flip Cards</h3>
+      <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Add one or more cards with a front (question/term) and back (answer/definition).</p>
+      <div id="flipCardRows"></div>
+      <button type="button" id="flipCardAddRow" style="margin:0.75rem 0;padding:0.4rem 0.8rem;border:1px dashed var(--color-border);border-radius:6px;background:none;color:var(--color-link);cursor:pointer;font-size:0.85rem;width:100%;">+ Add another card</button>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="flipCardCancel">Cancel</button>
+        <button type="button" class="btn-save" id="flipCardInsert">Insert Cards</button>
       </div>
     </div>
   </div>
@@ -1696,16 +1795,68 @@
 
       // --- Insert Flip Card ---
       document.getElementById('btnFlipCard').addEventListener('click', function() {
-        var front = prompt('Front side text (question/term):');
-        if (!front) return;
-        var back = prompt('Back side text (answer/definition):');
-        if (!back) return;
-        var cardHtml = '<div class="flip-card" onclick="this.classList.toggle(\'flipped\')">' +
-          '<div class="flip-card-inner">' +
-          '<div class="flip-card-front"><span>' + front + '</span><span class="flip-card-hint">Click to flip</span></div>' +
-          '<div class="flip-card-back"><span>' + back + '</span><span class="flip-card-hint">Click to flip back</span></div>' +
-          '</div></div>';
-        document.execCommand('insertHTML', false, cardHtml);
+        var modal = document.getElementById('flipCardModal');
+        var rowsContainer = document.getElementById('flipCardRows');
+        var addRowBtn = document.getElementById('flipCardAddRow');
+        var insertBtn = document.getElementById('flipCardInsert');
+        var cancelBtn = document.getElementById('flipCardCancel');
+
+        // Reset
+        rowsContainer.innerHTML = '';
+        addFlipCardRow();
+        addFlipCardRow();
+        modal.classList.add('visible');
+
+        function addFlipCardRow() {
+          var row = document.createElement('div');
+          row.className = 'flip-card-row';
+          row.innerHTML = '<input type="text" placeholder="Front (term/question)" class="fc-front" />' +
+            '<input type="text" placeholder="Back (definition/answer)" class="fc-back" />' +
+            '<button type="button" class="remove-row" title="Remove">&times;</button>';
+          row.querySelector('.remove-row').addEventListener('click', function() {
+            if (rowsContainer.children.length > 1) row.remove();
+          });
+          rowsContainer.appendChild(row);
+          row.querySelector('.fc-front').focus();
+        }
+
+        addRowBtn.onclick = addFlipCardRow;
+
+        cancelBtn.onclick = function() { modal.classList.remove('visible'); };
+        modal.onclick = function(e) { if (e.target === modal) modal.classList.remove('visible'); };
+
+        insertBtn.onclick = function() {
+          var rows = rowsContainer.querySelectorAll('.flip-card-row');
+          var cards = [];
+          rows.forEach(function(r) {
+            var front = r.querySelector('.fc-front').value.trim();
+            var back = r.querySelector('.fc-back').value.trim();
+            if (front && back) cards.push({ front: front, back: back });
+          });
+          if (cards.length === 0) return;
+
+          var deckId = 'deck-' + Date.now();
+          var html = '<div class="flip-card-deck" id="' + deckId + '">';
+          cards.forEach(function(c, i) {
+            html += '<div class="flip-card' + (i === 0 ? ' active' : '') + '" onclick="this.classList.toggle(\'flipped\')">' +
+              '<div class="flip-card-inner">' +
+              '<div class="flip-card-front"><span>' + c.front + '</span><span class="flip-card-hint">Click to flip</span></div>' +
+              '<div class="flip-card-back"><span>' + c.back + '</span><span class="flip-card-hint">Click to flip back</span></div>' +
+              '</div></div>';
+          });
+          if (cards.length > 1) {
+            html += '<div class="flip-card-nav">' +
+              '<button type="button" onclick="flipDeckNav(\'' + deckId + '\',-1)">&#9664; Prev</button>' +
+              '<span class="card-counter">1 / ' + cards.length + '</span>' +
+              '<button type="button" onclick="flipDeckNav(\'' + deckId + '\',1)">Next &#9654;</button>' +
+              '</div>';
+          }
+          html += '</div>';
+
+          docBody.focus();
+          document.execCommand('insertHTML', false, html);
+          modal.classList.remove('visible');
+        };
       });
 
       // --- Section Media Attachments ---
@@ -2079,6 +2230,28 @@
         });
       })();
     })();
+
+    // Global flip deck navigation (must be outside IIFE for onclick access)
+    function flipDeckNav(deckId, direction) {
+      var deck = document.getElementById(deckId);
+      if (!deck) return;
+      var cards = deck.querySelectorAll('.flip-card');
+      var counter = deck.querySelector('.card-counter');
+      var currentIdx = -1;
+      cards.forEach(function(c, i) { if (c.classList.contains('active')) currentIdx = i; });
+      if (currentIdx < 0) return;
+
+      // Remove flipped state from current card
+      cards[currentIdx].classList.remove('flipped');
+      cards[currentIdx].classList.remove('active');
+
+      var newIdx = currentIdx + direction;
+      if (newIdx < 0) newIdx = cards.length - 1;
+      if (newIdx >= cards.length) newIdx = 0;
+
+      cards[newIdx].classList.add('active');
+      if (counter) counter.textContent = (newIdx + 1) + ' / ' + cards.length;
+    }
   </script>
 </body>
 </html>
