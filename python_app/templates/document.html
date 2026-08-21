@@ -1545,7 +1545,13 @@
             content = '<div class="glossary-term">' + escapeHtml(term) + '</div><div class="glossary-definition">' + escapeHtml(def) + '</div>';
             break;
           case 'url':
-            content = '<a class="url-link" href="' + escapeAttr(src) + '" target="_blank" rel="noopener">&#128279; ' + escapeHtml(src) + '</a>';
+            var embedUrl = getEmbedUrl(src);
+            if (embedUrl) {
+              content = '<iframe src="' + escapeAttr(embedUrl) + '" allowfullscreen></iframe>';
+            } else {
+              content = '<iframe src="' + escapeAttr(src) + '" sandbox="allow-scripts allow-same-origin allow-popups" style="width:100%;min-height:500px;border:none;border-radius:6px;"></iframe>' +
+                '<p style="margin-top:0.75rem;text-align:center;"><a class="url-link" href="' + escapeAttr(src) + '" target="_blank" rel="noopener">&#128279; Open in new tab</a></p>';
+            }
             break;
         }
 
@@ -1579,6 +1585,26 @@
 
       function escapeAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
       function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+      function getEmbedUrl(url) {
+        // YouTube
+        var ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+        if (ytMatch) return 'https://www.youtube.com/embed/' + ytMatch[1];
+
+        // Vimeo
+        var vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+        if (vimeoMatch) return 'https://player.vimeo.com/video/' + vimeoMatch[1];
+
+        // Google Drive video
+        var driveMatch = url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
+        if (driveMatch) return 'https://drive.google.com/file/d/' + driveMatch[1] + '/preview';
+
+        // Loom
+        var loomMatch = url.match(/loom\.com\/share\/([a-zA-Z0-9]+)/);
+        if (loomMatch) return 'https://www.loom.com/embed/' + loomMatch[1];
+
+        return null;
+      }
 
       // Override enterEditMode/exitEditMode to toggle body class
       var origEnter = enterEditMode;
