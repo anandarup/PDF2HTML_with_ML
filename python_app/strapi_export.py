@@ -24,6 +24,50 @@ _log = logging.getLogger(__name__)
 # Strapi content-manager base path
 CM_PATH = "/content-manager/collection-types"
 
+# CSS styles for each content block type — pushed to Strapi's designLayout component
+BLOCK_DESIGN_LAYOUT: dict[str, dict[str, str]] = {
+    "blocks.text-block": {
+        "css": "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.7; color: #1a1a2e; font-size: 1rem;",
+        "class": "text-block",
+    },
+    "blocks.image-block": {
+        "css": "max-width: 100%; border-radius: 6px; margin: 1em 0; box-shadow: 0 2px 8px rgba(0,0,0,0.06);",
+        "class": "image-block",
+    },
+    "blocks.video-block": {
+        "css": "width: 100%; aspect-ratio: 16/9; border-radius: 8px; overflow: hidden; background: #000; margin: 1em 0;",
+        "class": "video-block",
+    },
+    "blocks.audio-block": {
+        "css": "width: 100%; padding: 1rem; background: #f8f9fc; border-radius: 8px; border: 1px solid #e2e4ea; margin: 1em 0;",
+        "class": "audio-block",
+    },
+    "blocks.flashcard-set": {
+        "css": "perspective: 1000px; max-width: 450px; margin: 1.5rem auto; min-height: 220px;",
+        "class": "flashcard-set",
+    },
+    "blocks.h5p-block": {
+        "css": "width: 100%; min-height: 400px; border: 1px solid #e2e4ea; border-radius: 8px; overflow: hidden; margin: 1em 0;",
+        "class": "h5p-block",
+    },
+    "blocks.file-upload-block": {
+        "css": "padding: 1.5rem; background: #f8f9fc; border-radius: 8px; border: 1px solid #e2e4ea; text-align: center; margin: 1em 0;",
+        "class": "file-upload-block",
+    },
+    "blocks.media-block": {
+        "css": "width: 100%; min-height: 300px; border-radius: 8px; overflow: hidden; margin: 1em 0;",
+        "class": "media-block",
+    },
+    "blocks.activity-block": {
+        "css": "padding: 1.25rem; background: #f0f7ff; border-left: 4px solid #3282b8; border-radius: 0 8px 8px 0; margin: 1em 0;",
+        "class": "activity-block",
+    },
+    "blocks.adv-text-block": {
+        "css": "font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.7; font-size: 1rem;",
+        "class": "adv-text-block",
+    },
+}
+
 
 def export_to_strapi_diksha(
     base_url: str,
@@ -338,6 +382,16 @@ def _html_to_content_blocks(
             "callout_type": "none",
             "body": html,
         })
+
+    # Attach designLayout CSS to every block
+    for block in blocks:
+        component = block.get("__component", "")
+        layout = BLOCK_DESIGN_LAYOUT.get(component)
+        if layout:
+            block["designLayout"] = {
+                "css": layout["css"],
+                "class": layout["class"],
+            }
 
     return blocks
 
