@@ -84,9 +84,12 @@ def build_interactive_html(
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
     output_path = resolved_output_dir / output_filename
 
+    # Remove QR code images before path rewriting (paths are still absolute here)
+    processed_markdown = _remove_qr_code_images(markdown_content)
+
     # Rewrite absolute image paths in markdown to be relative to output HTML
     processed_markdown = _rewrite_image_paths(
-        markdown_content, resolved_output_dir
+        processed_markdown, resolved_output_dir
     )
 
     # Clean up common PDF artifacts (page numbers, repeated headers/footers)
@@ -94,9 +97,6 @@ def build_interactive_html(
 
     # Fix numbered list structure (MCQ options as sub-items)
     processed_markdown = _fix_numbered_lists(processed_markdown)
-
-    # Remove QR code images from the Markdown
-    processed_markdown = _remove_qr_code_images(processed_markdown)
 
     # Convert Markdown to HTML
     md = markdown.Markdown(
@@ -179,17 +179,17 @@ def _remove_qr_code_images(markdown_text: str) -> str:
 
 def _is_qr_code(image_path: str, detector: "cv2.QRCodeDetector") -> bool:
     """
-    Check whether an image file contains a QR code.
+    Check whether an image file contains a QR code or barcode.
 
     Uses OpenCV QRCodeDetector for reliable detection. Also applies
-    heuristics: QR codes are typically small, square images.
+    heuristics: QR/barcodes in PDFs are typically small, roughly square images.
 
     Args:
         image_path: Path to the image file.
         detector: Pre-initialized cv2.QRCodeDetector instance.
 
     Returns:
-        True if the image contains a QR code.
+        True if the image contains a QR code or barcode.
     """
     import cv2
 
@@ -201,28 +201,42 @@ def _is_qr_code(image_path: str, detector: "cv2.QRCodeDetector") -> bool:
         if img is None:
             return False
 
-        # QR codes are typically square-ish and small
         height, width = img.shape[:2]
-        aspect_ratio = min(width, height) / max(width, height)
 
-        # If image is not roughly square (ratio < 0.6), skip detection
-        if aspect_ratio < 0.6:
+        # Skip very large images — unlikely to be just a QR code
+        if width > 1000 and height > 1000:
             return False
 
-        # Attempt QR code detection
+        # Attempt QR code detection and decode
         data, points, _ = detector.detectAndDecode(img)
-
-        # If data was decoded, it's definitely a QR code
         if data:
             return True
 
-        # Also check with just detection (some QR codes decode fails but detect works)
+        # Try detection without decode (catches partially readable QR codes)
         retval, points = detector.detect(img)
         if retval and points is not None:
             return True
 
+        # Additional heuristic for small square-ish images that might be
+        # barcodes/QR codes not detected by OpenCV: check if the image is
+        # predominantly black and white with high-frequency patterns
+        if width < 300 and height < 300:
+            aspect_ratio = min(width, height) / max(width, height)
+            if aspect_ratio > 0.5:
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                # Threshold to binary
+                _, binary = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY)
+                # QR codes have roughly 50/50 black/white ratio
+                white_ratio = binary.mean() / 255.0
+                if 0.25 < white_ratio < 0.75:
+                    # Check for high-frequency edges (QR pattern)
+                    edges = cv2.Canny(gray, 50, 150)
+                    edge_density = edges.mean() / 255.0
+                    # QR codes have very high edge density (>0.15)
+                    if edge_density > 0.15:
+                        return True
+
     except (OSError, cv2.error):
-        # Best-effort: if detection fails, assume it's not a QR code
         pass
 
     return False
