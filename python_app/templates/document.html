@@ -4,6 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>{{ title }}</title>
+  <script>
+    MathJax = {
+      tex: { inlineMath: [['\\(','\\)'], ['$','$']], displayMath: [['\\[','\\]'], ['$$','$$']] },
+      options: { skipHtmlTags: ['script','noscript','style','textarea','code'] }
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
   <style>
     :root {
       --color-bg: #ffffff;
@@ -598,6 +605,168 @@
     .save-status.error {
       color: #ef4444;
     }
+
+    /* Modal Overlays */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 2000;
+      background: rgba(0, 0, 0, 0.5);
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-overlay.visible {
+      display: flex;
+    }
+
+    .modal-dialog {
+      background: var(--color-bg);
+      border-radius: 12px;
+      padding: 1.5rem;
+      width: 90%;
+      max-width: 520px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    }
+
+    .modal-dialog h3 {
+      margin: 0 0 1rem;
+      font-size: 1.1rem;
+      color: var(--color-heading);
+    }
+
+    .modal-actions {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+      margin-top: 1rem;
+    }
+
+    /* Formula Dialog */
+    .formula-tabs {
+      display: flex;
+      gap: 0.25rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--color-border);
+      padding-bottom: 0.5rem;
+    }
+
+    .formula-tab {
+      padding: 0.4rem 0.8rem;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 0.85rem;
+      color: var(--color-text-secondary);
+      border-radius: 4px;
+    }
+
+    .formula-tab.active {
+      background: var(--color-code-bg);
+      color: var(--color-text);
+      font-weight: 500;
+    }
+
+    .formula-panel.hidden {
+      display: none;
+    }
+
+    .formula-panel label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--color-text-secondary);
+      margin-bottom: 0.4rem;
+    }
+
+    .formula-panel textarea {
+      width: 100%;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      padding: 0.75rem;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      background: var(--color-code-bg);
+      color: var(--color-text);
+      resize: vertical;
+    }
+
+    .formula-panel textarea:focus {
+      outline: 2px solid var(--color-link);
+      border-color: transparent;
+    }
+
+    .formula-options {
+      display: flex;
+      gap: 1.5rem;
+      margin: 0.75rem 0;
+      font-size: 0.85rem;
+    }
+
+    .formula-options label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      cursor: pointer;
+    }
+
+    .formula-preview {
+      min-height: 40px;
+      padding: 0.75rem;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      background: var(--color-bg);
+      font-size: 1.1rem;
+      text-align: center;
+      margin-top: 0.5rem;
+    }
+
+    .formula-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.4rem;
+    }
+
+    .formula-tpl {
+      padding: 0.6rem;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      background: var(--color-bg);
+      cursor: pointer;
+      font-size: 1.1rem;
+      text-align: center;
+      transition: background 0.15s;
+    }
+
+    .formula-tpl:hover {
+      background: var(--color-code-bg);
+      border-color: var(--color-link);
+    }
+
+    /* Symbol Grid */
+    .symbol-grid {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 0.3rem;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .symbol-btn {
+      padding: 0.5rem;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      background: var(--color-bg);
+      cursor: pointer;
+      font-size: 1.2rem;
+      text-align: center;
+      transition: background 0.15s;
+    }
+
+    .symbol-btn:hover {
+      background: var(--color-code-bg);
+      border-color: var(--color-link);
+    }
   </style>
 </head>
 <body>
@@ -645,15 +814,24 @@
       <button type="button" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
       <button type="button" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
       <button type="button" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+      <button type="button" data-cmd="strikethrough" title="Strikethrough"><s>S</s></button>
+      <button type="button" data-cmd="subscript" title="Subscript">X<sub>2</sub></button>
+      <button type="button" data-cmd="superscript" title="Superscript">X<sup>2</sup></button>
     </div>
     <div class="toolbar-group">
+      <button type="button" data-cmd="formatBlock" data-val="h1" title="Heading 1">H1</button>
       <button type="button" data-cmd="formatBlock" data-val="h2" title="Heading 2">H2</button>
       <button type="button" data-cmd="formatBlock" data-val="h3" title="Heading 3">H3</button>
       <button type="button" data-cmd="formatBlock" data-val="p" title="Paragraph">P</button>
+      <button type="button" data-cmd="formatBlock" data-val="blockquote" title="Blockquote">&#8220;</button>
     </div>
     <div class="toolbar-group">
-      <button type="button" data-cmd="insertUnorderedList" title="Bullet list">UL</button>
-      <button type="button" data-cmd="insertOrderedList" title="Numbered list">OL</button>
+      <button type="button" data-cmd="insertUnorderedList" title="Bullet list">&#8226; List</button>
+      <button type="button" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
+    </div>
+    <div class="toolbar-group">
+      <button type="button" id="btnFormula" title="Insert LaTeX formula">&#8721; Formula</button>
+      <button type="button" id="btnSymbol" title="Insert symbol">&#937; Symbol</button>
     </div>
     <div class="toolbar-group">
       <button type="button" data-cmd="undo" title="Undo (Ctrl+Z)">Undo</button>
@@ -663,6 +841,65 @@
       <span class="save-status" id="saveStatus"></span>
       <button type="button" class="btn-cancel" id="editCancel">Cancel</button>
       <button type="button" class="btn-save" id="editSave">Save</button>
+    </div>
+  </div>
+
+  <!-- Formula Input Dialog -->
+  <div class="modal-overlay" id="formulaModal">
+    <div class="modal-dialog">
+      <h3>Insert LaTeX Formula</h3>
+      <div class="formula-tabs">
+        <button type="button" class="formula-tab active" data-tab="custom">Custom</button>
+        <button type="button" class="formula-tab" data-tab="templates">Templates</button>
+      </div>
+      <div class="formula-panel" id="formulaCustom">
+        <label for="formulaInput">LaTeX expression:</label>
+        <textarea id="formulaInput" rows="3" placeholder="e.g. E = mc^2 or \frac{-b \pm \sqrt{b^2-4ac}}{2a}"></textarea>
+        <div class="formula-options">
+          <label><input type="radio" name="formulaType" value="inline" checked /> Inline \( ... \)</label>
+          <label><input type="radio" name="formulaType" value="display" /> Display \[ ... \]</label>
+        </div>
+        <div class="formula-preview" id="formulaPreview"></div>
+      </div>
+      <div class="formula-panel hidden" id="formulaTemplates">
+        <div class="formula-grid">
+          <button type="button" class="formula-tpl" data-latex="\\frac{a}{b}" title="Fraction">&#x00B9;&#8260;&#x2082;</button>
+          <button type="button" class="formula-tpl" data-latex="\\sqrt{x}" title="Square root">&#8730;x</button>
+          <button type="button" class="formula-tpl" data-latex="\\sum_{i=1}^{n}" title="Summation">&#8721;</button>
+          <button type="button" class="formula-tpl" data-latex="\\int_{a}^{b}" title="Integral">&#8747;</button>
+          <button type="button" class="formula-tpl" data-latex="\\lim_{x \\to \\infty}" title="Limit">lim</button>
+          <button type="button" class="formula-tpl" data-latex="\\vec{v}" title="Vector">v&#8407;</button>
+          <button type="button" class="formula-tpl" data-latex="\\alpha" title="Alpha">&#945;</button>
+          <button type="button" class="formula-tpl" data-latex="\\beta" title="Beta">&#946;</button>
+          <button type="button" class="formula-tpl" data-latex="\\gamma" title="Gamma">&#947;</button>
+          <button type="button" class="formula-tpl" data-latex="\\theta" title="Theta">&#952;</button>
+          <button type="button" class="formula-tpl" data-latex="\\pi" title="Pi">&#960;</button>
+          <button type="button" class="formula-tpl" data-latex="\\infty" title="Infinity">&#8734;</button>
+          <button type="button" class="formula-tpl" data-latex="\\neq" title="Not equal">&#8800;</button>
+          <button type="button" class="formula-tpl" data-latex="\\leq" title="Less or equal">&#8804;</button>
+          <button type="button" class="formula-tpl" data-latex="\\geq" title="Greater or equal">&#8805;</button>
+          <button type="button" class="formula-tpl" data-latex="\\pm" title="Plus minus">&#177;</button>
+          <button type="button" class="formula-tpl" data-latex="\\times" title="Times">&#215;</button>
+          <button type="button" class="formula-tpl" data-latex="\\div" title="Division">&#247;</button>
+          <button type="button" class="formula-tpl" data-latex="\\rightarrow" title="Right arrow">&#8594;</button>
+          <button type="button" class="formula-tpl" data-latex="\\Rightarrow" title="Implies">&#8658;</button>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="formulaCancel">Cancel</button>
+        <button type="button" class="btn-save" id="formulaInsert">Insert</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Symbol Picker Dialog -->
+  <div class="modal-overlay" id="symbolModal">
+    <div class="modal-dialog">
+      <h3>Insert Symbol</h3>
+      <div class="symbol-grid" id="symbolGrid"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="symbolCancel">Close</button>
+      </div>
     </div>
   </div>
 
@@ -852,6 +1089,146 @@
           e.preventDefault();
           saveContent();
         }
+      });
+
+      // --- Formula Modal ---
+      var formulaModal = document.getElementById('formulaModal');
+      var formulaInput = document.getElementById('formulaInput');
+      var formulaPreview = document.getElementById('formulaPreview');
+      var formulaInsert = document.getElementById('formulaInsert');
+      var formulaCancel = document.getElementById('formulaCancel');
+      var formulaTabs = document.querySelectorAll('.formula-tab');
+      var formulaCustom = document.getElementById('formulaCustom');
+      var formulaTemplates = document.getElementById('formulaTemplates');
+
+      document.getElementById('btnFormula').addEventListener('click', function() {
+        formulaModal.classList.add('visible');
+        formulaInput.value = '';
+        formulaPreview.innerHTML = '';
+        formulaInput.focus();
+      });
+
+      formulaCancel.addEventListener('click', function() {
+        formulaModal.classList.remove('visible');
+      });
+
+      // Tab switching
+      formulaTabs.forEach(function(tab) {
+        tab.addEventListener('click', function() {
+          formulaTabs.forEach(function(t) { t.classList.remove('active'); });
+          tab.classList.add('active');
+          var target = tab.getAttribute('data-tab');
+          formulaCustom.classList.toggle('hidden', target !== 'custom');
+          formulaTemplates.classList.toggle('hidden', target !== 'templates');
+        });
+      });
+
+      // Template buttons insert into input
+      document.querySelectorAll('.formula-tpl').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var latex = btn.getAttribute('data-latex');
+          formulaInput.value += latex;
+          formulaInput.focus();
+          updateFormulaPreview();
+          // Switch to custom tab to show input
+          formulaTabs.forEach(function(t) { t.classList.remove('active'); });
+          formulaTabs[0].classList.add('active');
+          formulaCustom.classList.remove('hidden');
+          formulaTemplates.classList.add('hidden');
+        });
+      });
+
+      // Live preview
+      formulaInput.addEventListener('input', updateFormulaPreview);
+
+      function updateFormulaPreview() {
+        var latex = formulaInput.value.trim();
+        if (!latex) {
+          formulaPreview.innerHTML = '<em style="color:var(--color-text-secondary)">Preview appears here</em>';
+          return;
+        }
+        formulaPreview.innerHTML = '\\[' + latex + '\\]';
+        if (window.MathJax && MathJax.typesetPromise) {
+          MathJax.typesetPromise([formulaPreview]);
+        }
+      }
+
+      formulaInsert.addEventListener('click', function() {
+        var latex = formulaInput.value.trim();
+        if (!latex) return;
+
+        var type = document.querySelector('input[name="formulaType"]:checked').value;
+        var wrapped = type === 'inline' ? '\\(' + latex + '\\)' : '\\[' + latex + '\\]';
+
+        // Insert at cursor position in the editable area
+        docBody.focus();
+        var span = document.createElement('span');
+        span.innerHTML = wrapped;
+        var sel = window.getSelection();
+        if (sel.rangeCount) {
+          var range = sel.getRangeAt(0);
+          range.deleteContents();
+          range.insertNode(span);
+          range.setStartAfter(span);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } else {
+          docBody.appendChild(span);
+        }
+
+        // Re-render MathJax
+        if (window.MathJax && MathJax.typesetPromise) {
+          MathJax.typesetPromise([docBody]);
+        }
+
+        formulaModal.classList.remove('visible');
+      });
+
+      // --- Symbol Modal ---
+      var symbolModal = document.getElementById('symbolModal');
+      var symbolGrid = document.getElementById('symbolGrid');
+      var symbolCancel = document.getElementById('symbolCancel');
+
+      var symbols = [
+        '\u00B1','\u00D7','\u00F7','\u2260','\u2248','\u2264','\u2265','\u221E',
+        '\u2211','\u220F','\u222B','\u2202','\u2207','\u221A','\u00B2','\u00B3',
+        '\u03B1','\u03B2','\u03B3','\u03B4','\u03B5','\u03B6','\u03B7','\u03B8',
+        '\u03BB','\u03BC','\u03C0','\u03C3','\u03C4','\u03C6','\u03C8','\u03C9',
+        '\u0394','\u03A3','\u03A9','\u03A6','\u2192','\u2190','\u2191','\u2193',
+        '\u21D2','\u21D4','\u2200','\u2203','\u2208','\u2209','\u2282','\u2283',
+        '\u222A','\u2229','\u2205','\u00AC','\u2227','\u2228','\u22A5','\u2234',
+        '\u00B0','\u2103','\u212B','\u00B5','\u2126','\u0127','\u210F','\u2113'
+      ];
+
+      // Build symbol grid
+      symbols.forEach(function(sym) {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'symbol-btn';
+        btn.textContent = sym;
+        btn.title = 'Insert ' + sym;
+        btn.addEventListener('click', function() {
+          docBody.focus();
+          document.execCommand('insertText', false, sym);
+          symbolModal.classList.remove('visible');
+        });
+        symbolGrid.appendChild(btn);
+      });
+
+      document.getElementById('btnSymbol').addEventListener('click', function() {
+        symbolModal.classList.add('visible');
+      });
+
+      symbolCancel.addEventListener('click', function() {
+        symbolModal.classList.remove('visible');
+      });
+
+      // Close modals on backdrop click
+      [formulaModal, symbolModal].forEach(function(modal) {
+        modal.addEventListener('click', function(e) {
+          if (e.target === modal) modal.classList.remove('visible');
+        });
       });
     })();
   </script>
