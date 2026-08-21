@@ -1200,6 +1200,54 @@
       border-color: transparent;
     }
 
+    .fc-rich-field {
+      flex: 1;
+      min-width: 120px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .fc-mini-toolbar {
+      display: flex;
+      gap: 2px;
+      padding: 2px;
+      border: 1px solid var(--color-border);
+      border-bottom: none;
+      border-radius: 4px 4px 0 0;
+      background: var(--color-code-bg);
+    }
+
+    .fc-mini-toolbar button {
+      padding: 2px 6px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 0.75rem;
+      color: var(--color-text-secondary);
+      border-radius: 2px;
+    }
+
+    .fc-mini-toolbar button:hover {
+      background: var(--color-border);
+      color: var(--color-text);
+    }
+
+    .fc-editable {
+      min-height: 36px;
+      padding: 0.4rem 0.5rem;
+      border: 1px solid var(--color-border);
+      border-radius: 0 0 4px 4px;
+      font-size: 0.85rem;
+      background: var(--color-bg);
+      color: var(--color-text);
+      outline: none;
+    }
+
+    .fc-editable:focus {
+      border-color: var(--color-link);
+      box-shadow: 0 0 0 2px rgba(50, 130, 184, 0.15);
+    }
+
     .flip-card-row .remove-row {
       padding: 0.4rem;
       border: none;
@@ -1862,11 +1910,47 @@
           var row = document.createElement('div');
           row.className = 'flip-card-row';
           row.style.flexWrap = 'wrap';
-          row.innerHTML = '<input type="text" placeholder="Front text (term/question)" class="fc-front" style="flex:1;min-width:120px;" />' +
-            '<input type="text" placeholder="Back text (answer/definition)" class="fc-back" style="flex:1;min-width:120px;" />' +
+          row.innerHTML =
+            '<div class="fc-rich-field">' +
+              '<div class="fc-mini-toolbar">' +
+                '<button type="button" data-fc-cmd="bold" title="Bold"><b>B</b></button>' +
+                '<button type="button" data-fc-cmd="italic" title="Italic"><i>I</i></button>' +
+                '<button type="button" data-fc-cmd="underline" title="Underline"><u>U</u></button>' +
+                '<button type="button" data-fc-cmd="formula" title="Insert LaTeX">∑</button>' +
+              '</div>' +
+              '<div class="fc-editable fc-front" contenteditable="true" data-placeholder="Front (term/question)"></div>' +
+            '</div>' +
+            '<div class="fc-rich-field">' +
+              '<div class="fc-mini-toolbar">' +
+                '<button type="button" data-fc-cmd="bold" title="Bold"><b>B</b></button>' +
+                '<button type="button" data-fc-cmd="italic" title="Italic"><i>I</i></button>' +
+                '<button type="button" data-fc-cmd="underline" title="Underline"><u>U</u></button>' +
+                '<button type="button" data-fc-cmd="formula" title="Insert LaTeX">∑</button>' +
+              '</div>' +
+              '<div class="fc-editable fc-back" contenteditable="true" data-placeholder="Back (answer/definition)"></div>' +
+            '</div>' +
             '<button type="button" class="remove-row" title="Remove">&times;</button>' +
             '<input type="url" placeholder="Front image URL (optional)" class="fc-front-img" style="flex:1 1 100%;margin-top:0.3rem;font-size:0.8rem;" />' +
             '<input type="url" placeholder="Back image URL (optional)" class="fc-back-img" style="flex:1 1 100%;margin-top:0.3rem;font-size:0.8rem;" />';
+
+          // Wire mini toolbar buttons
+          row.querySelectorAll('[data-fc-cmd]').forEach(function(btn) {
+            btn.addEventListener('mousedown', function(e) {
+              e.preventDefault(); // Don't steal focus from editable
+              var cmd = btn.getAttribute('data-fc-cmd');
+              var editable = btn.closest('.fc-rich-field').querySelector('.fc-editable');
+              editable.focus();
+              if (cmd === 'formula') {
+                var latex = prompt('LaTeX formula:');
+                if (latex && latex.trim()) {
+                  document.execCommand('insertHTML', false, '\\(' + latex.trim() + '\\)');
+                }
+              } else {
+                document.execCommand(cmd, false, null);
+              }
+            });
+          });
+
           row.querySelector('.remove-row').addEventListener('click', function() {
             if (rowsContainer.children.length > 1) row.remove();
           });
@@ -1883,10 +1967,13 @@
           var rows = rowsContainer.querySelectorAll('.flip-card-row');
           var cards = [];
           rows.forEach(function(r) {
-            var front = r.querySelector('.fc-front').value.trim();
-            var back = r.querySelector('.fc-back').value.trim();
+            var front = r.querySelector('.fc-front').innerHTML.trim();
+            var back = r.querySelector('.fc-back').innerHTML.trim();
             var frontImg = r.querySelector('.fc-front-img').value.trim();
             var backImg = r.querySelector('.fc-back-img').value.trim();
+            // Strip empty placeholder artifacts
+            if (front === '<br>' || front === '<div><br></div>') front = '';
+            if (back === '<br>' || back === '<div><br></div>') back = '';
             if (front || back || frontImg || backImg) {
               cards.push({ front: front, back: back, frontImg: frontImg, backImg: backImg });
             }
@@ -1930,6 +2017,10 @@
           }
           document.execCommand('insertHTML', false, html);
           modal.classList.remove('visible');
+          // Render any LaTeX formulas in the newly inserted cards
+          if (window.MathJax && MathJax.typesetPromise) {
+            MathJax.typesetPromise([docBody]);
+          }
         };
       });
 
