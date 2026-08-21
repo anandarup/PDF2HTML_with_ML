@@ -858,6 +858,121 @@
       border: none;
       border-radius: 4px;
     }
+
+    /* Media Popup */
+    .media-popup-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 3000;
+      background: rgba(0, 0, 0, 0.6);
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(2px);
+    }
+
+    .media-popup-overlay.visible {
+      display: flex;
+    }
+
+    .media-popup {
+      background: var(--color-bg);
+      border-radius: 12px;
+      width: 90%;
+      max-width: 720px;
+      max-height: 85vh;
+      overflow: auto;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+      animation: popupIn 0.2s ease;
+    }
+
+    @keyframes popupIn {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .media-popup-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .media-popup-header h3 {
+      margin: 0;
+      font-size: 1rem;
+      color: var(--color-heading);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .media-popup-close {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 1.5rem;
+      color: var(--color-text-secondary);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .media-popup-close:hover {
+      background: var(--color-code-bg);
+      color: var(--color-text);
+    }
+
+    .media-popup-body {
+      padding: 1.5rem;
+    }
+
+    .media-popup-body video,
+    .media-popup-body audio {
+      width: 100%;
+      border-radius: 6px;
+    }
+
+    .media-popup-body iframe {
+      width: 100%;
+      min-height: 450px;
+      border: none;
+      border-radius: 6px;
+    }
+
+    .media-popup-body .glossary-term {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: var(--color-heading);
+      margin-bottom: 0.5rem;
+    }
+
+    .media-popup-body .glossary-definition {
+      font-size: 1.05rem;
+      line-height: 1.7;
+      color: var(--color-text);
+    }
+
+    .media-popup-body .url-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.25rem;
+      background: var(--color-code-bg);
+      border-radius: 8px;
+      text-decoration: none;
+      color: var(--color-link);
+      font-size: 1rem;
+      word-break: break-all;
+    }
+
+    .media-popup-body .url-link:hover {
+      background: var(--color-border);
+    }
   </style>
 </head>
 <body>
@@ -991,6 +1106,17 @@
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="symbolCancel">Close</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Media Content Popup -->
+  <div class="media-popup-overlay" id="mediaPopup">
+    <div class="media-popup">
+      <div class="media-popup-header">
+        <h3 id="mediaPopupTitle"></h3>
+        <button type="button" class="media-popup-close" id="mediaPopupClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="media-popup-body" id="mediaPopupBody"></div>
     </div>
   </div>
 
@@ -1389,49 +1515,66 @@
         var src = btn.getAttribute('data-media-src');
         if (!src || !src.trim()) return;
 
-        // Toggle: if embed already showing, remove it
-        var existingEmbed = btn.closest('.section-media').nextElementSibling;
-        if (existingEmbed && existingEmbed.classList.contains('media-embed') && existingEmbed.getAttribute('data-for') === type.key) {
-          existingEmbed.remove();
-          return;
-        }
+        var popup = document.getElementById('mediaPopup');
+        var popupTitle = document.getElementById('mediaPopupTitle');
+        var popupBody = document.getElementById('mediaPopupBody');
+        var popupClose = document.getElementById('mediaPopupClose');
 
-        // Remove any other open embed from this section
-        var sectionMedia = btn.closest('.section-media');
-        var nextEl = sectionMedia.nextElementSibling;
-        if (nextEl && nextEl.classList.contains('media-embed')) {
-          nextEl.remove();
-        }
+        // Set title with icon
+        popupTitle.innerHTML = btn.innerHTML + ' ' + type.label;
 
-        var embed = document.createElement('div');
-        embed.className = 'media-embed';
-        embed.setAttribute('data-for', type.key);
-
+        // Build content based on type
+        var content = '';
         switch (type.key) {
           case 'video':
-            embed.innerHTML = '<video controls><source src="' + escapeAttr(src) + '"></video>';
+            content = '<video controls autoplay><source src="' + escapeAttr(src) + '"></video>';
             break;
           case 'audio':
-            embed.innerHTML = '<audio controls><source src="' + escapeAttr(src) + '"></audio>';
+            content = '<audio controls autoplay><source src="' + escapeAttr(src) + '"></audio>';
             break;
           case 'pptx':
-            embed.innerHTML = '<iframe src="https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(src) + '" frameborder="0"></iframe><p><a href="' + escapeAttr(src) + '" target="_blank">Download Presentation</a></p>';
+            content = '<iframe src="https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(src) + '"></iframe>';
             break;
           case 'h5p':
-            embed.innerHTML = '<iframe src="' + escapeAttr(src) + '" allowfullscreen></iframe>';
+            content = '<iframe src="' + escapeAttr(src) + '" allowfullscreen></iframe>';
             break;
           case 'glossary':
             var parts = src.split('|');
             var term = parts[0] ? parts[0].trim() : '';
             var def = parts[1] ? parts[1].trim() : src;
-            embed.innerHTML = '<strong>' + escapeHtml(term) + '</strong>: ' + escapeHtml(def);
+            content = '<div class="glossary-term">' + escapeHtml(term) + '</div><div class="glossary-definition">' + escapeHtml(def) + '</div>';
             break;
           case 'url':
-            embed.innerHTML = '<a href="' + escapeAttr(src) + '" target="_blank" rel="noopener">' + escapeHtml(src) + '</a>';
+            content = '<a class="url-link" href="' + escapeAttr(src) + '" target="_blank" rel="noopener">&#128279; ' + escapeHtml(src) + '</a>';
             break;
         }
 
-        sectionMedia.insertAdjacentElement('afterend', embed);
+        popupBody.innerHTML = content;
+        popup.classList.add('visible');
+
+        // Close handlers
+        function closePopup() {
+          popup.classList.remove('visible');
+          // Stop any playing media
+          var media = popupBody.querySelector('video, audio');
+          if (media) media.pause();
+          popupBody.innerHTML = '';
+          popupClose.removeEventListener('click', closePopup);
+          popup.removeEventListener('click', backdropClose);
+          document.removeEventListener('keydown', escClose);
+        }
+
+        function backdropClose(e) {
+          if (e.target === popup) closePopup();
+        }
+
+        function escClose(e) {
+          if (e.key === 'Escape') closePopup();
+        }
+
+        popupClose.addEventListener('click', closePopup);
+        popup.addEventListener('click', backdropClose);
+        document.addEventListener('keydown', escClose);
       }
 
       function escapeAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
