@@ -1070,6 +1070,12 @@
       margin-top: 0.5rem;
     }
 
+    .export-platform-btn.active {
+      background: var(--color-link);
+      color: #fff;
+      border-color: var(--color-link);
+    }
+
     /* Flip Card */
     .flip-card {
       perspective: 1000px;
@@ -1368,6 +1374,7 @@
   </button>
 
   <button class="edit-toggle" id="editToggle" aria-label="Toggle edit mode">Edit</button>
+  <button class="edit-toggle" id="exportToggle" aria-label="Export to CMS" style="right:10rem;">Export</button>
 
   <div class="edit-toolbar" id="editToolbar" role="toolbar" aria-label="Formatting toolbar">
     <div class="toolbar-group">
@@ -1518,6 +1525,41 @@
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="flipCardCancel">Cancel</button>
         <button type="button" class="btn-save" id="flipCardInsert">Insert Cards</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export to CMS Modal -->
+  <div class="modal-overlay" id="exportModal">
+    <div class="modal-dialog" style="max-width:480px">
+      <h3>Export to CMS</h3>
+      <div class="media-input-section">
+        <label class="media-input-label">Platform</label>
+        <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
+          <button type="button" class="btn-cancel export-platform-btn active" data-platform="strapi" style="flex:1;padding:0.6rem;">Strapi</button>
+          <button type="button" class="btn-cancel export-platform-btn" data-platform="wordpress" style="flex:1;padding:0.6rem;">WordPress</button>
+        </div>
+      </div>
+      <div class="media-input-section">
+        <label class="media-input-label" for="exportUrl">CMS Base URL</label>
+        <input type="url" id="exportUrl" class="media-url-field" placeholder="https://your-cms.example.com" />
+      </div>
+      <div class="media-input-section" id="exportStrapiFields">
+        <label class="media-input-label" for="exportApiToken">API Token</label>
+        <input type="password" id="exportApiToken" class="media-url-field" placeholder="Strapi API token" />
+        <label class="media-input-label" for="exportContentType" style="margin-top:0.5rem;">Content Type (API ID)</label>
+        <input type="text" id="exportContentType" class="media-url-field" placeholder="e.g. articles, chapters, lessons" value="articles" />
+      </div>
+      <div class="media-input-section" id="exportWpFields" style="display:none;">
+        <label class="media-input-label" for="exportWpUser">Username</label>
+        <input type="text" id="exportWpUser" class="media-url-field" placeholder="WordPress username" />
+        <label class="media-input-label" for="exportWpPass" style="margin-top:0.5rem;">Application Password</label>
+        <input type="password" id="exportWpPass" class="media-url-field" placeholder="WordPress application password" />
+      </div>
+      <div class="media-input-status" id="exportStatus"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="exportCancel">Cancel</button>
+        <button type="button" class="btn-save" id="exportSubmit">Export</button>
       </div>
     </div>
   </div>
@@ -2536,6 +2578,93 @@
       cards[newIdx].classList.add('active');
       if (counter) counter.textContent = (newIdx + 1) + ' / ' + cards.length;
     }
+
+    // --- Export to CMS ---
+    (function() {
+      var exportToggle = document.getElementById('exportToggle');
+      var exportModal = document.getElementById('exportModal');
+      var exportCancel = document.getElementById('exportCancel');
+      var exportSubmit = document.getElementById('exportSubmit');
+      var exportStatus = document.getElementById('exportStatus');
+      var platformBtns = document.querySelectorAll('.export-platform-btn');
+      var strapiFields = document.getElementById('exportStrapiFields');
+      var wpFields = document.getElementById('exportWpFields');
+      var selectedPlatform = 'strapi';
+
+      if (!exportToggle) return;
+
+      exportToggle.addEventListener('click', function() {
+        exportModal.classList.add('visible');
+        exportStatus.textContent = '';
+      });
+
+      exportCancel.addEventListener('click', function() {
+        exportModal.classList.remove('visible');
+      });
+
+      exportModal.addEventListener('click', function(e) {
+        if (e.target === exportModal) exportModal.classList.remove('visible');
+      });
+
+      platformBtns.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          platformBtns.forEach(function(b) { b.classList.remove('active'); });
+          btn.classList.add('active');
+          selectedPlatform = btn.getAttribute('data-platform');
+          strapiFields.style.display = selectedPlatform === 'strapi' ? '' : 'none';
+          wpFields.style.display = selectedPlatform === 'wordpress' ? '' : 'none';
+        });
+      });
+
+      exportSubmit.addEventListener('click', function() {
+        var baseUrl = document.getElementById('exportUrl').value.trim();
+        if (!baseUrl) { exportStatus.textContent = 'CMS URL is required'; return; }
+
+        var payload = {
+          platform: selectedPlatform,
+          base_url: baseUrl,
+          title: document.querySelector('.document-title') ? document.querySelector('.document-title').textContent : 'Untitled',
+          body_html: document.querySelector('.document-body') ? document.querySelector('.document-body').innerHTML : '',
+        };
+
+        if (selectedPlatform === 'strapi') {
+          payload.api_token = document.getElementById('exportApiToken').value.trim();
+          payload.content_type = document.getElementById('exportContentType').value.trim() || 'articles';
+          if (!payload.api_token) { exportStatus.textContent = 'API token is required'; return; }
+        } else {
+          payload.username = document.getElementById('exportWpUser').value.trim();
+          payload.password = document.getElementById('exportWpPass').value.trim();
+          if (!payload.username || !payload.password) { exportStatus.textContent = 'Username and password required'; return; }
+        }
+
+        exportStatus.textContent = 'Exporting...';
+        exportStatus.style.color = 'var(--color-text-secondary)';
+        exportSubmit.disabled = true;
+
+        fetch('/export-cms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          exportSubmit.disabled = false;
+          if (data.success) {
+            exportStatus.style.color = '#10b981';
+            exportStatus.textContent = 'Exported successfully! ' + (data.url || '');
+            setTimeout(function() { exportModal.classList.remove('visible'); }, 2000);
+          } else {
+            exportStatus.style.color = '#ef4444';
+            exportStatus.textContent = data.error || 'Export failed';
+          }
+        })
+        .catch(function(err) {
+          exportSubmit.disabled = false;
+          exportStatus.style.color = '#ef4444';
+          exportStatus.textContent = 'Error: ' + err.message;
+        });
+      });
+    })();
   </script>
 </body>
 </html>

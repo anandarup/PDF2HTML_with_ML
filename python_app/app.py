@@ -265,6 +265,108 @@ def save_output(job_dir: str, filename: str):
         return jsonify({"error": f"File write failed: {e}"}), 500
 
 
+@app.route("/export-cms", methods=["POST"])
+def export_cms():
+    """
+    Export document content to a CMS (Strapi or WordPress).
+
+    Accepts JSON with platform config and HTML content.
+    Pushes the content via the CMS REST API.
+    """
+    import requests as http_client
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    platform = data.get("platform")
+    base_url = data.get("base_url", "").rstrip("/")
+    title = data.get("title", "Untitled")
+    body_html = data.get("body_html", "")
+
+    if not base_url:
+        return jsonify({"error": "CMS base URL is required"}), 400
+
+    try:
+        if platform == "strapi":
+            return _export_to_strapi(data, base_url, title, body_html, http_client)
+        elif platform == "wordpress":
+            return _export_to_wordpress(data, base_url, title, body_html, http_client)
+        else:
+            return jsonify({"error": f"Unsupported platform: {platform}"}), 400
+    except http_client.exceptions.ConnectionError:
+        return jsonify({"error": "Cannot connect to CMS. Check the URL."}), 502
+    except http_client.exceptions.Timeout:
+        return jsonify({"error": "CMS request timed out."}), 504
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+def _export_to_strapi(data: dict, base_url: str, title: str, body_html: str, http_client) -> tuple:
+    """Push content to Strapi v4 REST API."""
+    api_token = data.get("api_token", "")
+    content_type = data.get("content_type", "articles")
+
+    endpoint = f"{base_url}/api/{content_type}"
+    headers = {
+        "Authorization": f"Bearer {api_token}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "data": {
+            "title": title,
+            "content": body_html,
+        }
+    }
+
+    resp = http_client.post(endpoint, json=payload, headers=headers, timeout=30)
+
+    if resp.status_code in (200, 201):
+        resp_data = resp.json()
+        entry_id = resp_data.get("data", {}).get("id", "")
+        return jsonify({
+            "success": True,
+            "url": f"{base_url}/api/{content_type}/{entry_id}",
+            "message": f"Created {content_type} entry #{entry_id}",
+        }), 200
+    else:
+        error_msg = resp.text[:200] if resp.text else f"HTTP {resp.status_code}"
+        return jsonify({"error": f"Strapi error: {error_msg}"}), resp.status_code
+
+
+def _export_to_wordpress(data: dict, base_url: str, title: str, body_html: str, http_client) -> tuple:
+    """Push content to WordPress REST API (posts endpoint)."""
+    username = data.get("username", "")
+    password = data.get("password", "")
+
+    endpoint = f"{base_url}/wp-json/wp/v2/posts"
+    payload = {
+        "title": title,
+        "content": body_html,
+        "status": "draft",
+    }
+
+    resp = http_client.post(
+        endpoint,
+        json=payload,
+        auth=(username, password),
+        timeout=30,
+    )
+
+    if resp.status_code in (200, 201):
+        resp_data = resp.json()
+        post_id = resp_data.get("id", "")
+        post_link = resp_data.get("link", "")
+        return jsonify({
+            "success": True,
+            "url": post_link,
+            "message": f"Created WordPress draft post #{post_id}",
+        }), 200
+    else:
+        error_msg = resp.text[:200] if resp.text else f"HTTP {resp.status_code}"
+        return jsonify({"error": f"WordPress error: {error_msg}"}), resp.status_code
+
+
 def _extract_h5p(h5p_path: Path) -> str:
     """
     Extract an H5P file (ZIP archive) into a folder for browser playback.
