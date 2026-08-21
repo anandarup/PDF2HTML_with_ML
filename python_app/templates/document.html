@@ -1288,6 +1288,29 @@
       color: var(--color-text-secondary);
     }
 
+    body.edit-mode .document-body > *::after {
+      content: '×';
+      position: absolute;
+      right: -8px;
+      top: -8px;
+      width: 20px;
+      height: 20px;
+      background: #ef4444;
+      color: #fff;
+      border-radius: 50%;
+      font-size: 14px;
+      line-height: 20px;
+      text-align: center;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 10;
+    }
+
+    body.edit-mode .document-body > *:hover::after {
+      opacity: 1;
+    }
+
     body.edit-mode .document-body > .dragging {
       opacity: 0.4;
       transform: scale(0.98);
@@ -2387,12 +2410,33 @@
         for (var i = 0; i < children.length; i++) {
           enableDrag(children[i]);
         }
+        // Add delete handler for the × button (pseudo-element at top-right)
+        docBody.addEventListener('click', handleDeleteClick);
       }
 
       function teardownDragDrop() {
         var children = docBody.children;
         for (var i = 0; i < children.length; i++) {
           children[i].removeAttribute('draggable');
+        }
+        docBody.removeEventListener('click', handleDeleteClick);
+      }
+
+      function handleDeleteClick(e) {
+        if (!isEditing) return;
+        var target = e.target;
+        // Only act on direct children of docBody
+        if (target.parentNode !== docBody) return;
+        // Check if click was in the top-right corner (where × pseudo-element is)
+        var rect = target.getBoundingClientRect();
+        var clickX = e.clientX - rect.right;
+        var clickY = e.clientY - rect.top;
+        if (clickX >= -28 && clickX <= 12 && clickY >= -12 && clickY <= 24) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (confirm('Remove this section?')) {
+            target.remove();
+          }
         }
       }
 
