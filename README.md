@@ -1,52 +1,78 @@
 # PDF2HTML with ML
 
-An AI-powered document conversion application that transforms PDF files into interactive, styled HTML documents. Uses IBM's Docling for intelligent layout analysis and RapidOCR for text extraction from scanned content.
+An AI-powered document conversion application that transforms PDF files into interactive, styled HTML documents with a rich content editor and CMS export capabilities. Uses IBM's Docling for intelligent layout analysis and RapidOCR for text extraction.
 
 ## Features
 
-- **AI-Powered Extraction** — Docling's DocLayNet model detects document structure (headings, paragraphs, tables, figures, lists) with high accuracy
-- **OCR Support** — RapidOCR (via ONNX Runtime) handles scanned/image-based PDFs with automatic detection of when full-page OCR is needed
-- **Responsive HTML Output** — Generated HTML includes dark mode, table of contents sidebar, floating textbook-style figures, and print styles
-- **QR Code Filtering** — Automatically detects and removes QR codes from the output using OpenCV
-- **Smart Title Detection** — Extracts the chapter/document title from the first page text rather than using the filename
-- **PDF Artifact Cleanup** — Strips page numbers, running headers/footers, glyph artifacts (`/square6`), and deduplicates repeated heading text
-- **MCQ List Restructuring** — Detects multiple-choice options `(a)-(d)` and nests them properly under their parent questions
-- **Web Frontend** — Drag-and-drop interface for uploading PDFs and viewing converted HTML in the browser
+### PDF Conversion
+- **AI-Powered Extraction** — Docling's DocLayNet model detects document structure (headings, paragraphs, tables, figures, lists)
+- **OCR Support** — RapidOCR handles scanned/image-based PDFs with automatic detection
+- **QR Code Filtering** — Detects and removes QR codes using OpenCV
+- **Smart Title Detection** — Extracts chapter title from the first page text
+- **PDF Artifact Cleanup** — Strips page numbers, running headers/footers, glyph artifacts, deduplicates headings
+- **MCQ List Restructuring** — Nests multiple-choice options properly under parent questions
+
+### Rich Text Editor
+- **Inline Editing** — Click "Edit" to make content editable directly in the browser
+- **Formatting Toolbar** — Bold, Italic, Underline, Strikethrough, Sub/Superscript, Headings (H1-H3), Blockquote, Lists
+- **LaTeX Formulas** — Insert math expressions with live preview via MathJax 3
+- **Symbol Picker** — 64 math/science/logic symbols
+- **Font & Background Color** — Native color pickers
+- **Insert Image/Video** — Embed images and YouTube/Vimeo/direct video inline
+- **Flip Cards** — Multi-card decks with rich text, images, and formulas on each face
+- **H5P Content** — Insert interactive H5P packages inline
+- **Drag & Drop Reordering** — Reposition any block element in edit mode
+- **Section Delete** — Remove blocks with confirmation (× button on hover)
+
+### Media Attachments
+- **6 Content Types** — Video, Audio, Presentation (PPTX), H5P, Glossary, URL
+- **Icon Bar** — Appears after each heading, visible in edit mode (all icons) or learner mode (only with content)
+- **Popup Playback** — Clicking icons in learner mode opens content in a modal popup
+- **File Upload** — Upload or enter URL via a proper dialog (not browser prompt)
+- **Video Optimization** — Uploaded MP4s auto-optimized with ffmpeg faststart for streaming
+- **H5P Extraction** — .h5p files extracted and served via h5p-standalone player
+
+### CMS Export
+- **Strapi (DIKSHA CMS)** — Full integration with content-manager API:
+  - Creates Chapter linked to an existing Textbook (via documentId)
+  - Splits content into Sections by headings
+  - Each section contains `content_blocks` dynamic zone with proper block types
+  - Uploads all media to Strapi media library
+  - Maps to native blocks: text-block, image-block, video-block, audio-block, flashcard-set, h5p-block, file-upload-block, media-block
+  - Includes `designLayout` CSS for each block component
+  - Strips editor-only UI (drag handles, delete buttons) from export
+- **WordPress** — Creates draft posts via REST API with full HTML content and uploaded media
+
+### HTML Output
+- Responsive layout with dark mode support
+- Table of contents sidebar with scroll tracking
+- Textbook-style floating figures
+- Print-friendly styles
+- Video.js player for uploaded videos
+- Back-to-top button
 
 ## Architecture
 
 ```
 python_app/
-├── app.py                  # Flask web server (drag-and-drop frontend)
+├── app.py                  # Flask web server + API endpoints
 ├── convert.py              # Orchestrator: PDF → Markdown → HTML pipeline
+├── strapi_export.py        # DIKSHA Strapi CMS export module
 ├── tools/
-│   ├── extract_pdf.py      # Docling + RapidOCR extraction tool
+│   ├── extract_pdf.py      # Docling + RapidOCR extraction
 │   └── build_html.py       # Markdown → HTML with Jinja2 + cleanup
 ├── templates/
-│   └── document.html       # Jinja2 template for output HTML
+│   └── document.html       # Jinja2 template (output HTML with editor)
 ├── web_templates/
 │   └── index.html          # Frontend upload page
 └── requirements.txt
 ```
 
-**Data Flow:**
-
-```
-PDF File
-  → Docling (layout analysis + table recognition + image extraction)
-  → RapidOCR (text from image regions)
-  → Markdown (structured content with image references)
-  → Artifact Cleanup (page numbers, headers, QR codes, glyph names)
-  → Python Markdown Library (MD → HTML conversion)
-  → Jinja2 Template (styled responsive HTML with TOC)
-  → Output HTML + Images
-```
-
 ## Prerequisites
 
 - Python 3.9+
-- macOS, Linux, or Windows
-- Homebrew (macOS) for `zbar` if using pyzbar (optional — OpenCV QR detection is used by default)
+- macOS / Linux / Windows
+- ffmpeg (for video optimization): `brew install ffmpeg`
 
 ## Installation
 
@@ -56,18 +82,18 @@ cd PDF2HTML_with_ML/python_app
 pip install -r requirements.txt
 ```
 
-The first run will download Docling's AI models (~500 MB) automatically from HuggingFace.
+First run downloads Docling AI models (~500 MB) from HuggingFace.
 
 ## Usage
 
-### Web Frontend (Recommended)
+### Web Frontend
 
 ```bash
 cd python_app
 python3 app.py
 ```
 
-Open **http://localhost:8501** in your browser. Drag and drop a PDF to convert it.
+Open **http://localhost:8501** — drag and drop a PDF to convert.
 
 ### Command Line
 
@@ -76,103 +102,84 @@ cd python_app
 python3 convert.py <path-to-pdf> [output-dir]
 ```
 
-**Examples:**
-
-```bash
-# Convert with auto-detected output directory
-python3 convert.py "../testFiles/How do Organisms.pdf"
-
-# Specify output directory
-python3 convert.py "../testFiles/Methods of Enquiry.pdf" ../output/psychology
-```
-
 ### Programmatic
 
 ```python
 from convert import convert_pdf_to_html
 
-result = convert_pdf_to_html(
-    pdf_path="./document.pdf",
-    output_dir="./output/my_doc",
-)
-
-print(result["html_path"])       # Path to generated HTML
-print(result["chapter_title"])   # Detected chapter title
-print(result["page_count"])      # Number of pages
-print(result["image_count"])     # Number of extracted images
+result = convert_pdf_to_html(pdf_path="./document.pdf")
+print(result["html_path"])
+print(result["chapter_title"])
 ```
 
-## Output Structure
+## CMS Export
 
-```
-output/<document_name>/
-├── <document_name>.html        # The interactive HTML file
-└── images/
-    ├── <name>-figure-1.png     # Extracted figures
-    ├── <name>-figure-2.png
-    ├── <name>-page-1.png       # Full page renders
-    └── <name>_artifacts/       # Docling inline images
-        ├── image_000000_<hash>.png
-        └── image_000001_<hash>.png
-```
+### Strapi (DIKSHA)
+
+1. Click **Export** button on any converted document
+2. Select **Strapi** platform
+3. Enter:
+   - CMS Base URL: `https://strapi.diksha.gov.in`
+   - Admin JWT Token (from `POST /admin/login`)
+   - Textbook Document ID (parent textbook's `documentId`)
+   - Chapter Order number
+4. Click Export
+
+The system will:
+- Upload all images/media to Strapi's media library
+- Create a Chapter entry linked to the Textbook
+- Split content into Sections with `content_blocks` dynamic zone
+- Map each element to the correct Strapi block type with `designLayout` CSS
+
+### WordPress
+
+1. Click **Export** → select **WordPress**
+2. Enter site URL, username, and Application Password
+3. Creates a draft post with full content and uploaded media
 
 ## Configuration
 
-Key constants in `tools/extract_pdf.py`:
+### Upload Limits
+
+| Type | Max Size |
+|------|----------|
+| Video | 1.2 GB |
+| H5P | 400 MB |
+| PDF | 100 MB |
+| Audio | 50 MB |
+| PPT | 30 MB |
+
+### Extraction Options
 
 | Constant | Default | Description |
 |----------|---------|-------------|
-| `IMAGE_RESOLUTION_SCALE` | `2.0` | DPI multiplier for extracted images (~144 DPI) |
-| `OCR_TEXT_SCORE_THRESHOLD` | `0.4` | Minimum confidence for OCR text acceptance |
-| `OCR_BITMAP_AREA_THRESHOLD` | `0.02` | Minimum image area (% of page) to trigger OCR |
-
-Key constants in `tools/build_html.py`:
-
-| Behaviour | Rule |
-|-----------|------|
-| Running header detection | Lines appearing 3+ times are stripped |
-| Page number patterns | Standalone 1-4 digit numbers removed |
-| QR code detection | OpenCV QRCodeDetector + edge-density heuristic |
-| MCQ option nesting | Lines matching `(a)`-`(d)` are indented under parent |
+| `IMAGE_RESOLUTION_SCALE` | `2.0` | DPI multiplier for extracted images |
+| `OCR_TEXT_SCORE_THRESHOLD` | `0.4` | Minimum OCR confidence |
+| `OCR_BITMAP_AREA_THRESHOLD` | `0.02` | Min image area to trigger OCR |
 
 ## Dependencies
 
 | Package | Purpose |
 |---------|---------|
-| `docling` | AI-powered PDF layout analysis (DocLayNet + TableFormer) |
-| `docling-core` | Document data types and export formats |
-| `onnxruntime` | Inference engine for RapidOCR models |
+| `docling` | AI-powered PDF layout analysis |
+| `onnxruntime` | RapidOCR inference engine |
 | `markdown` | Markdown → HTML conversion |
 | `Jinja2` | HTML template rendering |
-| `flask` | Web server for the upload frontend |
+| `flask` | Web server |
 | `opencv-python` | QR code detection |
+| `requests` | CMS API calls |
 | `Pillow` | Image processing |
 
-## How It Works
+## API Endpoints
 
-1. **PDF Ingestion** — Docling parses the PDF using its AI layout model, identifying document elements (text blocks, tables, figures, headings) and their reading order.
-
-2. **OCR Layer** — RapidOCR processes image regions where no embedded text exists. For fully scanned PDFs (detected by low text-per-page ratio), full-page OCR is enabled automatically.
-
-3. **Markdown Export** — Docling exports the structured document as Markdown with image references. Figures are saved as individual PNG files.
-
-4. **Cleanup Pipeline** — The build tool runs several sanity passes:
-   - Remove QR codes (OpenCV detection on absolute image paths)
-   - Rewrite image paths to relative (for HTML portability)
-   - Strip PDF artifacts (page numbers, repeated headers, glyph names)
-   - Fix numbered list structure (MCQ options as nested bullets)
-   - Deduplicate repeated heading text
-
-5. **HTML Generation** — The cleaned Markdown is converted to HTML using Python's `markdown` library, then injected into a Jinja2 template with responsive CSS, dark mode, TOC sidebar, and floating figures.
-
-6. **Title Detection** — The chapter title is extracted from the first page's raw text (via PyMuPDF), falling back to cleaned heading text or the filename.
-
-## Limitations
-
-- **Scanned PDFs** — OCR quality depends on scan resolution. Very low-quality scans may produce incomplete text.
-- **Complex Vector Diagrams** — Diagrams rendered as pure vector paths may not be captured as images by Docling (they appear as text layout elements).
-- **Right-to-Left Languages** — Currently configured for English. Change `lang` in `RapidOcrOptions` for other languages.
-- **Processing Time** — First conversion downloads AI models. Subsequent conversions take 15-90 seconds depending on page count and image density.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Upload page |
+| POST | `/convert` | Convert uploaded PDF |
+| GET | `/output/<dir>/<file>` | Serve converted files |
+| PUT | `/output/<dir>/<file>` | Save edited content |
+| POST | `/upload-media/<dir>` | Upload media file |
+| POST | `/export-cms` | Export to Strapi/WordPress |
 
 ## License
 
