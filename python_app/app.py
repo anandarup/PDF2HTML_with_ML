@@ -303,9 +303,13 @@ def export_cms():
 
 
 def _export_to_strapi(data: dict, base_url: str, title: str, body_html: str, http_client) -> tuple:
-    """Push content to Strapi v4 REST API."""
+    """Push content to Strapi v4/v5 REST API."""
     api_token = data.get("api_token", "")
     content_type = data.get("content_type", "articles")
+
+    # Strip trailing slashes — Strapi returns 405 on double slashes
+    base_url = base_url.rstrip("/")
+    content_type = content_type.strip().strip("/")
 
     endpoint = f"{base_url}/api/{content_type}"
     headers = {
@@ -329,9 +333,23 @@ def _export_to_strapi(data: dict, base_url: str, title: str, body_html: str, htt
             "url": f"{base_url}/api/{content_type}/{entry_id}",
             "message": f"Created {content_type} entry #{entry_id}",
         }), 200
+    elif resp.status_code == 405:
+        return jsonify({
+            "error": (
+                "Method Not Allowed (405). Check Strapi configuration:\n"
+                "1. Ensure the content type API ID is correct (e.g., 'articles' not 'article')\n"
+                "2. In Strapi Admin → Settings → Roles → select the token's role → "
+                "enable 'create' permission for this content type\n"
+                "3. Ensure the Base URL has no trailing slash"
+            )
+        }), 405
+    elif resp.status_code == 403:
+        return jsonify({
+            "error": "Forbidden (403). The API token doesn't have 'create' permission for this content type."
+        }), 403
     else:
-        error_msg = resp.text[:200] if resp.text else f"HTTP {resp.status_code}"
-        return jsonify({"error": f"Strapi error: {error_msg}"}), resp.status_code
+        error_msg = resp.text[:300] if resp.text else f"HTTP {resp.status_code}"
+        return jsonify({"error": f"Strapi error ({resp.status_code}): {error_msg}"}), resp.status_code
 
 
 def _export_to_wordpress(data: dict, base_url: str, title: str, body_html: str, http_client) -> tuple:
