@@ -362,20 +362,35 @@
       e.preventDefault();
       dropZone.classList.remove('drag-over');
       const files = e.dataTransfer.files;
-      if (files.length > 0 && files[0].name.toLowerCase().endsWith('.pdf')) {
-        uploadAndConvert(files[0]);
-      } else {
-        showError('Please drop a valid PDF file.');
+      if (files.length > 0) {
+        validateAndUpload(files[0]);
       }
     });
 
     fileInput.addEventListener('change', () => {
       if (fileInput.files.length > 0) {
-        uploadAndConvert(fileInput.files[0]);
+        validateAndUpload(fileInput.files[0]);
       }
     });
 
     convertAnother.addEventListener('click', resetUI);
+
+    // Keep in sync with UPLOAD_LIMITS['pdf'] in app.py — checking client-side
+    // avoids making a teacher wait through a full upload only to be
+    // rejected by the server afterward.
+    const MAX_PDF_SIZE_BYTES = 100 * 1024 * 1024;
+
+    function validateAndUpload(file) {
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        showError('Please choose a valid PDF file.');
+        return;
+      }
+      if (file.size > MAX_PDF_SIZE_BYTES) {
+        showError(`"${file.name}" is ${formatBytes(file.size)}, which is over the 100 MB limit. Try a smaller file.`);
+        return;
+      }
+      uploadAndConvert(file);
+    }
 
     function uploadAndConvert(file) {
       // Reset UI

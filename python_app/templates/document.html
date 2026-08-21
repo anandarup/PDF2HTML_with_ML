@@ -523,7 +523,7 @@
     }
 
     .edit-toolbar button {
-      padding: 0.4rem 0.6rem;
+      padding: 0.5rem 0.65rem;
       border: 1px solid var(--color-border);
       border-radius: 4px;
       background: var(--color-bg);
@@ -532,7 +532,8 @@
       font-size: 0.85rem;
       font-weight: 500;
       transition: background 0.15s, border-color 0.15s;
-      min-width: 32px;
+      min-width: 40px;
+      min-height: 40px;
       text-align: center;
     }
 
@@ -785,8 +786,8 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 36px;
-      height: 36px;
+      width: 40px;
+      height: 40px;
       border-radius: 6px;
       border: 1px solid var(--color-border);
       background: var(--color-bg);
@@ -1378,41 +1379,41 @@
 
   <div class="edit-toolbar" id="editToolbar" role="toolbar" aria-label="Formatting toolbar">
     <div class="toolbar-group">
-      <button type="button" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
-      <button type="button" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
-      <button type="button" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
-      <button type="button" data-cmd="strikethrough" title="Strikethrough"><s>S</s></button>
-      <button type="button" data-cmd="subscript" title="Subscript">X<sub>2</sub></button>
-      <button type="button" data-cmd="superscript" title="Superscript">X<sup>2</sup></button>
+      <button type="button" data-cmd="bold" title="Bold (Ctrl+B)" aria-label="Bold"><b>B</b></button>
+      <button type="button" data-cmd="italic" title="Italic (Ctrl+I)" aria-label="Italic"><i>I</i></button>
+      <button type="button" data-cmd="underline" title="Underline (Ctrl+U)" aria-label="Underline"><u>U</u></button>
+      <button type="button" data-cmd="strikethrough" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
+      <button type="button" data-cmd="subscript" title="Subscript" aria-label="Subscript">X<sub>2</sub></button>
+      <button type="button" data-cmd="superscript" title="Superscript" aria-label="Superscript">X<sup>2</sup></button>
     </div>
     <div class="toolbar-group">
-      <button type="button" data-cmd="formatBlock" data-val="h1" title="Heading 1">H1</button>
-      <button type="button" data-cmd="formatBlock" data-val="h2" title="Heading 2">H2</button>
-      <button type="button" data-cmd="formatBlock" data-val="h3" title="Heading 3">H3</button>
-      <button type="button" data-cmd="formatBlock" data-val="p" title="Paragraph">P</button>
-      <button type="button" data-cmd="formatBlock" data-val="blockquote" title="Blockquote">&#8220;</button>
+      <button type="button" data-cmd="formatBlock" data-val="h1" title="Heading 1" aria-label="Heading 1">H1</button>
+      <button type="button" data-cmd="formatBlock" data-val="h2" title="Heading 2" aria-label="Heading 2">H2</button>
+      <button type="button" data-cmd="formatBlock" data-val="h3" title="Heading 3" aria-label="Heading 3">H3</button>
+      <button type="button" data-cmd="formatBlock" data-val="p" title="Paragraph" aria-label="Paragraph">P</button>
+      <button type="button" data-cmd="formatBlock" data-val="blockquote" title="Blockquote" aria-label="Blockquote">&#8220;</button>
     </div>
     <div class="toolbar-group">
-      <button type="button" data-cmd="insertUnorderedList" title="Bullet list">&#8226; List</button>
-      <button type="button" data-cmd="insertOrderedList" title="Numbered list">1. List</button>
+      <button type="button" data-cmd="insertUnorderedList" title="Bullet list" aria-label="Bullet list">&#8226; List</button>
+      <button type="button" data-cmd="insertOrderedList" title="Numbered list" aria-label="Numbered list">1. List</button>
     </div>
     <div class="toolbar-group">
-      <button type="button" id="btnFormula" title="Insert LaTeX formula">&#8721; Formula</button>
-      <button type="button" id="btnSymbol" title="Insert symbol">&#937; Symbol</button>
+      <button type="button" id="btnFormula" title="Insert LaTeX formula" aria-label="Insert LaTeX formula">&#8721; Formula</button>
+      <button type="button" id="btnSymbol" title="Insert symbol" aria-label="Insert symbol">&#937; Symbol</button>
     </div>
     <div class="toolbar-group">
-      <label title="Font color" style="cursor:pointer;display:inline-flex;align-items:center;gap:2px;padding:0.4rem 0.5rem;border:1px solid var(--color-border);border-radius:4px;">A<input type="color" id="btnFontColor" value="#000000" style="width:16px;height:16px;border:none;padding:0;cursor:pointer;" /></label>
-      <label title="Background color" style="cursor:pointer;display:inline-flex;align-items:center;gap:2px;padding:0.4rem 0.5rem;border:1px solid var(--color-border);border-radius:4px;">&#9632;<input type="color" id="btnBgColor" value="#ffff00" style="width:16px;height:16px;border:none;padding:0;cursor:pointer;" /></label>
+      <label title="Font color" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:3px;padding:0.5rem 0.65rem;min-width:40px;min-height:40px;border:1px solid var(--color-border);border-radius:4px;">A<input type="color" id="btnFontColor" value="#000000" aria-label="Font color" style="width:20px;height:20px;border:none;padding:0;cursor:pointer;" /></label>
+      <label title="Background color" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:3px;padding:0.5rem 0.65rem;min-width:40px;min-height:40px;border:1px solid var(--color-border);border-radius:4px;">&#9632;<input type="color" id="btnBgColor" value="#ffff00" aria-label="Background color" style="width:20px;height:20px;border:none;padding:0;cursor:pointer;" /></label>
     </div>
     <div class="toolbar-group">
-      <button type="button" id="btnInsertImage" title="Insert image">&#128247; Image</button>
-      <button type="button" id="btnInsertVideo" title="Insert video">&#127909; Video</button>
-      <button type="button" id="btnInsertH5P" title="Insert H5P content">&#127922; H5P</button>
-      <button type="button" id="btnFlipCard" title="Insert flip card">&#128196; Flip Card</button>
+      <button type="button" id="btnInsertImage" title="Insert image" aria-label="Insert image">&#128247; Image</button>
+      <button type="button" id="btnInsertVideo" title="Insert video" aria-label="Insert video">&#127909; Video</button>
+      <button type="button" id="btnInsertH5P" title="Insert H5P content" aria-label="Insert H5P content">&#127922; H5P</button>
+      <button type="button" id="btnFlipCard" title="Insert flip card" aria-label="Insert flip card">&#128196; Flip Card</button>
     </div>
     <div class="toolbar-group">
-      <button type="button" data-cmd="undo" title="Undo (Ctrl+Z)">Undo</button>
-      <button type="button" data-cmd="redo" title="Redo (Ctrl+Y)">Redo</button>
+      <button type="button" data-cmd="undo" title="Undo (Ctrl+Z)" aria-label="Undo">Undo</button>
+      <button type="button" data-cmd="redo" title="Redo (Ctrl+Y)" aria-label="Redo">Redo</button>
     </div>
     <div class="toolbar-group">
       <span class="save-status" id="saveStatus"></span>
@@ -1422,9 +1423,9 @@
   </div>
 
   <!-- Formula Input Dialog -->
-  <div class="modal-overlay" id="formulaModal">
+  <div class="modal-overlay" id="formulaModal" role="dialog" aria-modal="true" aria-labelledby="formulaModalTitle">
     <div class="modal-dialog">
-      <h3>Insert LaTeX Formula</h3>
+      <h3 id="formulaModalTitle">Insert LaTeX Formula</h3>
       <div class="formula-tabs">
         <button type="button" class="formula-tab active" data-tab="custom">Custom</button>
         <button type="button" class="formula-tab" data-tab="templates">Templates</button>
@@ -1440,26 +1441,26 @@
       </div>
       <div class="formula-panel hidden" id="formulaTemplates">
         <div class="formula-grid">
-          <button type="button" class="formula-tpl" data-latex="\\frac{a}{b}" title="Fraction">&#x00B9;&#8260;&#x2082;</button>
-          <button type="button" class="formula-tpl" data-latex="\\sqrt{x}" title="Square root">&#8730;x</button>
-          <button type="button" class="formula-tpl" data-latex="\\sum_{i=1}^{n}" title="Summation">&#8721;</button>
-          <button type="button" class="formula-tpl" data-latex="\\int_{a}^{b}" title="Integral">&#8747;</button>
-          <button type="button" class="formula-tpl" data-latex="\\lim_{x \\to \\infty}" title="Limit">lim</button>
-          <button type="button" class="formula-tpl" data-latex="\\vec{v}" title="Vector">v&#8407;</button>
-          <button type="button" class="formula-tpl" data-latex="\\alpha" title="Alpha">&#945;</button>
-          <button type="button" class="formula-tpl" data-latex="\\beta" title="Beta">&#946;</button>
-          <button type="button" class="formula-tpl" data-latex="\\gamma" title="Gamma">&#947;</button>
-          <button type="button" class="formula-tpl" data-latex="\\theta" title="Theta">&#952;</button>
-          <button type="button" class="formula-tpl" data-latex="\\pi" title="Pi">&#960;</button>
-          <button type="button" class="formula-tpl" data-latex="\\infty" title="Infinity">&#8734;</button>
-          <button type="button" class="formula-tpl" data-latex="\\neq" title="Not equal">&#8800;</button>
-          <button type="button" class="formula-tpl" data-latex="\\leq" title="Less or equal">&#8804;</button>
-          <button type="button" class="formula-tpl" data-latex="\\geq" title="Greater or equal">&#8805;</button>
-          <button type="button" class="formula-tpl" data-latex="\\pm" title="Plus minus">&#177;</button>
-          <button type="button" class="formula-tpl" data-latex="\\times" title="Times">&#215;</button>
-          <button type="button" class="formula-tpl" data-latex="\\div" title="Division">&#247;</button>
-          <button type="button" class="formula-tpl" data-latex="\\rightarrow" title="Right arrow">&#8594;</button>
-          <button type="button" class="formula-tpl" data-latex="\\Rightarrow" title="Implies">&#8658;</button>
+          <button type="button" class="formula-tpl" data-latex="\\frac{a}{b}" title="Fraction" aria-label="Insert fraction">&#x00B9;&#8260;&#x2082;</button>
+          <button type="button" class="formula-tpl" data-latex="\\sqrt{x}" title="Square root" aria-label="Insert square root">&#8730;x</button>
+          <button type="button" class="formula-tpl" data-latex="\\sum_{i=1}^{n}" title="Summation" aria-label="Insert summation">&#8721;</button>
+          <button type="button" class="formula-tpl" data-latex="\\int_{a}^{b}" title="Integral" aria-label="Insert integral">&#8747;</button>
+          <button type="button" class="formula-tpl" data-latex="\\lim_{x \\to \\infty}" title="Limit" aria-label="Insert limit">lim</button>
+          <button type="button" class="formula-tpl" data-latex="\\vec{v}" title="Vector" aria-label="Insert vector">v&#8407;</button>
+          <button type="button" class="formula-tpl" data-latex="\\alpha" title="Alpha" aria-label="Insert alpha">&#945;</button>
+          <button type="button" class="formula-tpl" data-latex="\\beta" title="Beta" aria-label="Insert beta">&#946;</button>
+          <button type="button" class="formula-tpl" data-latex="\\gamma" title="Gamma" aria-label="Insert gamma">&#947;</button>
+          <button type="button" class="formula-tpl" data-latex="\\theta" title="Theta" aria-label="Insert theta">&#952;</button>
+          <button type="button" class="formula-tpl" data-latex="\\pi" title="Pi" aria-label="Insert pi">&#960;</button>
+          <button type="button" class="formula-tpl" data-latex="\\infty" title="Infinity" aria-label="Insert infinity">&#8734;</button>
+          <button type="button" class="formula-tpl" data-latex="\\neq" title="Not equal" aria-label="Insert not-equal sign">&#8800;</button>
+          <button type="button" class="formula-tpl" data-latex="\\leq" title="Less or equal" aria-label="Insert less-than-or-equal sign">&#8804;</button>
+          <button type="button" class="formula-tpl" data-latex="\\geq" title="Greater or equal" aria-label="Insert greater-than-or-equal sign">&#8805;</button>
+          <button type="button" class="formula-tpl" data-latex="\\pm" title="Plus minus" aria-label="Insert plus-minus sign">&#177;</button>
+          <button type="button" class="formula-tpl" data-latex="\\times" title="Times" aria-label="Insert multiplication sign">&#215;</button>
+          <button type="button" class="formula-tpl" data-latex="\\div" title="Division" aria-label="Insert division sign">&#247;</button>
+          <button type="button" class="formula-tpl" data-latex="\\rightarrow" title="Right arrow" aria-label="Insert right arrow">&#8594;</button>
+          <button type="button" class="formula-tpl" data-latex="\\Rightarrow" title="Implies" aria-label="Insert implies arrow">&#8658;</button>
         </div>
       </div>
       <div class="modal-actions">
@@ -1470,9 +1471,9 @@
   </div>
 
   <!-- Symbol Picker Dialog -->
-  <div class="modal-overlay" id="symbolModal">
+  <div class="modal-overlay" id="symbolModal" role="dialog" aria-modal="true" aria-labelledby="symbolModalTitle">
     <div class="modal-dialog">
-      <h3>Insert Symbol</h3>
+      <h3 id="symbolModalTitle">Insert Symbol</h3>
       <div class="symbol-grid" id="symbolGrid"></div>
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="symbolCancel">Close</button>
@@ -1481,7 +1482,7 @@
   </div>
 
   <!-- Media Content Popup -->
-  <div class="media-popup-overlay" id="mediaPopup">
+  <div class="media-popup-overlay" id="mediaPopup" role="dialog" aria-modal="true" aria-labelledby="mediaPopupTitle">
     <div class="media-popup">
       <div class="media-popup-header">
         <h3 id="mediaPopupTitle"></h3>
@@ -1492,7 +1493,7 @@
   </div>
 
   <!-- Media Input Modal (Upload or URL) -->
-  <div class="modal-overlay" id="mediaInputModal">
+  <div class="modal-overlay" id="mediaInputModal" role="dialog" aria-modal="true" aria-labelledby="mediaInputTitle">
     <div class="modal-dialog" style="max-width:460px">
       <h3 id="mediaInputTitle">Add Media</h3>
       <div class="media-input-section">
@@ -1516,9 +1517,9 @@
   </div>
 
   <!-- Flip Card Creator Modal -->
-  <div class="modal-overlay" id="flipCardModal">
+  <div class="modal-overlay" id="flipCardModal" role="dialog" aria-modal="true" aria-labelledby="flipCardModalTitle">
     <div class="modal-dialog" style="max-width:560px">
-      <h3>Create Flip Cards</h3>
+      <h3 id="flipCardModalTitle">Create Flip Cards</h3>
       <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Add one or more cards with a front (question/term) and back (answer/definition).</p>
       <div id="flipCardRows"></div>
       <button type="button" id="flipCardAddRow" style="margin:0.75rem 0;padding:0.4rem 0.8rem;border:1px dashed var(--color-border);border-radius:6px;background:none;color:var(--color-link);cursor:pointer;font-size:0.85rem;width:100%;">+ Add another card</button>
@@ -1529,10 +1530,44 @@
     </div>
   </div>
 
+  <!-- Generic single-field Prompt Modal (replaces native prompt() calls) -->
+  <div class="modal-overlay" id="promptModal" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle">
+    <div class="modal-dialog" style="max-width:460px">
+      <h3 id="promptModalTitle">Enter a value</h3>
+      <div class="media-input-section">
+        <label class="media-input-label" for="promptModalInput" id="promptModalLabel">Value</label>
+        <input type="text" id="promptModalInput" class="media-url-field" />
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="promptModalCancel">Cancel</button>
+        <button type="button" class="btn-save" id="promptModalSubmit">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-field Glossary Modal (replaces the pipe-delimited native prompt()) -->
+  <div class="modal-overlay" id="glossaryModal" role="dialog" aria-modal="true" aria-labelledby="glossaryModalTitle">
+    <div class="modal-dialog" style="max-width:460px">
+      <h3 id="glossaryModalTitle">Add Glossary Entry</h3>
+      <div class="media-input-section">
+        <label class="media-input-label" for="glossaryTermInput">Term</label>
+        <input type="text" id="glossaryTermInput" class="media-url-field" placeholder="e.g. Photosynthesis" />
+      </div>
+      <div class="media-input-section" style="margin-top:0.75rem;">
+        <label class="media-input-label" for="glossaryDefInput">Definition</label>
+        <textarea id="glossaryDefInput" class="media-url-field" rows="3" placeholder="e.g. The process by which plants convert light into energy"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="glossaryModalCancel">Cancel</button>
+        <button type="button" class="btn-save" id="glossaryModalSubmit">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Export to CMS Modal -->
-  <div class="modal-overlay" id="exportModal">
+  <div class="modal-overlay" id="exportModal" role="dialog" aria-modal="true" aria-labelledby="exportModalTitle">
     <div class="modal-dialog" style="max-width:480px">
-      <h3>Export to CMS</h3>
+      <h3 id="exportModalTitle">Export to CMS</h3>
       <div class="media-input-section">
         <label class="media-input-label">Platform</label>
         <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
@@ -1634,16 +1669,31 @@
       editToggle.addEventListener('click', function() {
         if (!isEditing) {
           enterEditMode();
-        } else {
-          exitEditMode(false);
+        } else if (!hasUnsavedChanges() || confirm('You have unsaved changes. Stop editing and discard them?')) {
+          exitEditMode(true);
         }
       });
 
       editCancel.addEventListener('click', function() {
-        exitEditMode(true);
+        if (!hasUnsavedChanges() || confirm('Discard your unsaved changes?')) {
+          exitEditMode(true);
+        }
       });
 
       editSave.addEventListener('click', saveContent);
+
+      function hasUnsavedChanges() {
+        return isEditing && docBody.innerHTML !== originalContent;
+      }
+
+      // Warn before leaving the page (tab close, refresh, navigation) with
+      // unsaved edits still in the DOM but not persisted to the server.
+      window.addEventListener('beforeunload', function(e) {
+        if (hasUnsavedChanges()) {
+          e.preventDefault();
+          e.returnValue = '';
+        }
+      });
 
       // Toolbar formatting commands
       editToolbar.addEventListener('click', function(e) {
@@ -1751,6 +1801,109 @@
           saveContent();
         }
       });
+
+      // Opening a modal moves focus away from the contenteditable body,
+      // which collapses/clears its text selection — save it before the
+      // modal opens and restore it before running execCommand, or the
+      // insert lands in the wrong place (or is silently dropped).
+      function saveDocBodySelection() {
+        var sel = window.getSelection();
+        return sel.rangeCount > 0 ? sel.getRangeAt(0).cloneRange() : null;
+      }
+      function restoreDocBodySelection(range) {
+        if (!range) return;
+        docBody.focus();
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+
+      // --- Generic single-field Prompt Modal (replaces native prompt()) ---
+      // Returns a Promise that resolves with the trimmed value, or null if
+      // the user cancelled / closed / submitted an empty value.
+      function showPromptModal(opts) {
+        opts = opts || {};
+        return new Promise(function(resolve) {
+          var modal = document.getElementById('promptModal');
+          var titleEl = document.getElementById('promptModalTitle');
+          var labelEl = document.getElementById('promptModalLabel');
+          var input = document.getElementById('promptModalInput');
+          var submitBtn = document.getElementById('promptModalSubmit');
+          var cancelBtn = document.getElementById('promptModalCancel');
+
+          titleEl.textContent = opts.title || 'Enter a value';
+          labelEl.textContent = opts.label || 'Value';
+          input.placeholder = opts.placeholder || '';
+          input.value = opts.defaultValue || '';
+
+          modal.classList.add('visible');
+          input.focus();
+
+          function cleanup() {
+            modal.classList.remove('visible');
+            submitBtn.removeEventListener('click', onSubmit);
+            cancelBtn.removeEventListener('click', onCancel);
+            modal.removeEventListener('click', onBackdrop);
+            input.removeEventListener('keydown', onKeydown);
+          }
+          function onSubmit() {
+            var value = input.value.trim();
+            cleanup();
+            resolve(value || null);
+          }
+          function onCancel() { cleanup(); resolve(null); }
+          function onBackdrop(e) { if (e.target === modal) onCancel(); }
+          function onKeydown(e) {
+            if (e.key === 'Enter') { e.preventDefault(); onSubmit(); }
+          }
+
+          submitBtn.addEventListener('click', onSubmit);
+          cancelBtn.addEventListener('click', onCancel);
+          modal.addEventListener('click', onBackdrop);
+          input.addEventListener('keydown', onKeydown);
+        });
+      }
+
+      // --- Glossary Modal (replaces the "term | definition" native prompt) ---
+      // Returns a Promise resolving with "term | definition" (matching the
+      // existing storage format read by showMediaContent), or null if
+      // cancelled / left both fields empty.
+      function showGlossaryModal(currentValue) {
+        return new Promise(function(resolve) {
+          var modal = document.getElementById('glossaryModal');
+          var termInput = document.getElementById('glossaryTermInput');
+          var defInput = document.getElementById('glossaryDefInput');
+          var submitBtn = document.getElementById('glossaryModalSubmit');
+          var cancelBtn = document.getElementById('glossaryModalCancel');
+
+          var parts = (currentValue || '').split('|');
+          termInput.value = parts[0] ? parts[0].trim() : '';
+          defInput.value = parts[1] ? parts[1].trim() : '';
+
+          modal.classList.add('visible');
+          termInput.focus();
+
+          function cleanup() {
+            modal.classList.remove('visible');
+            submitBtn.removeEventListener('click', onSubmit);
+            cancelBtn.removeEventListener('click', onCancel);
+            modal.removeEventListener('click', onBackdrop);
+          }
+          function onSubmit() {
+            var term = termInput.value.trim();
+            var def = defInput.value.trim();
+            cleanup();
+            if (!term && !def) { resolve(null); return; }
+            resolve(term + ' | ' + def);
+          }
+          function onCancel() { cleanup(); resolve(null); }
+          function onBackdrop(e) { if (e.target === modal) onCancel(); }
+
+          submitBtn.addEventListener('click', onSubmit);
+          cancelBtn.addEventListener('click', onCancel);
+          modal.addEventListener('click', onBackdrop);
+        });
+      }
 
       // --- Formula Modal ---
       var formulaModal = document.getElementById('formulaModal');
@@ -1869,6 +2022,7 @@
         btn.className = 'symbol-btn';
         btn.textContent = sym;
         btn.title = 'Insert ' + sym;
+        btn.setAttribute('aria-label', 'Insert symbol ' + sym);
         btn.addEventListener('click', function() {
           docBody.focus();
           document.execCommand('insertText', false, sym);
@@ -1906,32 +2060,54 @@
 
       // --- Insert Image ---
       document.getElementById('btnInsertImage').addEventListener('click', function() {
-        var url = prompt('Image URL:');
-        if (url && url.trim()) {
-          document.execCommand('insertImage', false, url.trim());
-        }
+        var savedRange = saveDocBodySelection();
+        showPromptModal({
+          title: 'Insert Image',
+          label: 'Image URL',
+          placeholder: 'https://...'
+        }).then(function(url) {
+          if (!url) return;
+          restoreDocBodySelection(savedRange);
+          document.execCommand('insertImage', false, url);
+        });
       });
 
       // --- Insert Video ---
       document.getElementById('btnInsertVideo').addEventListener('click', function() {
-        var url = prompt('Video URL (YouTube, Vimeo, or direct .mp4):');
-        if (!url || !url.trim()) return;
-        url = url.trim();
-        var embedUrl = getEmbedUrl(url);
-        var html = '';
-        if (embedUrl) {
-          html = '<div style="position:relative;width:100%;padding-bottom:56.25%;margin:1em 0;"><iframe src="' + embedUrl + '" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;border-radius:6px;" allowfullscreen></iframe></div>';
-        } else {
-          html = '<video controls preload="metadata" src="' + url + '" style="width:100%;max-width:640px;border-radius:6px;margin:1em 0;"></video>';
-        }
-        document.execCommand('insertHTML', false, html);
+        var savedRange = saveDocBodySelection();
+        showPromptModal({
+          title: 'Insert Video',
+          label: 'Video URL',
+          placeholder: 'YouTube, Vimeo, or direct .mp4 link'
+        }).then(function(url) {
+          if (!url) return;
+          var embedUrl = getEmbedUrl(url);
+          var html = '';
+          if (embedUrl) {
+            html = '<div style="position:relative;width:100%;padding-bottom:56.25%;margin:1em 0;"><iframe src="' + embedUrl + '" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;border-radius:6px;" allowfullscreen></iframe></div>';
+          } else {
+            html = '<video controls preload="metadata" src="' + url + '" style="width:100%;max-width:640px;border-radius:6px;margin:1em 0;"></video>';
+          }
+          restoreDocBodySelection(savedRange);
+          document.execCommand('insertHTML', false, html);
+        });
       });
 
       // --- Insert H5P ---
       document.getElementById('btnInsertH5P').addEventListener('click', function() {
-        var src = prompt('H5P content URL (folder path or embed URL):');
-        if (!src || !src.trim()) return;
-        src = src.trim();
+        var savedRange = saveDocBodySelection();
+        showPromptModal({
+          title: 'Insert H5P Content',
+          label: 'H5P content URL',
+          placeholder: 'Folder path or embed URL'
+        }).then(function(src) {
+          if (!src) return;
+          restoreDocBodySelection(savedRange);
+          insertH5PContent(src);
+        });
+      });
+
+      function insertH5PContent(src) {
         var h5pId = 'h5p-inline-' + Date.now();
         var html = '<div id="' + h5pId + '" class="h5p-inline-container" data-h5p-src="' + src + '" style="min-height:300px;border:1px solid var(--color-border);border-radius:8px;margin:1em 0;padding:1rem;"></div>';
         document.execCommand('insertHTML', false, html);
@@ -1948,7 +2124,7 @@
             el.innerHTML = '<p style="text-align:center;color:var(--color-text-secondary);padding:2rem;">H5P content: <a href="' + src + '" target="_blank">' + src + '</a></p>';
           }
         }, 200);
-      });
+      }
 
       // --- Insert Flip Card ---
       document.getElementById('btnFlipCard').addEventListener('click', function() {
@@ -2099,6 +2275,16 @@
         { key: 'url', icon: '&#128279;', label: 'URL Link' }
       ];
 
+      // Keeps the icon's accessible name in sync with whether it has content
+      // attached, since title/aria-label alone don't convey the has-content
+      // state to screen reader users the way the visual dot indicator does.
+      function updateMediaBtnLabel(btn, type) {
+        var hasContent = btn.classList.contains('has-content');
+        var label = type.label + (hasContent ? ' (attached — click to view or edit)' : ' (not added yet)');
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+      }
+
       function initSectionMedia() {
         var headings = docBody.querySelectorAll('h1, h2, h3');
         headings.forEach(function(heading) {
@@ -2109,6 +2295,7 @@
               var mediaKey = btn.getAttribute('data-media-type');
               var matchedType = MEDIA_TYPES.find(function(t) { return t.key === mediaKey; });
               if (matchedType) {
+                updateMediaBtnLabel(btn, matchedType);
                 btn.addEventListener('click', function(e) {
                   e.stopPropagation();
                   handleMediaClick(btn, matchedType);
@@ -2129,7 +2316,7 @@
             btn.setAttribute('data-media-type', type.key);
             btn.setAttribute('data-media-src', '');
             btn.innerHTML = type.icon;
-            btn.title = type.label;
+            updateMediaBtnLabel(btn, type);
             btn.addEventListener('click', function(e) {
               e.stopPropagation();
               handleMediaClick(btn, type);
@@ -2150,10 +2337,12 @@
         // Glossary and URL don't need file upload — use simple input modal
         if (type.key === 'glossary') {
           var currentSrc = btn.getAttribute('data-media-src') || '';
-          var newSrc = prompt('Glossary term and definition (format: term | definition):', currentSrc);
-          if (newSrc === null) return;
-          btn.setAttribute('data-media-src', newSrc);
-          btn.classList.toggle('has-content', newSrc.trim().length > 0);
+          showGlossaryModal(currentSrc).then(function(newSrc) {
+            if (newSrc === null) return;
+            btn.setAttribute('data-media-src', newSrc);
+            btn.classList.toggle('has-content', newSrc.trim().length > 0);
+            updateMediaBtnLabel(btn, type);
+          });
           return;
         }
 
@@ -2217,6 +2406,7 @@
             // Clear the media
             btn.setAttribute('data-media-src', '');
             btn.classList.remove('has-content');
+            updateMediaBtnLabel(btn, type);
             cleanup();
             return;
           }
@@ -2228,6 +2418,7 @@
             uploadMediaFile(file, type.key).then(function(result) {
               btn.setAttribute('data-media-src', result.url);
               btn.classList.add('has-content');
+              updateMediaBtnLabel(btn, type);
               statusEl.textContent = '';
               submitBtn.disabled = false;
               cleanup();
@@ -2239,6 +2430,7 @@
             // Use the URL directly
             btn.setAttribute('data-media-src', url);
             btn.classList.add('has-content');
+            updateMediaBtnLabel(btn, type);
             cleanup();
           }
         }
@@ -2663,6 +2855,55 @@
           exportStatus.style.color = '#ef4444';
           exportStatus.textContent = 'Error: ' + err.message;
         });
+      });
+    })();
+
+    // --- Global Escape-to-close for every modal/popup ---
+    // The media popup already had its own Escape handler; this covers the
+    // Formula, Symbol, Media Input, Flip Card, Export, Prompt and Glossary
+    // dialogs too, so keyboard behavior is consistent across all of them.
+    // Escape triggers each dialog's own Cancel/Close button (rather than
+    // just hiding the overlay) so any dialog-specific cleanup — removing
+    // its one-time listeners, resolving a pending Promise, disposing a
+    // video player — still runs correctly.
+    (function() {
+      var CLOSE_BUTTON_BY_OVERLAY = {
+        formulaModal: 'formulaCancel',
+        symbolModal: 'symbolCancel',
+        mediaPopup: 'mediaPopupClose',
+        mediaInputModal: 'mediaInputCancel',
+        flipCardModal: 'flipCardCancel',
+        exportModal: 'exportCancel',
+        promptModal: 'promptModalCancel',
+        glossaryModal: 'glossaryModalCancel'
+      };
+      var lastFocused = null;
+
+      document.querySelectorAll('.modal-overlay, .media-popup-overlay').forEach(function(overlay) {
+        // Remember what had focus before a dialog opened, so we can restore
+        // it — helps keyboard/screen-reader users land back where they were.
+        var observer = new MutationObserver(function() {
+          if (overlay.classList.contains('visible')) {
+            lastFocused = document.activeElement;
+          }
+        });
+        observer.observe(overlay, { attributes: true, attributeFilter: ['class'] });
+      });
+
+      document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        var openOverlay = document.querySelector('.modal-overlay.visible, .media-popup-overlay.visible');
+        if (!openOverlay) return;
+        var closeBtnId = CLOSE_BUTTON_BY_OVERLAY[openOverlay.id];
+        var closeBtn = closeBtnId && document.getElementById(closeBtnId);
+        if (closeBtn) {
+          closeBtn.click();
+        } else {
+          openOverlay.classList.remove('visible');
+        }
+        if (lastFocused && typeof lastFocused.focus === 'function') {
+          lastFocused.focus();
+        }
       });
     })();
   </script>
