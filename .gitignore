@@ -2,7 +2,6 @@ node_modules/
 dist/
 output/
 *.log
-.env
 .DS_Store
 ._*
 __pycache__/
@@ -11,3 +10,20 @@ __pycache__/
 .pytest_cache/
 *.egg-info/
 testFiles/*.pdf
+
+# Secrets and credentials — never commit these
+.env
+.env.*
+.env.local
+.env.production
+*.pem
+*.key
+*.cert
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+secrets.yaml
+secrets.yml
+*.secret
+token.json
