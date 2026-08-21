@@ -117,6 +117,58 @@ def serve_output(job_dir: str, filename: str):
     return send_from_directory(str(directory), filename)
 
 
+@app.route("/output/<path:job_dir>/media-upload", methods=["POST"])
+def upload_media(job_dir: str):
+    """
+    Handle media file uploads for a converted document.
+
+    Saves the uploaded file to the document's media/ subdirectory
+    and returns the relative URL for embedding.
+    """
+    if "file" not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    file = request.files["file"]
+    if not file.filename:
+        return jsonify({"error": "No file selected"}), 400
+
+    # Validate the target directory exists and is within OUTPUT_DIR
+    target_dir = OUTPUT_DIR.resolve() / job_dir / "media"
+    try:
+        target_dir.resolve().relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        return jsonify({"error": "Invalid path"}), 403
+
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    # Sanitize filename: keep only safe characters
+    import re as _re
+    safe_name = _re.sub(r"[^\w\-.]", "_", file.filename)
+    if not safe_name:
+        safe_name = "upload"
+
+    # Avoid overwrites by appending a short suffix if needed
+    target_path = target_dir / safe_name
+    if target_path.exists():
+        stem = target_path.stem
+        suffix = target_path.suffix
+        counter = 1
+        while target_path.exists():
+            target_path = target_dir / f"{stem}_{counter}{suffix}"
+            counter += 1
+
+    file.save(str(target_path))
+
+    # Return the relative URL from the HTML file's perspective
+    relative_url = f"media/{target_path.name}"
+
+    return jsonify({
+        "success": True,
+        "url": relative_url,
+        "filename": target_path.name,
+    }), 201
+
+
 @app.route("/output/<path:job_dir>/<path:filename>", methods=["PUT"])
 def save_output(job_dir: str, filename: str):
     """

@@ -973,6 +973,97 @@
     .media-popup-body .url-link:hover {
       background: var(--color-border);
     }
+
+    /* Media Input Modal */
+    .media-input-section {
+      margin-bottom: 1rem;
+    }
+
+    .media-input-label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--color-text-secondary);
+      margin-bottom: 0.4rem;
+    }
+
+    .file-upload-area {
+      position: relative;
+    }
+
+    .file-input-hidden {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .file-upload-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1rem;
+      border: 2px dashed var(--color-border);
+      border-radius: 8px;
+      background: var(--color-code-bg);
+      color: var(--color-text);
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: border-color 0.2s, background 0.2s;
+      width: 100%;
+      justify-content: center;
+    }
+
+    .file-upload-btn:hover {
+      border-color: var(--color-link);
+      background: var(--color-bg);
+    }
+
+    .media-input-divider {
+      text-align: center;
+      margin: 1rem 0;
+      position: relative;
+    }
+
+    .media-input-divider::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      height: 1px;
+      background: var(--color-border);
+    }
+
+    .media-input-divider span {
+      position: relative;
+      background: var(--color-bg);
+      padding: 0 0.75rem;
+      font-size: 0.8rem;
+      color: var(--color-text-secondary);
+    }
+
+    .media-url-field {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      font-size: 0.9rem;
+      background: var(--color-bg);
+      color: var(--color-text);
+    }
+
+    .media-url-field:focus {
+      outline: 2px solid var(--color-link);
+      border-color: transparent;
+    }
+
+    .media-input-status {
+      font-size: 0.8rem;
+      color: #ef4444;
+      min-height: 1.2rem;
+      margin-top: 0.5rem;
+    }
   </style>
 </head>
 <body>
@@ -1117,6 +1208,30 @@
         <button type="button" class="media-popup-close" id="mediaPopupClose" aria-label="Close">&times;</button>
       </div>
       <div class="media-popup-body" id="mediaPopupBody"></div>
+    </div>
+  </div>
+
+  <!-- Media Input Modal (Upload or URL) -->
+  <div class="modal-overlay" id="mediaInputModal">
+    <div class="modal-dialog" style="max-width:460px">
+      <h3 id="mediaInputTitle">Add Media</h3>
+      <div class="media-input-section">
+        <label class="media-input-label">Upload file</label>
+        <div class="file-upload-area">
+          <input type="file" id="mediaFileInput" class="file-input-hidden" />
+          <label for="mediaFileInput" class="file-upload-btn" id="mediaFileLabel">Choose file...</label>
+        </div>
+      </div>
+      <div class="media-input-divider"><span>or</span></div>
+      <div class="media-input-section">
+        <label class="media-input-label" for="mediaUrlInput">Enter URL</label>
+        <input type="url" id="mediaUrlInput" class="media-url-field" placeholder="https://..." />
+      </div>
+      <div class="media-input-status" id="mediaInputStatus"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="mediaInputCancel">Cancel</button>
+        <button type="button" class="btn-save" id="mediaInputSubmit">Add</button>
+      </div>
     </div>
   </div>
 
@@ -1489,26 +1604,130 @@
 
       function handleMediaClick(btn, type) {
         if (!isEditing) {
-          // Learner mode: show the content
           showMediaContent(btn, type);
           return;
         }
 
-        // Edit mode: prompt for URL/source
-        var currentSrc = btn.getAttribute('data-media-src') || '';
-        var promptMsg = type.label + ' URL or file path';
-        if (type.key === 'glossary') promptMsg = 'Glossary term and definition (format: term | definition)';
-
-        var newSrc = prompt(promptMsg + ':', currentSrc);
-
-        if (newSrc === null) return; // cancelled
-
-        btn.setAttribute('data-media-src', newSrc);
-        if (newSrc.trim()) {
-          btn.classList.add('has-content');
-        } else {
-          btn.classList.remove('has-content');
+        // Glossary and URL don't need file upload — use simple input modal
+        if (type.key === 'glossary') {
+          var currentSrc = btn.getAttribute('data-media-src') || '';
+          var newSrc = prompt('Glossary term and definition (format: term | definition):', currentSrc);
+          if (newSrc === null) return;
+          btn.setAttribute('data-media-src', newSrc);
+          btn.classList.toggle('has-content', newSrc.trim().length > 0);
+          return;
         }
+
+        // For Video, Audio, PPTX, H5P — show upload/URL modal
+        showMediaInputModal(btn, type);
+      }
+
+      function showMediaInputModal(btn, type) {
+        var modal = document.getElementById('mediaInputModal');
+        var title = document.getElementById('mediaInputTitle');
+        var urlInput = document.getElementById('mediaUrlInput');
+        var fileInput = document.getElementById('mediaFileInput');
+        var fileLabel = document.getElementById('mediaFileLabel');
+        var submitBtn = document.getElementById('mediaInputSubmit');
+        var cancelBtn = document.getElementById('mediaInputCancel');
+        var statusEl = document.getElementById('mediaInputStatus');
+
+        var currentSrc = btn.getAttribute('data-media-src') || '';
+        title.textContent = type.label;
+        urlInput.value = currentSrc;
+        fileInput.value = '';
+        fileLabel.textContent = 'Choose file...';
+        statusEl.textContent = '';
+
+        // Set accepted file types
+        var acceptMap = {
+          video: 'video/*',
+          audio: 'audio/*',
+          pptx: '.pptx,.ppt,.pdf,.odp',
+          h5p: '.h5p,.html,.zip'
+        };
+        fileInput.setAttribute('accept', acceptMap[type.key] || '*/*');
+
+        modal.classList.add('visible');
+
+        // File input label update
+        function onFileChange() {
+          if (fileInput.files.length > 0) {
+            fileLabel.textContent = fileInput.files[0].name;
+            urlInput.value = '';
+          }
+        }
+        fileInput.addEventListener('change', onFileChange);
+
+        function cleanup() {
+          modal.classList.remove('visible');
+          fileInput.removeEventListener('change', onFileChange);
+          submitBtn.removeEventListener('click', onSubmit);
+          cancelBtn.removeEventListener('click', onCancel);
+          modal.removeEventListener('click', onBackdrop);
+        }
+
+        function onCancel() { cleanup(); }
+        function onBackdrop(e) { if (e.target === modal) cleanup(); }
+
+        function onSubmit() {
+          var url = urlInput.value.trim();
+          var file = fileInput.files.length > 0 ? fileInput.files[0] : null;
+
+          if (!url && !file) {
+            // Clear the media
+            btn.setAttribute('data-media-src', '');
+            btn.classList.remove('has-content');
+            cleanup();
+            return;
+          }
+
+          if (file) {
+            // Upload the file
+            statusEl.textContent = 'Uploading...';
+            submitBtn.disabled = true;
+            uploadMediaFile(file).then(function(result) {
+              btn.setAttribute('data-media-src', result.url);
+              btn.classList.add('has-content');
+              statusEl.textContent = '';
+              submitBtn.disabled = false;
+              cleanup();
+            }).catch(function(err) {
+              statusEl.textContent = 'Upload failed: ' + err.message;
+              submitBtn.disabled = false;
+            });
+          } else {
+            // Use the URL directly
+            btn.setAttribute('data-media-src', url);
+            btn.classList.add('has-content');
+            cleanup();
+          }
+        }
+
+        submitBtn.addEventListener('click', onSubmit);
+        cancelBtn.addEventListener('click', onCancel);
+        modal.addEventListener('click', onBackdrop);
+      }
+
+      function uploadMediaFile(file) {
+        // Determine the job directory from the current page URL
+        var pathParts = window.location.pathname.split('/');
+        // URL pattern: /output/<job_dir>/<filename>.html
+        var jobDir = pathParts.slice(2, pathParts.length - 1).join('/');
+
+        var formData = new FormData();
+        formData.append('file', file);
+
+        return fetch('/output/' + jobDir + '/media-upload', {
+          method: 'POST',
+          body: formData
+        })
+        .then(function(res) {
+          if (!res.ok) {
+            return res.json().then(function(d) { throw new Error(d.error || 'Upload failed'); });
+          }
+          return res.json();
+        });
       }
 
       function showMediaContent(btn, type) {
