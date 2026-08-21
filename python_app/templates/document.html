@@ -499,7 +499,10 @@
       padding: 0.5rem 1rem;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      flex-wrap: wrap;
+      gap: 0.5rem 0.5rem;
+      max-height: 70vh;
+      overflow-y: auto;
       box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
       transform: translateY(-100%);
       transition: transform 0.3s ease;
@@ -511,15 +514,24 @@
 
     .edit-toolbar .toolbar-group {
       display: flex;
+      flex-wrap: wrap;
       gap: 0.25rem;
       padding-right: 0.75rem;
       border-right: 1px solid var(--color-border);
       margin-right: 0.5rem;
     }
 
+    /* On wide screens the last group (save status/cancel/save) hugs the
+       right edge; once the toolbar wraps to multiple rows it just flows
+       onto its own row like every other group, which reads fine. */
+    @media (min-width: 900px) {
+      .edit-toolbar .toolbar-group:last-child {
+        margin-left: auto;
+      }
+    }
+
     .edit-toolbar .toolbar-group:last-child {
       border-right: none;
-      margin-left: auto;
     }
 
     .edit-toolbar button {
@@ -1295,27 +1307,71 @@
       color: var(--color-text-secondary);
     }
 
-    body.edit-mode .document-body > *::after {
-      content: '×';
+    /* Real, keyboard-focusable Move up/down/Delete controls — the mouse-only
+       drag handle (::before above) and click-by-pixel-math delete this used
+       to replace aren't reachable by keyboard or touch. These are injected
+       as the first child of each block with contenteditable="false" so
+       they're inert to typing/selection, and are stripped out of the HTML
+       right before it's sent to the server (see getCleanBodyHtml()) so they
+       never end up baked into a saved document.
+       They can outlive a single edit session (a save doesn't strip them
+       from the live DOM, only from what's sent to the server — see
+       saveContent()), so they must default to hidden outside edit mode;
+       otherwise they'd render as plain inline buttons in the reading view
+       the moment edit mode is exited. */
+    .block-controls {
+      display: none;
+    }
+
+    body.edit-mode .block-controls {
       position: absolute;
-      right: -8px;
-      top: -8px;
-      width: 20px;
-      height: 20px;
-      background: #ef4444;
-      color: #fff;
-      border-radius: 50%;
-      font-size: 14px;
-      line-height: 20px;
-      text-align: center;
-      cursor: pointer;
+      right: -34px;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
       opacity: 0;
       transition: opacity 0.2s;
       z-index: 10;
     }
 
-    body.edit-mode .document-body > *:hover::after {
+    body.edit-mode .document-body > *:hover > .block-controls,
+    body.edit-mode .block-controls:focus-within {
       opacity: 1;
+    }
+
+    body.edit-mode .block-controls button {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      background: var(--color-bg);
+      color: var(--color-text-secondary);
+      font-size: 11px;
+      line-height: 1;
+      cursor: pointer;
+    }
+
+    body.edit-mode .block-controls button:hover,
+    body.edit-mode .block-controls button:focus {
+      background: var(--color-code-bg);
+      border-color: var(--color-link);
+      color: var(--color-link);
+      outline: 2px solid var(--color-link);
+      outline-offset: 1px;
+    }
+
+    body.edit-mode .block-controls .block-delete:hover,
+    body.edit-mode .block-controls .block-delete:focus {
+      background: #ef4444;
+      border-color: #ef4444;
+      color: #fff;
+    }
+
+    body.edit-mode .block-controls button:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
     }
 
     body.edit-mode .document-body > .dragging {
@@ -1333,6 +1389,7 @@
 
     body.edit-mode .document-body {
       padding-left: 2rem;
+      padding-right: 2rem;
     }
   </style>
 </head>
@@ -1706,6 +1763,16 @@
         docBody.focus();
       });
 
+      // The toolbar now wraps onto multiple rows on narrow screens (tablets
+      // in particular), so a fixed 52px offset isn't enough — measure the
+      // toolbar's actual rendered height instead, and keep it in sync as
+      // the window resizes/rotates while editing.
+      function updateToolbarOffset() {
+        if (!isEditing) return;
+        document.querySelector('.document-wrapper').style.marginTop = editToolbar.offsetHeight + 'px';
+      }
+      window.addEventListener('resize', updateToolbarOffset);
+
       function enterEditMode() {
         isEditing = true;
         originalContent = docBody.innerHTML;
@@ -1715,8 +1782,10 @@
         editToggle.textContent = 'Editing...';
         editToggle.style.borderColor = 'var(--color-link)';
         saveStatus.textContent = '';
-        // Push content down to avoid toolbar overlap
-        document.querySelector('.document-wrapper').style.marginTop = '52px';
+        // Push content down to avoid toolbar overlap. requestAnimationFrame
+        // ensures the toolbar has finished laying out (and wrapping, if the
+        // viewport is narrow) before we measure its height.
+        requestAnimationFrame(updateToolbarOffset);
       }
 
       function exitEditMode(revert) {
@@ -1735,18 +1804,23 @@
         saveStatus.textContent = 'Saving...';
         saveStatus.className = 'save-status';
 
-        var htmlContent = docBody.innerHTML;
+        // originalContent tracks the live (uncleaned) DOM so the unsaved-
+        // changes check keeps comparing like with like; getCleanBodyHtml()
+        // strips the block-controls UI chrome before it's persisted, since
+        // that's runtime editing chrome, not document content.
+        var liveContent = docBody.innerHTML;
+        var htmlToSave = typeof getCleanBodyHtml === 'function' ? getCleanBodyHtml() : liveContent;
 
         fetch(window.location.pathname, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ body_html: htmlContent })
+          body: JSON.stringify({ body_html: htmlToSave })
         })
         .then(function(res) {
           if (res.ok) {
             saveStatus.textContent = 'Saved';
             saveStatus.className = 'save-status success';
-            originalContent = htmlContent;
+            originalContent = liveContent;
             refreshTOC();
             setTimeout(function() { exitEditMode(false); }, 1000);
           } else {
@@ -1761,6 +1835,16 @@
         });
       }
 
+      // Reads a heading's visible text, ignoring any injected block-controls
+      // (Move up/down/Delete) UI so it doesn't leak into the TOC or the
+      // generated heading id.
+      function getHeadingText(h) {
+        var clone = h.cloneNode(true);
+        var controls = clone.querySelector('.block-controls');
+        if (controls) controls.remove();
+        return clone.textContent.trim();
+      }
+
       function refreshTOC() {
         var tocList = document.querySelector('.toc-list');
         if (!tocList) return;
@@ -1771,7 +1855,9 @@
 
         headings.forEach(function(h) {
           var level = parseInt(h.tagName.charAt(1), 10);
-          var text = h.textContent.trim();
+          // Exclude the injected block-controls (Move up/down/Delete)
+          // buttons from the heading text — they're UI chrome, not content.
+          var text = getHeadingText(h);
           if (!text) return;
 
           // Ensure heading has an ID for linking
@@ -2307,7 +2393,7 @@
 
           var mediaBar = document.createElement('div');
           mediaBar.className = 'section-media';
-          mediaBar.setAttribute('data-section', heading.id || heading.textContent.trim().substring(0, 30));
+          mediaBar.setAttribute('data-section', heading.id || getHeadingText(heading).substring(0, 30));
 
           MEDIA_TYPES.forEach(function(type) {
             var btn = document.createElement('button');
@@ -2627,6 +2713,11 @@
         document.body.classList.add('edit-mode');
         initSectionMedia();
         initDragDrop();
+        // origEnter() captured originalContent before initDragDrop() injected
+        // the block-controls UI chrome into every block; re-capture it now
+        // so hasUnsavedChanges() has a matching baseline and doesn't report
+        // a false "unsaved changes" the instant edit mode is entered.
+        originalContent = docBody.innerHTML;
       };
 
       var origExit = exitEditMode;
@@ -2636,16 +2727,22 @@
         teardownDragDrop();
       };
 
-      // --- Drag and Drop Reordering ---
+      // --- Block Reordering: mouse drag-and-drop, plus real keyboard-
+      // reachable Move up/down/Delete buttons as an accessible alternative
+      // (native HTML5 drag-and-drop has no keyboard equivalent and is
+      // unreliable on touch devices). ---
       var dragSrcEl = null;
 
       function initDragDrop() {
-        var children = docBody.children;
-        for (var i = 0; i < children.length; i++) {
-          enableDrag(children[i]);
-        }
-        // Add delete handler for the × button (pseudo-element at top-right)
-        docBody.addEventListener('click', handleDeleteClick);
+        var children = Array.prototype.slice.call(docBody.children);
+        children.forEach(function(el) {
+          enableDrag(el);
+          if (!el.querySelector('.block-controls')) {
+            el.insertBefore(createBlockControls(), el.firstChild);
+          }
+        });
+        wireBlockControls();
+        refreshBlockControlsState();
       }
 
       function teardownDragDrop() {
@@ -2653,25 +2750,74 @@
         for (var i = 0; i < children.length; i++) {
           children[i].removeAttribute('draggable');
         }
-        docBody.removeEventListener('click', handleDeleteClick);
       }
 
-      function handleDeleteClick(e) {
-        if (!isEditing) return;
-        var target = e.target;
-        // Only act on direct children of docBody
-        if (target.parentNode !== docBody) return;
-        // Check if click was in the top-right corner (where × pseudo-element is)
-        var rect = target.getBoundingClientRect();
-        var clickX = e.clientX - rect.right;
-        var clickY = e.clientY - rect.top;
-        if (clickX >= -28 && clickX <= 12 && clickY >= -12 && clickY <= 24) {
-          e.preventDefault();
-          e.stopPropagation();
-          if (confirm('Remove this section?')) {
-            target.remove();
-          }
-        }
+      // Strips the block-controls UI chrome out of a clone of docBody, so
+      // it never ends up persisted in the saved HTML.
+      function getCleanBodyHtml() {
+        var clone = docBody.cloneNode(true);
+        clone.querySelectorAll('.block-controls').forEach(function(el) { el.remove(); });
+        return clone.innerHTML;
+      }
+
+      function createBlockControls() {
+        var wrap = document.createElement('span');
+        wrap.className = 'block-controls';
+        wrap.setAttribute('contenteditable', 'false');
+        wrap.innerHTML =
+          '<button type="button" class="block-move-up" aria-label="Move this block up" title="Move up">&#9650;</button>' +
+          '<button type="button" class="block-delete" aria-label="Remove this block" title="Remove block">&times;</button>' +
+          '<button type="button" class="block-move-down" aria-label="Move this block down" title="Move down">&#9660;</button>';
+        return wrap;
+      }
+
+      // Attaches click handlers once per button (guarded so repeated
+      // initDragDrop() calls, e.g. re-entering edit mode, don't double-bind).
+      function wireBlockControls() {
+        docBody.querySelectorAll('.block-controls').forEach(function(controls) {
+          var block = controls.parentElement;
+          var upBtn = controls.querySelector('.block-move-up');
+          var downBtn = controls.querySelector('.block-move-down');
+          var delBtn = controls.querySelector('.block-delete');
+          if (upBtn.__wired) return;
+          upBtn.__wired = downBtn.__wired = delBtn.__wired = true;
+
+          upBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            var prev = block.previousElementSibling;
+            if (!prev) return;
+            docBody.insertBefore(block, prev);
+            refreshBlockControlsState();
+            upBtn.focus();
+          });
+          downBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            var next = block.nextElementSibling;
+            if (!next) return;
+            docBody.insertBefore(next, block);
+            refreshBlockControlsState();
+            downBtn.focus();
+          });
+          delBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (confirm('Remove this section?')) {
+              block.remove();
+              refreshBlockControlsState();
+            }
+          });
+        });
+      }
+
+      // Disables Move up on the first block and Move down on the last, so
+      // it's clear (and doesn't error) at either end of the document.
+      function refreshBlockControlsState() {
+        var children = Array.prototype.slice.call(docBody.children);
+        children.forEach(function(child, idx) {
+          var controls = child.querySelector('.block-controls');
+          if (!controls) return;
+          controls.querySelector('.block-move-up').disabled = (idx === 0);
+          controls.querySelector('.block-move-down').disabled = (idx === children.length - 1);
+        });
       }
 
       function enableDrag(el) {
@@ -2720,6 +2866,7 @@
           } else {
             docBody.insertBefore(dragSrcEl, el.nextSibling);
           }
+          refreshBlockControlsState();
         });
       }
 

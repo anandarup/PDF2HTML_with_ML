@@ -164,6 +164,31 @@
       transition: width 0.4s ease;
     }
 
+    /* Shown once the file has fully uploaded and the server is doing AI
+       extraction/HTML generation — we have no real progress signal for
+       that phase, so an honest indeterminate animation (rather than a
+       fabricated percentage) is used instead. */
+    .progress-bar-fill.indeterminate {
+      width: 40% !important;
+      transition: none;
+      animation: indeterminate-slide 1.2s ease-in-out infinite;
+    }
+
+    @keyframes indeterminate-slide {
+      0% { margin-left: 0%; }
+      50% { margin-left: 60%; }
+      100% { margin-left: 0%; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .progress-bar-fill.indeterminate {
+        animation: none;
+        margin-left: 0;
+        width: 100% !important;
+        opacity: 0.5;
+      }
+    }
+
     .progress-status {
       margin-top: 0.75rem;
       font-size: 0.9rem;
@@ -307,6 +332,7 @@
         <div class="progress-bar-fill" id="progressBar"></div>
       </div>
       <div class="progress-status" id="progressStatus">Uploading PDF...</div>
+      <button type="button" class="btn btn-secondary" id="cancelUpload" style="margin-top:1rem;">Cancel</button>
     </div>
 
     <div class="result-section" id="resultSection">
@@ -345,6 +371,17 @@
     const errorSection = document.getElementById('errorSection');
     const errorDetail = document.getElementById('errorDetail');
     const convertAnother = document.getElementById('convertAnother');
+    const cancelUpload = document.getElementById('cancelUpload');
+
+    let currentXhr = null;
+
+    cancelUpload.addEventListener('click', () => {
+      if (currentXhr) {
+        currentXhr.abort();
+        currentXhr = null;
+      }
+      resetUI();
+    });
 
     // Drag and drop handlers
     dropZone.addEventListener('click', () => fileInput.click());
@@ -396,46 +433,66 @@
       // Reset UI
       hideAll();
       progressSection.classList.add('visible');
-      progressBar.style.width = '10%';
+      progressBar.classList.remove('indeterminate');
+      progressBar.style.width = '0%';
       progressStatus.textContent = `Uploading ${file.name}...`;
 
       const formData = new FormData();
       formData.append('pdf', file);
 
-      // Simulate progress during upload/conversion
-      let progress = 10;
-      const progressInterval = setInterval(() => {
-        if (progress < 85) {
-          progress += Math.random() * 8;
-          progressBar.style.width = Math.min(progress, 85) + '%';
-        }
-        if (progress > 30) {
-          progressStatus.textContent = 'Extracting content with Docling AI...';
-        }
-        if (progress > 60) {
-          progressStatus.textContent = 'Generating interactive HTML...';
-        }
-      }, 800);
+      const xhr = new XMLHttpRequest();
 
-      fetch('/convert', {
-        method: 'POST',
-        body: formData,
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          clearInterval(progressInterval);
-          progressBar.style.width = '100%';
+      // Real upload progress from the browser — no guessing. Capped at 90%
+      // so there's visible room left for the server-side conversion phase.
+      xhr.upload.addEventListener('progress', (e) => {
+        if (!e.lengthComputable) return;
+        const pct = Math.round((e.loaded / e.total) * 90);
+        progressBar.style.width = pct + '%';
+        progressStatus.textContent = `Uploading ${file.name}... ${Math.round((e.loaded / e.total) * 100)}%`;
+      });
 
-          if (data.error) {
-            setTimeout(() => showError(data.error), 400);
-          } else {
-            setTimeout(() => showResult(data), 400);
-          }
-        })
-        .catch((err) => {
-          clearInterval(progressInterval);
-          showError('Network error: ' + err.message);
-        });
+      // Upload finished; the server is now running Docling extraction and
+      // building the HTML. There's no progress signal for that phase, so
+      // show an honest "working on it" state instead of a fake percentage.
+      xhr.upload.addEventListener('load', () => {
+        progressBar.classList.add('indeterminate');
+        progressStatus.textContent = 'Extracting content and generating interactive HTML — this can take up to a couple of minutes for large or scanned PDFs...';
+      });
+
+      xhr.addEventListener('load', () => {
+        currentXhr = null;
+        progressBar.classList.remove('indeterminate');
+        progressBar.style.width = '100%';
+
+        let data;
+        try {
+          data = JSON.parse(xhr.responseText);
+        } catch (err) {
+          setTimeout(() => showError('Unexpected response from server.'), 400);
+          return;
+        }
+
+        if (!xhr.status || xhr.status >= 400 || data.error) {
+          setTimeout(() => showError(data.error || `Conversion failed (HTTP ${xhr.status}).`), 400);
+        } else {
+          setTimeout(() => showResult(data), 400);
+        }
+      });
+
+      xhr.addEventListener('error', () => {
+        currentXhr = null;
+        progressBar.classList.remove('indeterminate');
+        showError('Network error during upload.');
+      });
+
+      xhr.addEventListener('abort', () => {
+        currentXhr = null;
+        progressBar.classList.remove('indeterminate');
+      });
+
+      currentXhr = xhr;
+      xhr.open('POST', '/convert');
+      xhr.send(formData);
     }
 
     function showResult(data) {
@@ -458,6 +515,7 @@
     function resetUI() {
       hideAll();
       fileInput.value = '';
+      progressBar.classList.remove('indeterminate');
       progressBar.style.width = '0%';
     }
 
