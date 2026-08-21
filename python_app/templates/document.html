@@ -1793,7 +1793,17 @@
             content = '<audio controls autoplay src="' + escapeAttr(src) + '" style="width:100%;">Your browser does not support audio playback.</audio>';
             break;
           case 'pptx':
-            content = '<iframe src="https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(src) + '"></iframe>';
+            var pptxSrc = src;
+            if (pptxSrc.toLowerCase().endsWith('.pdf')) {
+              content = '<iframe src="' + escapeAttr(pptxSrc) + '" style="width:100%;min-height:500px;border:none;border-radius:6px;"></iframe>';
+            } else {
+              content = '<div style="text-align:center;padding:2rem;">' +
+                '<p style="font-size:3rem;margin-bottom:1rem;">&#128202;</p>' +
+                '<p style="font-size:1.1rem;margin-bottom:1.5rem;">Presentation file ready</p>' +
+                '<a href="' + escapeAttr(pptxSrc) + '" download style="display:inline-flex;align-items:center;gap:0.5rem;padding:0.75rem 1.5rem;background:var(--color-link);color:#fff;border-radius:8px;text-decoration:none;font-weight:500;">&#11015; Download Presentation</a>' +
+                '<p style="margin-top:1rem;font-size:0.85rem;color:var(--color-text-secondary);">Open with PowerPoint, Keynote, or Google Slides</p>' +
+                '</div>';
+            }
             break;
           case 'h5p':
             var h5pId = 'h5p-container-' + Date.now();
