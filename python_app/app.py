@@ -271,7 +271,8 @@ def export_cms():
     Export document content to a CMS (Strapi or WordPress).
 
     Accepts JSON with platform config and HTML content.
-    Pushes the content via the CMS REST API.
+    Uploads media files to the CMS, replaces local paths with CMS URLs,
+    then pushes the content via the CMS REST API.
     """
     import requests as http_client
 
@@ -283,9 +284,19 @@ def export_cms():
     base_url = data.get("base_url", "").rstrip("/")
     title = data.get("title", "Untitled")
     body_html = data.get("body_html", "")
+    job_dir = data.get("job_dir", "")
 
     if not base_url:
         return jsonify({"error": "CMS base URL is required"}), 400
+
+    # Upload media files and replace local paths with CMS URLs
+    if job_dir:
+        from urllib.parse import unquote
+        decoded_dir = unquote(job_dir)
+        local_dir = OUTPUT_DIR.resolve() / decoded_dir
+        body_html = _upload_media_to_cms(
+            body_html, local_dir, base_url, data, platform, http_client
+        )
 
     try:
         if platform == "strapi":
@@ -300,6 +311,110 @@ def export_cms():
         return jsonify({"error": "CMS request timed out."}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+def _upload_media_to_cms(
+    body_html: str,
+    local_dir: Path,
+    base_url: str,
+    data: dict,
+    platform: str,
+    http_client,
+) -> str:
+    """
+    Find all local media references in HTML, upload them to the CMS media
+    library, and replace local paths with CMS-hosted URLs.
+
+    Handles: images (src), videos (src), audio (src), data-media-src attributes.
+    """
+    import re as _re
+
+    # Pattern to find local file references (relative paths)
+    # Matches src="images/..." or src="media/..." or data-media-src="media/..."
+    local_path_pattern = _re.compile(
+        r'((?:src|data-media-src)\s*=\s*")((?:images|media)/[^"]+)(")',
+        _re.IGNORECASE,
+    )
+
+    uploaded_cache: dict = {}
+
+    def replace_with_cms_url(match: _re.Match) -> str:
+        prefix = match.group(1)
+        relative_path = match.group(2)
+        suffix = match.group(3)
+
+        # Skip external URLs and data URIs
+        if relative_path.startswith(("http://", "https://", "data:")):
+            return match.group(0)
+
+        # Check cache
+        if relative_path in uploaded_cache:
+            return prefix + uploaded_cache[relative_path] + suffix
+
+        # Resolve to absolute local path
+        local_file = local_dir / relative_path
+        if not local_file.exists() or not local_file.is_file():
+            return match.group(0)
+
+        # Upload to CMS
+        cms_url = _upload_single_file(local_file, base_url, data, platform, http_client)
+        if cms_url:
+            uploaded_cache[relative_path] = cms_url
+            return prefix + cms_url + suffix
+
+        return match.group(0)
+
+    return local_path_pattern.sub(replace_with_cms_url, body_html)
+
+
+def _upload_single_file(
+    file_path: Path, base_url: str, data: dict, platform: str, http_client
+) -> str:
+    """Upload a single file to the CMS media library. Returns the public URL or empty string."""
+    try:
+        if platform == "strapi":
+            api_token = data.get("api_token", "")
+            headers = {"Authorization": f"Bearer {api_token}"}
+            with open(file_path, "rb") as f:
+                files = {"files": (file_path.name, f)}
+                resp = http_client.post(
+                    f"{base_url}/api/upload",
+                    headers=headers,
+                    files=files,
+                    timeout=120,
+                )
+            if resp.status_code in (200, 201):
+                resp_data = resp.json()
+                if isinstance(resp_data, list) and len(resp_data) > 0:
+                    url = resp_data[0].get("url", "")
+                    # Strapi returns relative URLs — prepend base
+                    if url and not url.startswith("http"):
+                        url = base_url + url
+                    return url
+        elif platform == "wordpress":
+            username = data.get("username", "")
+            password = data.get("password", "")
+            import mimetypes
+            mime_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
+            headers = {
+                "Content-Disposition": f'attachment; filename="{file_path.name}"',
+                "Content-Type": mime_type,
+            }
+            with open(file_path, "rb") as f:
+                resp = http_client.post(
+                    f"{base_url}/wp-json/wp/v2/media",
+                    headers=headers,
+                    data=f,
+                    auth=(username, password),
+                    timeout=120,
+                )
+            if resp.status_code in (200, 201):
+                resp_data = resp.json()
+                return resp_data.get("source_url", "")
+    except Exception:
+        pass  # Best-effort: if upload fails, keep the local path
+
+    return ""
 
 
 def _export_to_strapi(data: dict, base_url: str, title: str, body_html: str, http_client) -> tuple:
