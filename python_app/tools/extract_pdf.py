@@ -45,6 +45,13 @@ class ExtractionResult:
     source_path: str = ""
     """Resolved absolute path of the source PDF."""
 
+    first_page_text: str = ""
+    """Raw text from the first page (useful for title detection)."""
+    """Number of pages in the source PDF."""
+
+    source_path: str = ""
+    """Resolved absolute path of the source PDF."""
+
 
 def extract_pdf_content(
     pdf_file_path: str,
@@ -150,12 +157,16 @@ def extract_pdf_content(
     # Re-collect all image files (includes figures, tables, pages)
     image_paths = _collect_image_paths(image_dir)
 
+    # Extract first page raw text for title detection
+    first_page_text = _get_first_page_text(str(resolved_path))
+
     return ExtractionResult(
         markdown=markdown_content,
         image_paths=image_paths,
         image_directory=str(image_dir),
         page_count=page_count,
         source_path=str(resolved_path),
+        first_page_text=first_page_text,
     )
 
 
@@ -172,3 +183,19 @@ def _collect_image_paths(image_dir: Path) -> List[str]:
             paths.append(str(entry.resolve()))
 
     return paths
+
+
+def _get_first_page_text(pdf_path: str) -> str:
+    """Extract raw text from the first page of a PDF using PyMuPDF."""
+    import pymupdf
+
+    try:
+        doc = pymupdf.open(pdf_path)
+        if doc.page_count > 0:
+            text = doc[0].get_text()
+            doc.close()
+            return text
+        doc.close()
+    except Exception:
+        pass
+    return ""

@@ -92,6 +92,9 @@ def build_interactive_html(
     # Clean up common PDF artifacts (page numbers, repeated headers/footers)
     processed_markdown = _clean_pdf_artifacts(processed_markdown)
 
+    # Fix numbered list structure (MCQ options as sub-items)
+    processed_markdown = _fix_numbered_lists(processed_markdown)
+
     # Convert Markdown to HTML
     md = markdown.Markdown(
         extensions=[
@@ -191,22 +194,51 @@ def _clean_pdf_artifacts(markdown_text: str) -> str:
     - Standalone page numbers (lines that are just a number)
     - Repeated short lines that appear as running headers/footers
       (any short line appearing 5+ times is likely a page header)
+    - Duplicated heading text (e.g., "## Activity 7.2 Activity 7.2" → "## Activity 7.2")
+    - PDF glyph name artifacts (e.g., /square6, /bullet, /circle6, etc.)
     """
+    # Remove PDF glyph name artifacts (PostScript character references)
+    # These are patterns like /square6, /bullet, /circle6, /a]xx, etc.
+    # that leak through when PDF text extraction doesn't resolve glyph names
+    markdown_text = re.sub(
+        r"/(?:square[0-9]*|bullet|circle[0-9]*|diamond[0-9]*|triangle[0-9]*"
+        r"|asterisk[0-9]*|dagger[0-9]*|section[0-9]*|paragraph[0-9]*"
+        r"|numbersign|percent|ampersand|hyphen|endash|emdash"
+        r"|quoteleft|quoteright|quotedblleft|quotedblright"
+        r"|fi|fl|ff|ffi|ffl)\b",
+        "",
+        markdown_text,
+    )
+
     lines = markdown_text.split("\n")
 
     # First pass: detect repeated short lines (likely headers/footers)
     line_counts: dict = {}
     for line in lines:
         stripped = line.strip()
-        if stripped and len(stripped) < 60 and not stripped.startswith(("#", "!", "-", "|", ">")):
+        if stripped and len(stripped) < 80 and not stripped.startswith(("#", "!", "-", "|", ">")):
             line_counts[stripped] = line_counts.get(stripped, 0) + 1
 
-    # Lines appearing 5+ times are almost certainly running headers/footers
+    # Lines appearing 3+ times are almost certainly running headers/footers
     repeated_headers = {
-        text for text, count in line_counts.items() if count >= 5
+        text for text, count in line_counts.items() if count >= 3
     }
 
-    # Second pass: filter out artifacts
+    # Also detect common header/footer patterns
+    header_footer_patterns = re.compile(
+        r"^("
+        r"Chapter\s+\d+\s*[·•\-–—].*"     # "Chapter 2 · Title" or "Chapter 2 •"
+        r"|.+\s*[·•\-–—]\s*Chapter\s+\d+"  # "Title · Chapter 2"
+        r"|\d+\s+Chapter\s+\d+"            # "19 Chapter 2"
+        r"|Chapter\s+\d+\s*$"              # Standalone "Chapter 2"
+        r"|©.*\d{4}"                        # Copyright lines
+        r"|All rights reserved"             # Rights notices
+        r"|Downloaded from"                 # Download notices
+        r")$",
+        re.IGNORECASE,
+    )
+
+    # Second pass: filter out artifacts and deduplicate headings
     cleaned: list = []
     for line in lines:
         stripped = line.strip()
@@ -219,9 +251,117 @@ def _clean_pdf_artifacts(markdown_text: str) -> str:
         if stripped in repeated_headers:
             continue
 
+        # Skip lines matching common header/footer patterns
+        if stripped and header_footer_patterns.match(stripped):
+            continue
+        if stripped in repeated_headers:
+            continue
+
+        # Deduplicate repeated heading text
+        # Matches patterns like "## Activity 7.2  Activity 7.2" or "## 7.1 DO ORGANISMS 7.1 DO ORGANISMS"
+        line = _deduplicate_heading(line)
+
         cleaned.append(line)
 
     return "\n".join(cleaned)
+
+
+def _fix_numbered_lists(markdown_text: str) -> str:
+    """
+    Fix numbered list structure for MCQ-style content.
+
+    Docling often extracts multiple-choice questions as flat numbered lists:
+        1. Question text
+        2. (a) Option A
+        3. (b) Option B
+        4. (c) Option C
+        5. (d) Option D
+
+    This function restructures them so options become indented sub-items
+    under the parent question, maintaining proper Markdown list nesting.
+    """
+    lines = markdown_text.split("\n")
+    result: list = []
+
+    # Pattern for a numbered list item: "1. text" or "  1. text"
+    numbered_pattern = re.compile(r"^(\s*)\d+\.\s+(.*)$")
+    # Pattern for MCQ options: starts with (a), (b), (c), (d), (i), (ii), etc.
+    option_pattern = re.compile(
+        r"^\(([a-d]|[iv]+)\)\s+",
+        re.IGNORECASE,
+    )
+
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        match = numbered_pattern.match(line)
+
+        if match:
+            indent = match.group(1)
+            content = match.group(2)
+
+            # Check if this numbered item's content looks like an MCQ option
+            if option_pattern.match(content):
+                # Convert to indented bullet under the parent list item
+                # Use 4-space indent (required for nesting under numbered lists)
+                result.append(f"{indent}    - {content}")
+            else:
+                result.append(line)
+        else:
+            result.append(line)
+
+        i += 1
+
+    return "\n".join(result)
+
+
+def _deduplicate_heading(line: str) -> str:
+    """
+    Remove duplicated text in Markdown headings.
+
+    Docling sometimes produces headings like:
+        ## Activity 7.2 Activity 7.2
+        ## 7.1  DO  ORGANISMS  CREA ANISMS  CREATE  EXA TE  EXACT  COPIES  OF CT  COPIES  OF THEMSEL THEMSELVES? VES?
+
+    This function detects when the heading text is repeated (possibly with
+    whitespace differences) and keeps only one occurrence.
+    """
+    # Only process heading lines
+    heading_match = re.match(r"^(#{1,6})\s+(.+)$", line)
+    if not heading_match:
+        return line
+
+    prefix = heading_match.group(1)
+    text = heading_match.group(2).strip()
+
+    # Normalize whitespace for comparison
+    normalized = re.sub(r"\s+", " ", text)
+
+    # Try to find a repeated substring
+    # Strategy: check if the second half is a repeat of the first half
+    length = len(normalized)
+    for split_pos in range(length // 3, (length * 2) // 3 + 1):
+        first_half = normalized[:split_pos].strip()
+        second_half = normalized[split_pos:].strip()
+
+        # Normalize both halves and compare
+        first_clean = re.sub(r"\s+", " ", first_half).strip().lower()
+        second_clean = re.sub(r"\s+", " ", second_half).strip().lower()
+
+        if first_clean and second_clean and first_clean == second_clean:
+            # The text is duplicated — keep the first half with original casing
+            return f"{prefix} {first_half}"
+
+    # Also handle the exact duplicate pattern: "Text Text" where both halves match
+    words = normalized.split()
+    if len(words) >= 2 and len(words) % 2 == 0:
+        half = len(words) // 2
+        first_words = words[:half]
+        second_words = words[half:]
+        if first_words == second_words:
+            return f"{prefix} {' '.join(first_words)}"
+
+    return line
 
 
 def _rewrite_image_paths(markdown_text: str, output_dir: Path) -> str:

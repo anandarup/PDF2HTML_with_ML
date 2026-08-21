@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PDF2WebView — Convert PDF to Interactive HTML</title>
+  <style>
+    :root {
+      --bg: #f8f9fc;
+      --surface: #ffffff;
+      --text: #1a1a2e;
+      --text-secondary: #5a5a7a;
+      --accent: #3282b8;
+      --accent-hover: #0f4c75;
+      --border: #e2e4ea;
+      --success: #10b981;
+      --error: #ef4444;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f0f1a;
+        --surface: #1a1a2e;
+        --text: #e8e8f0;
+        --text-secondary: #9a9ab0;
+        --accent: #3282b8;
+        --accent-hover: #bbe1fa;
+        --border: #2a2a4a;
+        --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+      }
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem;
+    }
+
+    .container {
+      max-width: 640px;
+      width: 100%;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: var(--text-secondary);
+      font-size: 1.05rem;
+    }
+
+    /* Drop Zone */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      padding: 3rem 2rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s, transform 0.15s;
+      box-shadow: var(--shadow);
+    }
+
+    .drop-zone:hover {
+      border-color: var(--accent);
+    }
+
+    .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 5%, var(--surface));
+      transform: scale(1.01);
+    }
+
+    .drop-zone-icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+      opacity: 0.7;
+    }
+
+    .drop-zone-text {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      margin-bottom: 0.75rem;
+    }
+
+    .drop-zone-hint {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      opacity: 0.7;
+    }
+
+    .drop-zone input[type="file"] {
+      display: none;
+    }
+
+    /* Progress */
+    .progress-section {
+      display: none;
+      margin-top: 2rem;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 2rem;
+      box-shadow: var(--shadow);
+    }
+
+    .progress-section.visible {
+      display: block;
+    }
+
+    .progress-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .progress-header h3 {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .spinner {
+      width: 20px;
+      height: 20px;
+      border: 2.5px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .progress-bar-track {
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 3px;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    .progress-status {
+      margin-top: 0.75rem;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    /* Result */
+    .result-section {
+      display: none;
+      margin-top: 2rem;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 2rem;
+      box-shadow: var(--shadow);
+    }
+
+    .result-section.visible {
+      display: block;
+    }
+
+    .result-success {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .result-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .result-meta {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      margin-bottom: 1.5rem;
+    }
+
+    .result-meta span {
+      margin-right: 1rem;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      transition: background 0.2s, transform 0.1s;
+    }
+
+    .btn:active { transform: scale(0.97); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn-secondary {
+      background: var(--border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background: color-mix(in srgb, var(--border) 80%, var(--text));
+    }
+
+    .result-actions {
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    /* Error */
+    .error-section {
+      display: none;
+      margin-top: 2rem;
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 1.5rem 2rem;
+      border-left: 4px solid var(--error);
+      box-shadow: var(--shadow);
+    }
+
+    .error-section.visible {
+      display: block;
+    }
+
+    .error-section p {
+      color: var(--error);
+      font-weight: 500;
+    }
+
+    .error-section .error-detail {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+
+    /* Footer */
+    footer {
+      margin-top: 3rem;
+      text-align: center;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>PDF2WebView</h1>
+      <p>Drop a PDF to convert it into an interactive, styled HTML document</p>
+    </header>
+
+    <div class="drop-zone" id="dropZone">
+      <div class="drop-zone-icon">📄</div>
+      <div class="drop-zone-text">Drag & drop your PDF here</div>
+      <div class="drop-zone-hint">or click to browse — max 100 MB</div>
+      <input type="file" id="fileInput" accept=".pdf" />
+    </div>
+
+    <div class="progress-section" id="progressSection">
+      <div class="progress-header">
+        <div class="spinner"></div>
+        <h3>Converting document...</h3>
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progressBar"></div>
+      </div>
+      <div class="progress-status" id="progressStatus">Uploading PDF...</div>
+    </div>
+
+    <div class="result-section" id="resultSection">
+      <div class="result-success">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/></svg>
+        Conversion complete
+      </div>
+      <div class="result-title" id="resultTitle"></div>
+      <div class="result-meta" id="resultMeta"></div>
+      <div class="result-actions">
+        <a class="btn btn-primary" id="viewBtn" target="_blank">View HTML</a>
+        <button class="btn btn-secondary" id="convertAnother">Convert another</button>
+      </div>
+    </div>
+
+    <div class="error-section" id="errorSection">
+      <p>Conversion failed</p>
+      <div class="error-detail" id="errorDetail"></div>
+    </div>
+
+    <footer>
+      Powered by Docling AI &middot; Markdown &middot; Jinja2
+    </footer>
+  </div>
+
+  <script>
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const progressSection = document.getElementById('progressSection');
+    const progressBar = document.getElementById('progressBar');
+    const progressStatus = document.getElementById('progressStatus');
+    const resultSection = document.getElementById('resultSection');
+    const resultTitle = document.getElementById('resultTitle');
+    const resultMeta = document.getElementById('resultMeta');
+    const viewBtn = document.getElementById('viewBtn');
+    const errorSection = document.getElementById('errorSection');
+    const errorDetail = document.getElementById('errorDetail');
+    const convertAnother = document.getElementById('convertAnother');
+
+    // Drag and drop handlers
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('drag-over');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      const files = e.dataTransfer.files;
+      if (files.length > 0 && files[0].name.toLowerCase().endsWith('.pdf')) {
+        uploadAndConvert(files[0]);
+      } else {
+        showError('Please drop a valid PDF file.');
+      }
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) {
+        uploadAndConvert(fileInput.files[0]);
+      }
+    });
+
+    convertAnother.addEventListener('click', resetUI);
+
+    function uploadAndConvert(file) {
+      // Reset UI
+      hideAll();
+      progressSection.classList.add('visible');
+      progressBar.style.width = '10%';
+      progressStatus.textContent = `Uploading ${file.name}...`;
+
+      const formData = new FormData();
+      formData.append('pdf', file);
+
+      // Simulate progress during upload/conversion
+      let progress = 10;
+      const progressInterval = setInterval(() => {
+        if (progress < 85) {
+          progress += Math.random() * 8;
+          progressBar.style.width = Math.min(progress, 85) + '%';
+        }
+        if (progress > 30) {
+          progressStatus.textContent = 'Extracting content with Docling AI...';
+        }
+        if (progress > 60) {
+          progressStatus.textContent = 'Generating interactive HTML...';
+        }
+      }, 800);
+
+      fetch('/convert', {
+        method: 'POST',
+        body: formData,
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          clearInterval(progressInterval);
+          progressBar.style.width = '100%';
+
+          if (data.error) {
+            setTimeout(() => showError(data.error), 400);
+          } else {
+            setTimeout(() => showResult(data), 400);
+          }
+        })
+        .catch((err) => {
+          clearInterval(progressInterval);
+          showError('Network error: ' + err.message);
+        });
+    }
+
+    function showResult(data) {
+      hideAll();
+      resultSection.classList.add('visible');
+      resultTitle.textContent = data.title || 'Converted Document';
+      resultMeta.innerHTML =
+        `<span>${data.page_count} pages</span>` +
+        `<span>${data.image_count} images</span>` +
+        `<span>${formatBytes(data.file_size)}</span>`;
+      viewBtn.href = data.html_url;
+    }
+
+    function showError(message) {
+      hideAll();
+      errorSection.classList.add('visible');
+      errorDetail.textContent = message;
+    }
+
+    function resetUI() {
+      hideAll();
+      fileInput.value = '';
+      progressBar.style.width = '0%';
+    }
+
+    function hideAll() {
+      progressSection.classList.remove('visible');
+      resultSection.classList.remove('visible');
+      errorSection.classList.remove('visible');
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+  </script>
+</body>
+</html>
