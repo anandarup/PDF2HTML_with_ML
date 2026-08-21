@@ -32,7 +32,7 @@ app = Flask(__name__, static_folder="static", template_folder="web_templates")
 # Configuration
 UPLOAD_DIR = Path("uploads")
 OUTPUT_DIR = Path("../output")
-MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB max upload
+MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500 MB max upload (video/audio files)
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
