@@ -1727,17 +1727,20 @@
       }
 
       function uploadMediaFile(file, mediaType) {
-        // Determine the job directory from the current page URL
-        var pathParts = window.location.pathname.split('/');
-        // URL pattern: /output/<job_dir>/<filename>.html
-        // pathParts = ['', 'output', '<job_dir>', '<filename>.html']
-        var jobDir = pathParts.slice(2, pathParts.length - 1).join('/');
+        // Extract the job directory from the current page URL.
+        // Use the raw href to preserve percent-encoding (spaces as %20, etc.)
+        // This ensures the upload creates files in the same directory Flask uses.
+        var rawPath = window.location.pathname;
+        var pathParts = rawPath.split('/');
+        // pathParts = ['', 'output', '<job_dir_decoded>', '<filename>.html']
+        // Re-encode the job directory for the fetch URL
+        var jobDir = pathParts.slice(2, pathParts.length - 1).map(encodeURIComponent).join('/');
 
         var formData = new FormData();
         formData.append('file', file);
         formData.append('type', mediaType || 'video');
 
-        return fetch('/upload-media/' + encodeURI(jobDir), {
+        return fetch('/upload-media/' + jobDir, {
           method: 'POST',
           body: formData
         })
