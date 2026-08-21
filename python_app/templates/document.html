@@ -1212,6 +1212,48 @@
       background: rgba(239,68,68,0.1);
       border-radius: 4px;
     }
+
+    /* Drag and Drop Reordering (edit mode only) */
+    body.edit-mode .document-body > * {
+      position: relative;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+
+    body.edit-mode .document-body > *::before {
+      content: '⋮⋮';
+      position: absolute;
+      left: -28px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--color-border);
+      font-size: 1rem;
+      cursor: grab;
+      opacity: 0;
+      transition: opacity 0.2s;
+      user-select: none;
+    }
+
+    body.edit-mode .document-body > *:hover::before {
+      opacity: 1;
+      color: var(--color-text-secondary);
+    }
+
+    body.edit-mode .document-body > .dragging {
+      opacity: 0.4;
+      transform: scale(0.98);
+    }
+
+    body.edit-mode .document-body > .drag-over-top {
+      box-shadow: 0 -3px 0 0 var(--color-link);
+    }
+
+    body.edit-mode .document-body > .drag-over-bottom {
+      box-shadow: 0 3px 0 0 var(--color-link);
+    }
+
+    body.edit-mode .document-body {
+      padding-left: 2rem;
+    }
   </style>
 </head>
 <body>
@@ -2204,13 +2246,88 @@
         origEnter();
         document.body.classList.add('edit-mode');
         initSectionMedia();
+        initDragDrop();
       };
 
       var origExit = exitEditMode;
       exitEditMode = function(revert) {
         origExit(revert);
         document.body.classList.remove('edit-mode');
+        teardownDragDrop();
       };
+
+      // --- Drag and Drop Reordering ---
+      var dragSrcEl = null;
+
+      function initDragDrop() {
+        var children = docBody.children;
+        for (var i = 0; i < children.length; i++) {
+          enableDrag(children[i]);
+        }
+      }
+
+      function teardownDragDrop() {
+        var children = docBody.children;
+        for (var i = 0; i < children.length; i++) {
+          children[i].removeAttribute('draggable');
+        }
+      }
+
+      function enableDrag(el) {
+        el.setAttribute('draggable', 'true');
+
+        el.addEventListener('dragstart', function(e) {
+          dragSrcEl = el;
+          el.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/html', el.outerHTML);
+        });
+
+        el.addEventListener('dragend', function() {
+          el.classList.remove('dragging');
+          clearDropIndicators();
+          dragSrcEl = null;
+        });
+
+        el.addEventListener('dragover', function(e) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          if (el === dragSrcEl) return;
+          clearDropIndicators();
+          var rect = el.getBoundingClientRect();
+          var midY = rect.top + rect.height / 2;
+          if (e.clientY < midY) {
+            el.classList.add('drag-over-top');
+          } else {
+            el.classList.add('drag-over-bottom');
+          }
+        });
+
+        el.addEventListener('dragleave', function() {
+          el.classList.remove('drag-over-top', 'drag-over-bottom');
+        });
+
+        el.addEventListener('drop', function(e) {
+          e.preventDefault();
+          e.stopPropagation();
+          if (el === dragSrcEl || !dragSrcEl) return;
+          clearDropIndicators();
+          var rect = el.getBoundingClientRect();
+          var midY = rect.top + rect.height / 2;
+          if (e.clientY < midY) {
+            docBody.insertBefore(dragSrcEl, el);
+          } else {
+            docBody.insertBefore(dragSrcEl, el.nextSibling);
+          }
+        });
+      }
+
+      function clearDropIndicators() {
+        var all = docBody.children;
+        for (var i = 0; i < all.length; i++) {
+          all[i].classList.remove('drag-over-top', 'drag-over-bottom');
+        }
+      }
 
       // Initialize on page load (shows icons with content in learner mode)
       initSectionMedia();
