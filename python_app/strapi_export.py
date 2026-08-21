@@ -219,13 +219,15 @@ def _html_to_content_blocks(
     blocks: list[dict] = []
 
     # Split HTML into meaningful chunks
-    # Pattern: split around images, videos, flip-card-decks, h5p containers
+    # Pattern: split around images, videos, flip-card-decks, h5p containers, media icons
     splitter = re.compile(
         r"("
         r"<figure[^>]*>.*?</figure>"
         r"|<video[^>]*>.*?</video>"
         r"|<div[^>]*class=\"flip-card-deck\"[^>]*>.*?</div>\s*</div>\s*</div>"
         r"|<div[^>]*class=\"h5p-inline-container\"[^>]*>.*?</div>"
+        r"|<div[^>]*class=\"section-media\"[^>]*>.*?</div>"
+        r"|<button[^>]*class=\"[^\"]*media-icon[^\"]*has-content[^\"]*\"[^>]*>.*?</button>"
         r"|<img[^>]*/?>"
         r")",
         re.IGNORECASE | re.DOTALL,
@@ -236,6 +238,32 @@ def _html_to_content_blocks(
     for part in parts:
         part = part.strip()
         if not part:
+            continue
+
+        # Media icon buttons with content → convert to proper Strapi blocks
+        media_btn_match = re.search(
+            r'data-media-type="([^"]*)"[^>]*data-media-src="([^"]*)"',
+            part, re.IGNORECASE
+        )
+        if media_btn_match:
+            media_type = media_btn_match.group(1)
+            media_src = media_btn_match.group(2)
+            if media_src:
+                block = _media_icon_to_block(media_type, media_src, media_map, base_url)
+                if block:
+                    blocks.append(block)
+            continue
+
+        # Section-media div (contains multiple media icons) → extract each
+        if "section-media" in part:
+            icon_matches = re.finditer(
+                r'data-media-type="([^"]*)"[^>]*data-media-src="([^"]+)"',
+                part, re.IGNORECASE
+            )
+            for m in icon_matches:
+                block = _media_icon_to_block(m.group(1), m.group(2), media_map, base_url)
+                if block:
+                    blocks.append(block)
             continue
 
         # Image block
@@ -340,34 +368,12 @@ def _guess_mime(file_path: Path) -> str:
 
 def _strip_editor_ui(html: str) -> str:
     """
-    Remove editor-only UI elements from HTML before CMS export.
+    Remove editor-only UI attributes from HTML before CMS export.
 
-    Strips:
-    - Empty media icon buttons (no data-media-src value)
-    - Section media bars that have NO icons with content
-    - draggable attributes (edit-mode drag handles)
-    - contenteditable attributes
-
-    Keeps:
-    - Media icon buttons that have actual content (data-media-src with a value)
-    - Section media bars that contain at least one icon with content
+    Does NOT remove section-media divs or media-icon buttons — those are
+    handled by _html_to_content_blocks which converts them to proper
+    Strapi block types (video-block, audio-block, etc.)
     """
-    # Remove empty media-icon buttons (data-media-src="")
-    html = re.sub(
-        r'<button[^>]*data-media-src=""[^>]*>.*?</button>',
-        '',
-        html,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-
-    # Remove section-media divs that are now empty (had only empty icons)
-    html = re.sub(
-        r'<div[^>]*class="section-media"[^>]*>\s*</div>',
-        '',
-        html,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-
     # Remove draggable attributes
     html = re.sub(r'\s*draggable="true"', '', html)
 
@@ -378,3 +384,88 @@ def _strip_editor_ui(html: str) -> str:
     html = re.sub(r'\n{3,}', '\n\n', html)
 
     return html.strip()
+
+
+def _media_icon_to_block(
+    media_type: str, media_src: str, media_map: dict[str, int], base_url: str
+) -> dict | None:
+    """
+    Convert a media icon button into the appropriate Strapi content block.
+
+    Mapping:
+    - video → blocks.video-block
+    - audio → blocks.audio-block
+    - pptx  → blocks.file-upload-block
+    - h5p   → blocks.h5p-block
+    - url   → blocks.video-block (if YouTube/Vimeo) or blocks.media-block
+    - glossary → blocks.text-block (formatted as definition)
+    """
+    if not media_src:
+        return None
+
+    if media_type == "video":
+        return {
+            "__component": "blocks.video-block",
+            "video_url": media_src,
+            "caption": "",
+        }
+
+    elif media_type == "audio":
+        block: dict = {
+            "__component": "blocks.audio-block",
+            "title": "Audio",
+            "duration": "",
+        }
+        # Check if file was uploaded to Strapi
+        media_id = media_map.get(media_src)
+        if media_id:
+            block["audioFile"] = media_id
+        return block
+
+    elif media_type == "pptx":
+        block = {
+            "__component": "blocks.file-upload-block",
+            "title": "Presentation",
+            "fileType": "ppt",
+        }
+        media_id = media_map.get(media_src)
+        if media_id:
+            block["file"] = media_id
+        return block
+
+    elif media_type == "h5p":
+        return {
+            "__component": "blocks.h5p-block",
+            "title": "Interactive Content",
+            "h5p_url": media_src,
+            "source": "custom",
+        }
+
+    elif media_type == "url":
+        # Check if it's a video URL (YouTube/Vimeo)
+        yt_match = re.search(r"(?:youtube\.com|youtu\.be)", media_src, re.IGNORECASE)
+        vimeo_match = re.search(r"vimeo\.com", media_src, re.IGNORECASE)
+        if yt_match or vimeo_match:
+            return {
+                "__component": "blocks.video-block",
+                "video_url": media_src,
+                "caption": "",
+            }
+        else:
+            return {
+                "__component": "blocks.media-block",
+                "media_url": media_src,
+                "mimeType": "text/html",
+            }
+
+    elif media_type == "glossary":
+        parts = media_src.split("|")
+        term = parts[0].strip() if parts else media_src
+        definition = parts[1].strip() if len(parts) > 1 else ""
+        return {
+            "__component": "blocks.text-block",
+            "callout_type": "info",
+            "body": f"<p><strong>{term}</strong>: {definition}</p>",
+        }
+
+    return None
