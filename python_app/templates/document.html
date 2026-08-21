@@ -1759,10 +1759,10 @@
         var content = '';
         switch (type.key) {
           case 'video':
-            content = '<video controls autoplay><source src="' + escapeAttr(src) + '"></video>';
+            content = '<video controls autoplay src="' + escapeAttr(src) + '" style="width:100%;border-radius:6px;">Your browser does not support video playback.</video>';
             break;
           case 'audio':
-            content = '<audio controls autoplay><source src="' + escapeAttr(src) + '"></audio>';
+            content = '<audio controls autoplay src="' + escapeAttr(src) + '" style="width:100%;">Your browser does not support audio playback.</audio>';
             break;
           case 'pptx':
             content = '<iframe src="https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(src) + '"></iframe>';
