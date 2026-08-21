@@ -1637,10 +1637,12 @@
         <input type="url" id="exportUrl" class="media-url-field" placeholder="https://your-cms.example.com" />
       </div>
       <div class="media-input-section" id="exportStrapiFields">
-        <label class="media-input-label" for="exportApiToken">API Token</label>
-        <input type="password" id="exportApiToken" class="media-url-field" placeholder="Strapi API token" />
-        <label class="media-input-label" for="exportContentType" style="margin-top:0.5rem;">Content Type (API ID)</label>
-        <input type="text" id="exportContentType" class="media-url-field" placeholder="e.g. articles, chapters, lessons" value="chapters" />
+        <label class="media-input-label" for="exportApiToken">Admin JWT Token</label>
+        <input type="password" id="exportApiToken" class="media-url-field" placeholder="JWT from /admin/login" />
+        <label class="media-input-label" for="exportTextbookId" style="margin-top:0.5rem;">Textbook Document ID</label>
+        <input type="text" id="exportTextbookId" class="media-url-field" placeholder="e.g. m6hy31di5ayjlusbfstb8g31" />
+        <label class="media-input-label" for="exportChapterOrder" style="margin-top:0.5rem;">Chapter Order</label>
+        <input type="number" id="exportChapterOrder" class="media-url-field" placeholder="1" value="1" min="1" />
       </div>
       <div class="media-input-section" id="exportWpFields" style="display:none;">
         <label class="media-input-label" for="exportWpUser">Username</label>
@@ -2969,8 +2971,10 @@
 
         if (selectedPlatform === 'strapi') {
           payload.api_token = document.getElementById('exportApiToken').value.trim();
-          payload.content_type = document.getElementById('exportContentType').value.trim() || 'articles';
-          if (!payload.api_token) { exportStatus.textContent = 'API token is required'; return; }
+          payload.textbook_id = document.getElementById('exportTextbookId').value.trim();
+          payload.chapter_order = parseInt(document.getElementById('exportChapterOrder').value) || 1;
+          if (!payload.api_token) { exportStatus.textContent = 'JWT token is required'; return; }
+          if (!payload.textbook_id) { exportStatus.textContent = 'Textbook Document ID is required'; return; }
         } else {
           payload.username = document.getElementById('exportWpUser').value.trim();
           payload.password = document.getElementById('exportWpPass').value.trim();
