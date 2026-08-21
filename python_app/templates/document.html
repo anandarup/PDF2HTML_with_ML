@@ -1099,6 +1099,7 @@
       backface-visibility: hidden;
       border-radius: 10px;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
       padding: 1.5rem;
@@ -1106,6 +1107,7 @@
       font-size: 1rem;
       line-height: 1.5;
       border: 2px solid var(--color-border);
+      overflow: hidden;
     }
 
     .flip-card-front {
@@ -1859,9 +1861,12 @@
         function addFlipCardRow() {
           var row = document.createElement('div');
           row.className = 'flip-card-row';
-          row.innerHTML = '<input type="text" placeholder="Front (term/question)" class="fc-front" />' +
-            '<input type="text" placeholder="Back (definition/answer)" class="fc-back" />' +
-            '<button type="button" class="remove-row" title="Remove">&times;</button>';
+          row.style.flexWrap = 'wrap';
+          row.innerHTML = '<input type="text" placeholder="Front text (term/question)" class="fc-front" style="flex:1;min-width:120px;" />' +
+            '<input type="text" placeholder="Back text (answer/definition)" class="fc-back" style="flex:1;min-width:120px;" />' +
+            '<button type="button" class="remove-row" title="Remove">&times;</button>' +
+            '<input type="url" placeholder="Front image URL (optional)" class="fc-front-img" style="flex:1 1 100%;margin-top:0.3rem;font-size:0.8rem;" />' +
+            '<input type="url" placeholder="Back image URL (optional)" class="fc-back-img" style="flex:1 1 100%;margin-top:0.3rem;font-size:0.8rem;" />';
           row.querySelector('.remove-row').addEventListener('click', function() {
             if (rowsContainer.children.length > 1) row.remove();
           });
@@ -1880,17 +1885,31 @@
           rows.forEach(function(r) {
             var front = r.querySelector('.fc-front').value.trim();
             var back = r.querySelector('.fc-back').value.trim();
-            if (front && back) cards.push({ front: front, back: back });
+            var frontImg = r.querySelector('.fc-front-img').value.trim();
+            var backImg = r.querySelector('.fc-back-img').value.trim();
+            if (front || back || frontImg || backImg) {
+              cards.push({ front: front, back: back, frontImg: frontImg, backImg: backImg });
+            }
           });
           if (cards.length === 0) return;
 
           var deckId = 'deck-' + Date.now();
           var html = '<div class="flip-card-deck" id="' + deckId + '">';
           cards.forEach(function(c, i) {
+            var frontContent = '';
+            if (c.frontImg) frontContent += '<img src="' + c.frontImg + '" style="max-width:100%;max-height:120px;border-radius:4px;margin-bottom:0.5rem;" />';
+            if (c.front) frontContent += '<span>' + c.front + '</span>';
+            if (!frontContent) frontContent = '<span>(empty)</span>';
+
+            var backContent = '';
+            if (c.backImg) backContent += '<img src="' + c.backImg + '" style="max-width:100%;max-height:120px;border-radius:4px;margin-bottom:0.5rem;" />';
+            if (c.back) backContent += '<span>' + c.back + '</span>';
+            if (!backContent) backContent = '<span>(empty)</span>';
+
             html += '<div class="flip-card' + (i === 0 ? ' active' : '') + '" onclick="this.classList.toggle(\'flipped\')">' +
               '<div class="flip-card-inner">' +
-              '<div class="flip-card-front"><span>' + c.front + '</span><span class="flip-card-hint">Click to flip</span></div>' +
-              '<div class="flip-card-back"><span>' + c.back + '</span><span class="flip-card-hint">Click to flip back</span></div>' +
+              '<div class="flip-card-front">' + frontContent + '<span class="flip-card-hint">Click to flip</span></div>' +
+              '<div class="flip-card-back">' + backContent + '<span class="flip-card-hint">Click to flip back</span></div>' +
               '</div></div>';
           });
           if (cards.length > 1) {
