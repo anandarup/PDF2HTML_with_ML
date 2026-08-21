@@ -1200,6 +1200,7 @@
     <div class="toolbar-group">
       <button type="button" id="btnInsertImage" title="Insert image">&#128247; Image</button>
       <button type="button" id="btnInsertVideo" title="Insert video">&#127909; Video</button>
+      <button type="button" id="btnInsertH5P" title="Insert H5P content">&#127922; H5P</button>
       <button type="button" id="btnFlipCard" title="Insert flip card">&#128196; Flip Card</button>
     </div>
     <div class="toolbar-group">
@@ -1670,6 +1671,29 @@
         document.execCommand('insertHTML', false, html);
       });
 
+      // --- Insert H5P ---
+      document.getElementById('btnInsertH5P').addEventListener('click', function() {
+        var src = prompt('H5P content URL (folder path or embed URL):');
+        if (!src || !src.trim()) return;
+        src = src.trim();
+        var h5pId = 'h5p-inline-' + Date.now();
+        var html = '<div id="' + h5pId + '" class="h5p-inline-container" data-h5p-src="' + src + '" style="min-height:300px;border:1px solid var(--color-border);border-radius:8px;margin:1em 0;padding:1rem;"></div>';
+        document.execCommand('insertHTML', false, html);
+        // Initialize the H5P player for the newly inserted container
+        setTimeout(function() {
+          var el = document.getElementById(h5pId);
+          if (el && window.H5PStandalone) {
+            new H5PStandalone.H5P(el, {
+              h5pJsonPath: src,
+              frameJs: 'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js',
+              frameCss: 'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css'
+            });
+          } else if (el) {
+            el.innerHTML = '<p style="text-align:center;color:var(--color-text-secondary);padding:2rem;">H5P content: <a href="' + src + '" target="_blank">' + src + '</a></p>';
+          }
+        }, 200);
+      });
+
       // --- Insert Flip Card ---
       document.getElementById('btnFlipCard').addEventListener('click', function() {
         var front = prompt('Front side text (question/term):');
@@ -2039,6 +2063,21 @@
 
       // Initialize on page load (shows icons with content in learner mode)
       initSectionMedia();
+
+      // Initialize any inline H5P containers saved in the document
+      (function() {
+        var h5pContainers = docBody.querySelectorAll('.h5p-inline-container[data-h5p-src]');
+        h5pContainers.forEach(function(el) {
+          var src = el.getAttribute('data-h5p-src');
+          if (src && window.H5PStandalone && !el.querySelector('.h5p-iframe-wrapper')) {
+            new H5PStandalone.H5P(el, {
+              h5pJsonPath: src,
+              frameJs: 'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js',
+              frameCss: 'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css'
+            });
+          }
+        });
+      })();
     })();
   </script>
 </body>
