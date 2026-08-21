@@ -89,9 +89,9 @@
     }
 
     .drop-zone-icon {
-      font-size: 3rem;
       margin-bottom: 1rem;
       opacity: 0.7;
+      color: var(--text-secondary);
     }
 
     .drop-zone-text {
@@ -317,7 +317,13 @@
     </header>
 
     <div class="drop-zone" id="dropZone">
-      <div class="drop-zone-icon">📄</div>
+      <div class="drop-zone-icon" aria-hidden="true">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+          <path d="M14 2v6h6"/>
+          <path d="M12 18v-6M9 15l3-3 3 3"/>
+        </svg>
+      </div>
       <div class="drop-zone-text">Drag & drop your PDF here</div>
       <div class="drop-zone-hint">or click to browse — max 100 MB</div>
       <input type="file" id="fileInput" accept=".pdf" />
