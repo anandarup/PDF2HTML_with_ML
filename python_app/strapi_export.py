@@ -368,12 +368,29 @@ def _guess_mime(file_path: Path) -> str:
 
 def _strip_editor_ui(html: str) -> str:
     """
-    Remove editor-only UI attributes from HTML before CMS export.
+    Remove editor-only UI attributes and elements from HTML before CMS export.
 
-    Does NOT remove section-media divs or media-icon buttons — those are
-    handled by _html_to_content_blocks which converts them to proper
-    Strapi block types (video-block, audio-block, etc.)
+    Removes:
+    - Block manipulation buttons (move up/down, delete)
+    - draggable and contenteditable attributes
+    - Empty media-icon buttons (no content attached)
     """
+    # Remove block move/delete buttons
+    html = re.sub(
+        r'<button[^>]*class="[^"]*block-(?:move-up|move-down|delete)[^"]*"[^>]*>.*?</button>',
+        '',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # Remove empty media-icon buttons (data-media-src="") — keep ones with URLs
+    html = re.sub(
+        r'<button[^>]*data-media-src=""[^>]*>.*?</button>',
+        '',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
     # Remove draggable attributes
     html = re.sub(r'\s*draggable="true"', '', html)
 
