@@ -1843,6 +1843,13 @@
         var insertBtn = document.getElementById('flipCardInsert');
         var cancelBtn = document.getElementById('flipCardCancel');
 
+        // Save cursor position before modal steals focus
+        var savedRange = null;
+        var sel = window.getSelection();
+        if (sel.rangeCount > 0) {
+          savedRange = sel.getRangeAt(0).cloneRange();
+        }
+
         // Reset
         rowsContainer.innerHTML = '';
         addFlipCardRow();
@@ -1896,6 +1903,12 @@
           html += '</div>';
 
           docBody.focus();
+          // Restore cursor position so card inserts where the editor clicked
+          if (savedRange) {
+            var sel2 = window.getSelection();
+            sel2.removeAllRanges();
+            sel2.addRange(savedRange);
+          }
           document.execCommand('insertHTML', false, html);
           modal.classList.remove('visible');
         };
