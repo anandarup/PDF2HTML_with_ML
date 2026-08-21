@@ -934,7 +934,9 @@
     .media-popup-body video,
     .media-popup-body audio {
       width: 100%;
+      max-height: 70vh;
       border-radius: 6px;
+      background: #000;
     }
 
     .media-popup-body iframe {
@@ -1759,7 +1761,7 @@
         var content = '';
         switch (type.key) {
           case 'video':
-            content = '<video controls autoplay src="' + escapeAttr(src) + '" style="width:100%;border-radius:6px;">Your browser does not support video playback.</video>';
+            content = '<video controls autoplay preload="metadata" src="' + escapeAttr(src) + '" style="width:100%;max-height:70vh;border-radius:6px;background:#000;">Your browser does not support video playback.</video>';
             break;
           case 'audio':
             content = '<audio controls autoplay src="' + escapeAttr(src) + '" style="width:100%;">Your browser does not support audio playback.</audio>';

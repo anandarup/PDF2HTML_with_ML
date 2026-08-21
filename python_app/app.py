@@ -178,6 +178,12 @@ def upload_media(job_dir: str):
 
     file.save(str(target_path))
 
+    # For video uploads, optimize for web streaming by moving the moov atom
+    # to the beginning of the file (enables progressive playback without
+    # downloading the entire file first)
+    if media_type == "video" and target_path.suffix.lower() in (".mp4", ".m4v", ".mov"):
+        _optimize_video_for_streaming(target_path)
+
     # Return the relative URL from the HTML file's perspective
     relative_url = f"media/{target_path.name}"
 
@@ -247,6 +253,41 @@ def save_output(job_dir: str, filename: str):
 
     except OSError as e:
         return jsonify({"error": f"File write failed: {e}"}), 500
+
+
+def _optimize_video_for_streaming(video_path: Path) -> None:
+    """
+    Move the MP4 moov atom to the beginning of the file for progressive playback.
+
+    Without this, browsers must download the entire file before they can
+    determine duration/seek/play. Uses ffmpeg's -movflags +faststart.
+    """
+    import subprocess
+    import shutil
+
+    if not shutil.which("ffmpeg"):
+        return  # Best-effort: skip if ffmpeg not available
+
+    tmp_path = video_path.with_suffix(".faststart.mp4")
+    try:
+        result = subprocess.run(
+            [
+                "ffmpeg", "-y", "-i", str(video_path),
+                "-c", "copy", "-movflags", "+faststart",
+                str(tmp_path),
+            ],
+            capture_output=True,
+            timeout=300,
+        )
+        if result.returncode == 0 and tmp_path.exists():
+            tmp_path.replace(video_path)
+        else:
+            # Clean up failed attempt
+            if tmp_path.exists():
+                tmp_path.unlink()
+    except (subprocess.TimeoutExpired, OSError):
+        if tmp_path.exists():
+            tmp_path.unlink()
 
 
 def _rebuild_toc_in_html(full_html: str, body_html: str) -> str:
