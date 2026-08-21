@@ -1718,7 +1718,7 @@
         var formData = new FormData();
         formData.append('file', file);
 
-        return fetch('/output/' + jobDir + '/media-upload', {
+        return fetch('/upload-media/' + jobDir, {
           method: 'POST',
           body: formData
         })

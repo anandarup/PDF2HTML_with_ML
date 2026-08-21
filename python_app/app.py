@@ -110,14 +110,7 @@ def convert_pdf():
             upload_path.unlink()
 
 
-@app.route("/output/<path:job_dir>/<path:filename>")
-def serve_output(job_dir: str, filename: str):
-    """Serve converted HTML and associated assets (images)."""
-    directory = OUTPUT_DIR.resolve() / job_dir
-    return send_from_directory(str(directory), filename)
-
-
-@app.route("/output/<path:job_dir>/media-upload", methods=["POST"])
+@app.route("/upload-media/<path:job_dir>", methods=["POST"])
 def upload_media(job_dir: str):
     """
     Handle media file uploads for a converted document.
@@ -167,6 +160,13 @@ def upload_media(job_dir: str):
         "url": relative_url,
         "filename": target_path.name,
     }), 201
+
+
+@app.route("/output/<path:job_dir>/<path:filename>")
+def serve_output(job_dir: str, filename: str):
+    """Serve converted HTML and associated assets (images)."""
+    directory = OUTPUT_DIR.resolve() / job_dir
+    return send_from_directory(str(directory), filename)
 
 
 @app.route("/output/<path:job_dir>/<path:filename>", methods=["PUT"])
