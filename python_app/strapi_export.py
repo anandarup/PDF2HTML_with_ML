@@ -64,6 +64,9 @@ def export_to_strapi_diksha(
         "Content-Type": "application/json",
     }
 
+    # Strip editor-only UI elements that shouldn't go to the CMS
+    body_html = _strip_editor_ui(body_html)
+
     # Step 1: Upload media files and build path→id mapping
     media_map: dict[str, int] = {}
     if local_dir and local_dir.exists():
@@ -333,3 +336,45 @@ def _guess_mime(file_path: Path) -> str:
     """Guess MIME type for a file."""
     mime = mimetypes.guess_type(str(file_path))[0]
     return mime or "application/octet-stream"
+
+
+def _strip_editor_ui(html: str) -> str:
+    """
+    Remove editor-only UI elements from HTML before CMS export.
+
+    Strips:
+    - Section media icon bars (.section-media divs with media-icon buttons)
+    - draggable attributes (edit-mode drag handles)
+    - contenteditable attributes
+    - Media embed containers (.media-embed)
+    - Any data-media-type/data-media-src button elements
+    """
+    # Remove entire .section-media divs (media icon bars)
+    html = re.sub(
+        r'<div[^>]*class="section-media"[^>]*>.*?</div>',
+        '',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # Remove draggable attributes
+    html = re.sub(r'\s*draggable="true"', '', html)
+
+    # Remove contenteditable attributes
+    html = re.sub(r'\s*contenteditable="[^"]*"', '', html)
+
+    # Remove any leftover data-media-type/data-media-src attributes
+    html = re.sub(r'\s*data-media-(?:type|src)="[^"]*"', '', html)
+
+    # Remove empty button elements that were media icons
+    html = re.sub(
+        r'<button[^>]*class="[^"]*media-icon[^"]*"[^>]*>.*?</button>',
+        '',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # Clean up multiple consecutive blank lines
+    html = re.sub(r'\n{3,}', '\n\n', html)
+
+    return html.strip()

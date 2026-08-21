@@ -524,6 +524,9 @@ def _export_to_strapi_diksha(data: dict, base_url: str, title: str, body_html: s
 
 def _export_to_wordpress(data: dict, base_url: str, title: str, body_html: str, http_client) -> tuple:
     """Push content to WordPress REST API (posts endpoint)."""
+    from strapi_export import _strip_editor_ui
+    body_html = _strip_editor_ui(body_html)
+
     username = data.get("username", "")
     password = data.get("password", "")
 
