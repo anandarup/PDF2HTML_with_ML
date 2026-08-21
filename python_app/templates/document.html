@@ -1686,7 +1686,7 @@
             // Upload the file
             statusEl.textContent = 'Uploading...';
             submitBtn.disabled = true;
-            uploadMediaFile(file).then(function(result) {
+            uploadMediaFile(file, type.key).then(function(result) {
               btn.setAttribute('data-media-src', result.url);
               btn.classList.add('has-content');
               statusEl.textContent = '';
@@ -1709,7 +1709,7 @@
         modal.addEventListener('click', onBackdrop);
       }
 
-      function uploadMediaFile(file) {
+      function uploadMediaFile(file, mediaType) {
         // Determine the job directory from the current page URL
         var pathParts = window.location.pathname.split('/');
         // URL pattern: /output/<job_dir>/<filename>.html
@@ -1718,6 +1718,7 @@
 
         var formData = new FormData();
         formData.append('file', file);
+        formData.append('type', mediaType || 'video');
 
         return fetch('/upload-media/' + encodeURIComponent(jobDir), {
           method: 'POST',

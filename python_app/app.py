@@ -32,7 +32,18 @@ app = Flask(__name__, static_folder="static", template_folder="web_templates")
 # Configuration
 UPLOAD_DIR = Path("uploads")
 OUTPUT_DIR = Path("../output")
-MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500 MB max upload (video/audio files)
+
+# Global max set to the largest allowed type (video: 1.2 GB)
+MAX_CONTENT_LENGTH = 1200 * 1024 * 1024
+
+# Per-type upload limits (bytes)
+UPLOAD_LIMITS: dict = {
+    "video": 1200 * 1024 * 1024,  # 1.2 GB
+    "audio": 50 * 1024 * 1024,    # 50 MB
+    "pptx": 30 * 1024 * 1024,     # 30 MB
+    "h5p": 400 * 1024 * 1024,     # 400 MB
+    "pdf": 100 * 1024 * 1024,     # 100 MB
+}
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
@@ -124,6 +135,21 @@ def upload_media(job_dir: str):
     file = request.files["file"]
     if not file.filename:
         return jsonify({"error": "No file selected"}), 400
+
+    # Enforce per-type size limit
+    media_type = request.form.get("type", "video")
+    size_limit = UPLOAD_LIMITS.get(media_type, UPLOAD_LIMITS["video"])
+
+    # Check file size by reading content length or seeking
+    file.seek(0, 2)  # Seek to end
+    file_size = file.tell()
+    file.seek(0)     # Reset to start
+
+    if file_size > size_limit:
+        limit_mb = size_limit // (1024 * 1024)
+        return jsonify({
+            "error": f"File too large. Maximum for {media_type} is {limit_mb} MB."
+        }), 413
 
     # Validate the target directory exists and is within OUTPUT_DIR
     target_dir = OUTPUT_DIR.resolve() / job_dir / "media"
