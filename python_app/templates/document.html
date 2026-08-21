@@ -799,6 +799,7 @@
             saveStatus.textContent = 'Saved';
             saveStatus.className = 'save-status success';
             originalContent = htmlContent;
+            refreshTOC();
             setTimeout(function() { exitEditMode(false); }, 1000);
           } else {
             return res.json().then(function(data) {
@@ -810,6 +811,38 @@
           saveStatus.textContent = err.message;
           saveStatus.className = 'save-status error';
         });
+      }
+
+      function refreshTOC() {
+        var tocList = document.querySelector('.toc-list');
+        if (!tocList) return;
+
+        // Rebuild TOC from current headings in the document body
+        var headings = docBody.querySelectorAll('h1, h2, h3');
+        var items = [];
+
+        headings.forEach(function(h) {
+          var level = parseInt(h.tagName.charAt(1), 10);
+          var text = h.textContent.trim();
+          if (!text) return;
+
+          // Ensure heading has an ID for linking
+          if (!h.id) {
+            h.id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          }
+
+          var indent = (level - 1) * 12;
+          items.push(
+            '<li class="toc-item toc-level-' + level + '" style="padding-left:' + indent + 'px">' +
+            '<a href="#' + h.id + '">' + text + '</a></li>'
+          );
+        });
+
+        if (items.length > 0) {
+          tocList.innerHTML = items.join('');
+        } else {
+          tocList.innerHTML = '<p class="toc-empty">No headings found</p>';
+        }
       }
 
       // Keyboard shortcuts while editing

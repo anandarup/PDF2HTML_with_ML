@@ -160,12 +160,61 @@ def save_output(job_dir: str, filename: str):
         if count == 0:
             return jsonify({"error": "Could not locate content section"}), 500
 
+        # Rebuild the TOC from the new headings
+        updated_html = _rebuild_toc_in_html(updated_html, new_body)
+
         file_path.write_text(updated_html, encoding="utf-8")
 
         return jsonify({"success": True, "message": "Content saved"}), 200
 
     except OSError as e:
         return jsonify({"error": f"File write failed: {e}"}), 500
+
+
+def _rebuild_toc_in_html(full_html: str, body_html: str) -> str:
+    """
+    Rebuild the TOC sidebar in the full HTML based on current headings.
+
+    Extracts h1-h3 headings from body_html and regenerates the
+    <ul class="toc-list"> contents in the full document.
+    """
+    import re
+
+    # Extract headings from the body
+    heading_pattern = re.compile(
+        r'<h([1-3])[^>]*id="([^"]*)"[^>]*>(.*?)</h\1>',
+        re.IGNORECASE | re.DOTALL,
+    )
+
+    toc_items: list = []
+    for match in heading_pattern.finditer(body_html):
+        level = int(match.group(1))
+        heading_id = match.group(2)
+        text = re.sub(r"<[^>]+>", "", match.group(3)).strip()
+        if text:
+            indent = (level - 1) * 12
+            toc_items.append(
+                f'<li class="toc-item toc-level-{level}" '
+                f'style="padding-left:{indent}px">'
+                f'<a href="#{heading_id}">{text}</a></li>'
+            )
+
+    if not toc_items:
+        return full_html
+
+    new_toc = "\n          ".join(toc_items)
+    toc_ul = f'<ul class="toc-list">\n          {new_toc}\n        </ul>'
+
+    # Replace existing toc-list
+    toc_pattern = r'<ul class="toc-list">.*?</ul>'
+    updated, count = re.subn(toc_pattern, toc_ul, full_html, count=1, flags=re.DOTALL)
+
+    if count == 0:
+        # If no toc-list exists, try replacing toc-empty
+        empty_pattern = r'<p class="toc-empty">.*?</p>'
+        updated, _ = re.subn(empty_pattern, toc_ul, full_html, count=1, flags=re.DOTALL)
+
+    return updated
 
 
 if __name__ == "__main__":
