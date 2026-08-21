@@ -441,7 +441,8 @@
     /* Print */
     @media print {
       .toc-sidebar,
-      .back-to-top {
+      .back-to-top,
+      .edit-toolbar {
         display: none;
       }
 
@@ -474,6 +475,128 @@
         max-width: 100%;
         page-break-inside: avoid;
       }
+    }
+
+    /* Editor Toolbar */
+    .edit-toolbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      background: var(--color-bg);
+      border-bottom: 2px solid var(--color-border);
+      padding: 0.5rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+      transform: translateY(-100%);
+      transition: transform 0.3s ease;
+    }
+
+    .edit-toolbar.visible {
+      transform: translateY(0);
+    }
+
+    .edit-toolbar .toolbar-group {
+      display: flex;
+      gap: 0.25rem;
+      padding-right: 0.75rem;
+      border-right: 1px solid var(--color-border);
+      margin-right: 0.5rem;
+    }
+
+    .edit-toolbar .toolbar-group:last-child {
+      border-right: none;
+      margin-left: auto;
+    }
+
+    .edit-toolbar button {
+      padding: 0.4rem 0.6rem;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      background: var(--color-bg);
+      color: var(--color-text);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: background 0.15s, border-color 0.15s;
+      min-width: 32px;
+      text-align: center;
+    }
+
+    .edit-toolbar button:hover {
+      background: var(--color-code-bg);
+      border-color: var(--color-link);
+    }
+
+    .edit-toolbar button.active {
+      background: var(--color-link);
+      color: #fff;
+      border-color: var(--color-link);
+    }
+
+    .edit-toolbar .btn-save {
+      background: #10b981;
+      color: #fff;
+      border-color: #10b981;
+      padding: 0.4rem 1rem;
+    }
+
+    .edit-toolbar .btn-save:hover {
+      background: #059669;
+    }
+
+    .edit-toolbar .btn-cancel {
+      background: var(--color-bg);
+      color: var(--color-text);
+    }
+
+    .edit-toggle {
+      position: fixed;
+      top: 1rem;
+      right: 5rem;
+      z-index: 999;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      border: 1px solid var(--color-border);
+      background: var(--color-bg);
+      color: var(--color-text);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .edit-toggle:hover {
+      border-color: var(--color-link);
+      background: var(--color-code-bg);
+    }
+
+    .document-body[contenteditable="true"] {
+      outline: 2px dashed var(--color-link);
+      outline-offset: 8px;
+      min-height: 200px;
+    }
+
+    .document-body[contenteditable="true"]:focus {
+      outline-color: var(--color-link-hover);
+    }
+
+    .save-status {
+      font-size: 0.8rem;
+      color: var(--color-text-secondary);
+      padding: 0.25rem 0.5rem;
+    }
+
+    .save-status.success {
+      color: #10b981;
+    }
+
+    .save-status.error {
+      color: #ef4444;
     }
   </style>
 </head>
@@ -514,6 +637,34 @@
       <path d="M10 16V4M4 10l6-6 6 6"/>
     </svg>
   </button>
+
+  <button class="edit-toggle" id="editToggle" aria-label="Toggle edit mode">Edit</button>
+
+  <div class="edit-toolbar" id="editToolbar" role="toolbar" aria-label="Formatting toolbar">
+    <div class="toolbar-group">
+      <button type="button" data-cmd="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+      <button type="button" data-cmd="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+      <button type="button" data-cmd="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+    </div>
+    <div class="toolbar-group">
+      <button type="button" data-cmd="formatBlock" data-val="h2" title="Heading 2">H2</button>
+      <button type="button" data-cmd="formatBlock" data-val="h3" title="Heading 3">H3</button>
+      <button type="button" data-cmd="formatBlock" data-val="p" title="Paragraph">P</button>
+    </div>
+    <div class="toolbar-group">
+      <button type="button" data-cmd="insertUnorderedList" title="Bullet list">UL</button>
+      <button type="button" data-cmd="insertOrderedList" title="Numbered list">OL</button>
+    </div>
+    <div class="toolbar-group">
+      <button type="button" data-cmd="undo" title="Undo (Ctrl+Z)">Undo</button>
+      <button type="button" data-cmd="redo" title="Redo (Ctrl+Y)">Redo</button>
+    </div>
+    <div class="toolbar-group">
+      <span class="save-status" id="saveStatus"></span>
+      <button type="button" class="btn-cancel" id="editCancel">Cancel</button>
+      <button type="button" class="btn-save" id="editSave">Save</button>
+    </div>
+  </div>
 
   <script>
     // Back to top visibility
@@ -567,6 +718,108 @@
 
       window.addEventListener('scroll', updateActive, { passive: true });
       updateActive();
+    })();
+
+    // Inline Editor
+    (function() {
+      var editToggle = document.getElementById('editToggle');
+      var editToolbar = document.getElementById('editToolbar');
+      var editSave = document.getElementById('editSave');
+      var editCancel = document.getElementById('editCancel');
+      var saveStatus = document.getElementById('saveStatus');
+      var docBody = document.querySelector('.document-body');
+      var originalContent = '';
+      var isEditing = false;
+
+      if (!editToggle || !docBody) return;
+
+      editToggle.addEventListener('click', function() {
+        if (!isEditing) {
+          enterEditMode();
+        } else {
+          exitEditMode(false);
+        }
+      });
+
+      editCancel.addEventListener('click', function() {
+        exitEditMode(true);
+      });
+
+      editSave.addEventListener('click', saveContent);
+
+      // Toolbar formatting commands
+      editToolbar.addEventListener('click', function(e) {
+        var btn = e.target.closest('button[data-cmd]');
+        if (!btn) return;
+        e.preventDefault();
+        var cmd = btn.getAttribute('data-cmd');
+        var val = btn.getAttribute('data-val') || null;
+        document.execCommand(cmd, false, val);
+        docBody.focus();
+      });
+
+      function enterEditMode() {
+        isEditing = true;
+        originalContent = docBody.innerHTML;
+        docBody.setAttribute('contenteditable', 'true');
+        docBody.focus();
+        editToolbar.classList.add('visible');
+        editToggle.textContent = 'Editing...';
+        editToggle.style.borderColor = 'var(--color-link)';
+        saveStatus.textContent = '';
+        // Push content down to avoid toolbar overlap
+        document.querySelector('.document-wrapper').style.marginTop = '52px';
+      }
+
+      function exitEditMode(revert) {
+        isEditing = false;
+        if (revert) {
+          docBody.innerHTML = originalContent;
+        }
+        docBody.removeAttribute('contenteditable');
+        editToolbar.classList.remove('visible');
+        editToggle.textContent = 'Edit';
+        editToggle.style.borderColor = '';
+        document.querySelector('.document-wrapper').style.marginTop = '';
+      }
+
+      function saveContent() {
+        saveStatus.textContent = 'Saving...';
+        saveStatus.className = 'save-status';
+
+        var htmlContent = docBody.innerHTML;
+
+        fetch(window.location.pathname, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body_html: htmlContent })
+        })
+        .then(function(res) {
+          if (res.ok) {
+            saveStatus.textContent = 'Saved';
+            saveStatus.className = 'save-status success';
+            originalContent = htmlContent;
+            setTimeout(function() { exitEditMode(false); }, 1000);
+          } else {
+            return res.json().then(function(data) {
+              throw new Error(data.error || 'Save failed');
+            });
+          }
+        })
+        .catch(function(err) {
+          saveStatus.textContent = err.message;
+          saveStatus.className = 'save-status error';
+        });
+      }
+
+      // Keyboard shortcuts while editing
+      docBody.addEventListener('keydown', function(e) {
+        if (!isEditing) return;
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+          e.preventDefault();
+          saveContent();
+        }
+      });
     })();
   </script>
 </body>

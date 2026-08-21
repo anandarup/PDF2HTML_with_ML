@@ -117,5 +117,56 @@ def serve_output(job_dir: str, filename: str):
     return send_from_directory(str(directory), filename)
 
 
+@app.route("/output/<path:job_dir>/<path:filename>", methods=["PUT"])
+def save_output(job_dir: str, filename: str):
+    """
+    Save edited HTML content back to the output file.
+
+    Accepts JSON body with { "body_html": "<updated content>" }.
+    Replaces the article content in the saved HTML file.
+    """
+    if not filename.lower().endswith(".html"):
+        return jsonify({"error": "Only HTML files can be edited"}), 400
+
+    data = request.get_json()
+    if not data or "body_html" not in data:
+        return jsonify({"error": "Missing body_html in request"}), 400
+
+    file_path = OUTPUT_DIR.resolve() / job_dir / filename
+    if not file_path.exists():
+        return jsonify({"error": "File not found"}), 404
+
+    # Security: ensure the resolved path is within OUTPUT_DIR
+    try:
+        file_path.resolve().relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        return jsonify({"error": "Invalid path"}), 403
+
+    try:
+        html_content = file_path.read_text(encoding="utf-8")
+
+        # Replace the article body content between the markers
+        import re
+        new_body = data["body_html"]
+
+        # Match the <article class="document-body">...</article> section
+        pattern = r'(<article class="document-body">)(.*?)(</article>)'
+        replacement = r'\g<1>' + new_body.replace('\\', '\\\\') + r'\g<3>'
+
+        updated_html, count = re.subn(
+            pattern, replacement, html_content, count=1, flags=re.DOTALL
+        )
+
+        if count == 0:
+            return jsonify({"error": "Could not locate content section"}), 500
+
+        file_path.write_text(updated_html, encoding="utf-8")
+
+        return jsonify({"success": True, "message": "Content saved"}), 200
+
+    except OSError as e:
+        return jsonify({"error": f"File write failed: {e}"}), 500
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=8501)
