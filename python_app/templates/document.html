@@ -1794,10 +1794,19 @@
           case 'url':
             var embedUrl = getEmbedUrl(src);
             if (embedUrl) {
-              content = '<iframe src="' + escapeAttr(embedUrl) + '" allowfullscreen></iframe>';
+              // YouTube/Vimeo embeds don't work from file:// protocol
+              if (window.location.protocol === 'file:') {
+                content = '<p style="text-align:center;padding:2rem;"><a class="url-link" href="' + escapeAttr(src) + '" target="_blank" rel="noopener">&#9654; Open video in browser</a></p>';
+              } else {
+                content = '<iframe src="' + escapeAttr(embedUrl) + '" allowfullscreen></iframe>';
+              }
             } else {
-              content = '<iframe src="' + escapeAttr(src) + '" sandbox="allow-scripts allow-same-origin allow-popups" style="width:100%;min-height:500px;border:none;border-radius:6px;"></iframe>' +
-                '<p style="margin-top:0.75rem;text-align:center;"><a class="url-link" href="' + escapeAttr(src) + '" target="_blank" rel="noopener">&#128279; Open in new tab</a></p>';
+              if (window.location.protocol === 'file:') {
+                content = '<p style="text-align:center;padding:2rem;"><a class="url-link" href="' + escapeAttr(src) + '" target="_blank" rel="noopener">&#128279; Open link in browser</a></p>';
+              } else {
+                content = '<iframe src="' + escapeAttr(src) + '" sandbox="allow-scripts allow-same-origin allow-popups" style="width:100%;min-height:500px;border:none;border-radius:6px;"></iframe>' +
+                  '<p style="margin-top:0.75rem;text-align:center;"><a class="url-link" href="' + escapeAttr(src) + '" target="_blank" rel="noopener">&#128279; Open in new tab</a></p>';
+              }
             }
             break;
         }
