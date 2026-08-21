@@ -13,6 +13,7 @@
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
   <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
   <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+  <script src="https://unpkg.com/h5p-standalone@3.8.0/dist/main.bundle.js"></script>
   <style>
     :root {
       --color-bg: #ffffff;
@@ -1795,7 +1796,17 @@
             content = '<iframe src="https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(src) + '"></iframe>';
             break;
           case 'h5p':
-            content = '<iframe src="' + escapeAttr(src) + '" allowfullscreen></iframe>';
+            var h5pId = 'h5p-container-' + Date.now();
+            content = '<div id="' + h5pId + '" style="min-height:400px;"></div>';
+            // Initialize h5p-standalone after DOM update
+            setTimeout(function() {
+              var h5pEl = document.getElementById(h5pId);
+              if (h5pEl && window.H5PStandalone) {
+                new H5PStandalone.H5P(h5pEl, { h5pJsonPath: src, frameJs: 'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js', frameCss: 'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css' });
+              } else if (h5pEl) {
+                h5pEl.innerHTML = '<p style="padding:2rem;text-align:center;color:var(--color-text-secondary);">H5P player could not load. <a href="' + escapeAttr(src) + '" target="_blank">Download H5P file</a></p>';
+              }
+            }, 100);
             break;
           case 'glossary':
             var parts = src.split('|');

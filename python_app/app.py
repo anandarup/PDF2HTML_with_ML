@@ -187,8 +187,15 @@ def upload_media(job_dir: str):
     if media_type == "video" and target_path.suffix.lower() in (".mp4", ".m4v", ".mov"):
         _optimize_video_for_streaming(target_path)
 
+    # For H5P uploads, extract the zip archive for browser playback
+    h5p_folder = ""
+    if media_type == "h5p" and target_path.suffix.lower() == ".h5p":
+        h5p_folder = _extract_h5p(target_path)
+
     # Return the relative URL from the HTML file's perspective
     relative_url = f"media/{target_path.name}"
+    if h5p_folder:
+        relative_url = f"media/{h5p_folder}"
 
     return jsonify({
         "success": True,
@@ -256,6 +263,29 @@ def save_output(job_dir: str, filename: str):
 
     except OSError as e:
         return jsonify({"error": f"File write failed: {e}"}), 500
+
+
+def _extract_h5p(h5p_path: Path) -> str:
+    """
+    Extract an H5P file (ZIP archive) into a folder for browser playback.
+
+    H5P files are ZIP archives containing HTML5 interactive content.
+    They must be extracted to be served to the h5p-standalone player.
+
+    Returns:
+        The folder name (relative to media/) where content was extracted.
+    """
+    import zipfile
+
+    folder_name = h5p_path.stem
+    extract_dir = h5p_path.parent / folder_name
+
+    try:
+        with zipfile.ZipFile(str(h5p_path), "r") as zf:
+            zf.extractall(str(extract_dir))
+        return folder_name
+    except (zipfile.BadZipFile, OSError):
+        return ""
 
 
 def _optimize_video_for_streaming(video_path: Path) -> None:
