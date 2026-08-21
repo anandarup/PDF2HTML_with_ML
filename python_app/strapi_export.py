@@ -343,15 +343,26 @@ def _strip_editor_ui(html: str) -> str:
     Remove editor-only UI elements from HTML before CMS export.
 
     Strips:
-    - Section media icon bars (.section-media divs with media-icon buttons)
+    - Empty media icon buttons (no data-media-src value)
+    - Section media bars that have NO icons with content
     - draggable attributes (edit-mode drag handles)
     - contenteditable attributes
-    - Media embed containers (.media-embed)
-    - Any data-media-type/data-media-src button elements
+
+    Keeps:
+    - Media icon buttons that have actual content (data-media-src with a value)
+    - Section media bars that contain at least one icon with content
     """
-    # Remove entire .section-media divs (media icon bars)
+    # Remove empty media-icon buttons (data-media-src="")
     html = re.sub(
-        r'<div[^>]*class="section-media"[^>]*>.*?</div>',
+        r'<button[^>]*data-media-src=""[^>]*>.*?</button>',
+        '',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+    # Remove section-media divs that are now empty (had only empty icons)
+    html = re.sub(
+        r'<div[^>]*class="section-media"[^>]*>\s*</div>',
         '',
         html,
         flags=re.IGNORECASE | re.DOTALL,
@@ -362,17 +373,6 @@ def _strip_editor_ui(html: str) -> str:
 
     # Remove contenteditable attributes
     html = re.sub(r'\s*contenteditable="[^"]*"', '', html)
-
-    # Remove any leftover data-media-type/data-media-src attributes
-    html = re.sub(r'\s*data-media-(?:type|src)="[^"]*"', '', html)
-
-    # Remove empty button elements that were media icons
-    html = re.sub(
-        r'<button[^>]*class="[^"]*media-icon[^"]*"[^>]*>.*?</button>',
-        '',
-        html,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
 
     # Clean up multiple consecutive blank lines
     html = re.sub(r'\n{3,}', '\n\n', html)
