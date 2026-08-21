@@ -152,7 +152,10 @@ def upload_media(job_dir: str):
         }), 413
 
     # Validate the target directory exists and is within OUTPUT_DIR
-    target_dir = OUTPUT_DIR.resolve() / job_dir / "media"
+    # URL-decode the job_dir to handle double-encoding from browser JS
+    from urllib.parse import unquote
+    decoded_job_dir = unquote(job_dir)
+    target_dir = OUTPUT_DIR.resolve() / decoded_job_dir / "media"
     try:
         target_dir.resolve().relative_to(OUTPUT_DIR.resolve())
     except ValueError:
