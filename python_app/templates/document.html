@@ -767,6 +767,97 @@
       background: var(--color-code-bg);
       border-color: var(--color-link);
     }
+
+    /* Section Media Attachments */
+    .section-media {
+      display: flex;
+      gap: 0.4rem;
+      margin: 0.5rem 0 1rem;
+      padding: 0.4rem 0;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .media-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      border: 1px solid var(--color-border);
+      background: var(--color-bg);
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background 0.15s, border-color 0.15s, opacity 0.2s;
+      position: relative;
+      text-decoration: none;
+      color: var(--color-text-secondary);
+    }
+
+    .media-icon:hover {
+      background: var(--color-code-bg);
+      border-color: var(--color-link);
+      color: var(--color-link);
+    }
+
+    .media-icon.has-content {
+      border-color: var(--color-link);
+      color: var(--color-link);
+      background: color-mix(in srgb, var(--color-link) 8%, var(--color-bg));
+    }
+
+    .media-icon.has-content::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+    }
+
+    /* Learner mode: hide empty icons */
+    body:not(.edit-mode) .media-icon:not(.has-content) {
+      display: none;
+    }
+
+    /* Edit mode: show all with reduced opacity for empty */
+    body.edit-mode .media-icon:not(.has-content) {
+      opacity: 0.5;
+    }
+
+    body.edit-mode .media-icon:not(.has-content):hover {
+      opacity: 1;
+    }
+
+    .media-icon[title]::before {
+      content: attr(title);
+      display: none;
+    }
+
+    /* Media content display */
+    .media-embed {
+      margin: 0.75rem 0;
+      padding: 0.75rem;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--color-code-bg);
+    }
+
+    .media-embed video,
+    .media-embed audio {
+      width: 100%;
+      border-radius: 4px;
+    }
+
+    .media-embed iframe {
+      width: 100%;
+      min-height: 400px;
+      border: none;
+      border-radius: 4px;
+    }
   </style>
 </head>
 <body>
@@ -1230,6 +1321,138 @@
           if (e.target === modal) modal.classList.remove('visible');
         });
       });
+
+      // --- Section Media Attachments ---
+      var MEDIA_TYPES = [
+        { key: 'video', icon: '&#127909;', label: 'Video' },
+        { key: 'audio', icon: '&#127911;', label: 'Audio' },
+        { key: 'pptx', icon: '&#128202;', label: 'Presentation' },
+        { key: 'h5p', icon: '&#127922;', label: 'H5P Content' },
+        { key: 'glossary', icon: '&#128218;', label: 'Glossary' },
+        { key: 'url', icon: '&#128279;', label: 'URL Link' }
+      ];
+
+      function initSectionMedia() {
+        var headings = docBody.querySelectorAll('h1, h2, h3');
+        headings.forEach(function(heading) {
+          // Skip if already has media bar
+          if (heading.nextElementSibling && heading.nextElementSibling.classList.contains('section-media')) return;
+
+          var mediaBar = document.createElement('div');
+          mediaBar.className = 'section-media';
+          mediaBar.setAttribute('data-section', heading.id || heading.textContent.trim().substring(0, 30));
+
+          MEDIA_TYPES.forEach(function(type) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'media-icon';
+            btn.setAttribute('data-media-type', type.key);
+            btn.setAttribute('data-media-src', '');
+            btn.innerHTML = type.icon;
+            btn.title = type.label;
+            btn.addEventListener('click', function(e) {
+              e.stopPropagation();
+              handleMediaClick(btn, type);
+            });
+            mediaBar.appendChild(btn);
+          });
+
+          heading.insertAdjacentElement('afterend', mediaBar);
+        });
+      }
+
+      function handleMediaClick(btn, type) {
+        if (!isEditing) {
+          // Learner mode: show the content
+          showMediaContent(btn, type);
+          return;
+        }
+
+        // Edit mode: prompt for URL/source
+        var currentSrc = btn.getAttribute('data-media-src') || '';
+        var promptMsg = type.label + ' URL or file path';
+        if (type.key === 'glossary') promptMsg = 'Glossary term and definition (format: term | definition)';
+
+        var newSrc = prompt(promptMsg + ':', currentSrc);
+
+        if (newSrc === null) return; // cancelled
+
+        btn.setAttribute('data-media-src', newSrc);
+        if (newSrc.trim()) {
+          btn.classList.add('has-content');
+        } else {
+          btn.classList.remove('has-content');
+        }
+      }
+
+      function showMediaContent(btn, type) {
+        var src = btn.getAttribute('data-media-src');
+        if (!src || !src.trim()) return;
+
+        // Toggle: if embed already showing, remove it
+        var existingEmbed = btn.closest('.section-media').nextElementSibling;
+        if (existingEmbed && existingEmbed.classList.contains('media-embed') && existingEmbed.getAttribute('data-for') === type.key) {
+          existingEmbed.remove();
+          return;
+        }
+
+        // Remove any other open embed from this section
+        var sectionMedia = btn.closest('.section-media');
+        var nextEl = sectionMedia.nextElementSibling;
+        if (nextEl && nextEl.classList.contains('media-embed')) {
+          nextEl.remove();
+        }
+
+        var embed = document.createElement('div');
+        embed.className = 'media-embed';
+        embed.setAttribute('data-for', type.key);
+
+        switch (type.key) {
+          case 'video':
+            embed.innerHTML = '<video controls><source src="' + escapeAttr(src) + '"></video>';
+            break;
+          case 'audio':
+            embed.innerHTML = '<audio controls><source src="' + escapeAttr(src) + '"></audio>';
+            break;
+          case 'pptx':
+            embed.innerHTML = '<iframe src="https://view.officeapps.live.com/op/embed.aspx?src=' + encodeURIComponent(src) + '" frameborder="0"></iframe><p><a href="' + escapeAttr(src) + '" target="_blank">Download Presentation</a></p>';
+            break;
+          case 'h5p':
+            embed.innerHTML = '<iframe src="' + escapeAttr(src) + '" allowfullscreen></iframe>';
+            break;
+          case 'glossary':
+            var parts = src.split('|');
+            var term = parts[0] ? parts[0].trim() : '';
+            var def = parts[1] ? parts[1].trim() : src;
+            embed.innerHTML = '<strong>' + escapeHtml(term) + '</strong>: ' + escapeHtml(def);
+            break;
+          case 'url':
+            embed.innerHTML = '<a href="' + escapeAttr(src) + '" target="_blank" rel="noopener">' + escapeHtml(src) + '</a>';
+            break;
+        }
+
+        sectionMedia.insertAdjacentElement('afterend', embed);
+      }
+
+      function escapeAttr(s) { return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;'); }
+      function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+      // Override enterEditMode/exitEditMode to toggle body class
+      var origEnter = enterEditMode;
+      enterEditMode = function() {
+        origEnter();
+        document.body.classList.add('edit-mode');
+        initSectionMedia();
+      };
+
+      var origExit = exitEditMode;
+      exitEditMode = function(revert) {
+        origExit(revert);
+        document.body.classList.remove('edit-mode');
+      };
+
+      // Initialize on page load (shows icons with content in learner mode)
+      initSectionMedia();
     })();
   </script>
 </body>
