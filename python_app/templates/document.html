@@ -3476,14 +3476,17 @@
 
     // --- Interactive Diagrams ---
     (function() {
+      var docBodyForDiagrams = document.querySelector('.document-body');
+
       function initMakeInteractiveButtons() {
+        if (!docBodyForDiagrams) return;
         // Add "Make Interactive" button to images in edit mode
         // Target: figure wraps, figures, AND standalone img tags
-        var images = docBody.querySelectorAll('img');
+        var images = docBodyForDiagrams.querySelectorAll('img');
         images.forEach(function(img) {
           // Find or create a container for the button
           var container = img.closest('.figure-wrap') || img.closest('figure') || img.parentNode;
-          if (!container || container === docBody) {
+          if (!container || container === docBodyForDiagrams) {
             // Wrap standalone img in a span for positioning
             var wrapper = document.createElement('span');
             wrapper.style.position = 'relative';
@@ -3520,35 +3523,31 @@
         var fullPath = jobDir + '/' + src;
 
         var btn = container.querySelector('.make-interactive-btn');
-        if (btn) btn.textContent = '⏳ Analyzing...';
+        if (btn) btn.textContent = '\u23F3 Analyzing...';
 
         fetch('/api/make-interactive/' + encodeURI(fullPath), { method: 'POST' })
           .then(function(res) { return res.json(); })
           .then(function(data) {
             if (data.success) {
               renderInteractiveOverlay(img, container, data.labels);
-              if (btn) btn.textContent = '✓ Interactive';
+              if (btn) btn.textContent = '\u2713 Interactive';
             } else {
-              if (btn) btn.textContent = '⚠ ' + (data.error || 'Failed');
-              setTimeout(function() { if (btn) btn.textContent = '🎯 Make Interactive'; }, 3000);
+              if (btn) btn.textContent = '\u26A0 ' + (data.error || 'Failed');
+              setTimeout(function() { if (btn) btn.textContent = '\uD83C\uDFAF Make Interactive'; }, 3000);
             }
           })
           .catch(function(err) {
-            if (btn) btn.textContent = '⚠ Error';
-            setTimeout(function() { if (btn) btn.textContent = '🎯 Make Interactive'; }, 3000);
+            if (btn) btn.textContent = '\u26A0 Error';
+            setTimeout(function() { if (btn) btn.textContent = '\uD83C\uDFAF Make Interactive'; }, 3000);
           });
       }
 
       function renderInteractiveOverlay(img, container, labels) {
-        // Wrap the image in an interactive-diagram container
         var wrapper = document.createElement('div');
         wrapper.className = 'interactive-diagram';
-
-        // Move the image into the wrapper
         var imgClone = img.cloneNode(true);
         wrapper.appendChild(imgClone);
 
-        // Add hotspots for each label
         labels.forEach(function(label) {
           var hotspot = document.createElement('div');
           hotspot.className = 'diagram-hotspot';
@@ -3561,27 +3560,28 @@
           tooltip.className = 'hotspot-tooltip';
           tooltip.textContent = label.text;
           hotspot.appendChild(tooltip);
-
           wrapper.appendChild(hotspot);
         });
 
-        // Replace the original image with the interactive wrapper
         img.parentNode.replaceChild(wrapper, img);
       }
 
-      // Initialize buttons when entering edit mode
-      var origEnterForDiagrams = enterEditMode;
-      enterEditMode = function() {
-        origEnterForDiagrams();
-        initMakeInteractiveButtons();
-      };
-
-      // Also initialize hotspots on existing interactive diagrams (page load)
-      docBody.querySelectorAll('.interactive-diagram').forEach(function(d) {
-        d.querySelectorAll('.diagram-hotspot').forEach(function(h) {
-          h.style.cursor = 'pointer';
+      // Watch for edit-mode class to appear on body, then init buttons
+      var observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(m) {
+          if (m.attributeName === 'class') {
+            if (document.body.classList.contains('edit-mode')) {
+              initMakeInteractiveButtons();
+            }
+          }
         });
       });
+      observer.observe(document.body, { attributes: true });
+
+      // Also init if already in edit mode (page refreshed while editing)
+      if (document.body.classList.contains('edit-mode')) {
+        initMakeInteractiveButtons();
+      }
     })();
 
     // --- Export to CMS ---
