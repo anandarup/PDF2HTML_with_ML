@@ -2320,7 +2320,14 @@
             if (embedUrl) {
               html = '<div style="position:relative;width:100%;padding-bottom:56.25%;margin:1em 0;"><iframe src="' + embedUrl + '" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;border-radius:6px;" allowfullscreen></iframe></div>';
             } else {
-              html = '<div class="video-playlist"><div class="video-playlist-player"><video controls preload="metadata" src="' + url + '"></video></div></div>';
+              var singleVidId = 'inline-vjs-' + Date.now();
+              html = '<div class="video-playlist">' +
+                '<div class="video-playlist-player">' +
+                '<video id="' + singleVidId + '" class="video-js vjs-big-play-centered" controls preload="metadata" data-setup=\'{"playbackRates":[0.5,0.75,1,1.25,1.5,2],"fluid":true}\'>' +
+                '<source src="' + url + '" type="video/mp4" /></video></div>' +
+                '<div style="text-align:center;padding:0.4rem;"><button type="button" onclick="generateCaptions(\'' + url + '\',\'' + singleVidId + '\')" style="padding:0.25rem 0.6rem;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);cursor:pointer;font-size:0.75rem;">&#128172; Generate Captions</button> <span id="' + singleVidId + '-caption-status" style="font-size:0.7rem;color:var(--color-text-secondary);"></span></div>' +
+                '</div>';
+              setTimeout(function() { if (window.videojs) videojs(singleVidId); }, 100);
             }
             restoreDocBodySelection(savedRange);
             document.execCommand('insertHTML', false, html);
@@ -2357,20 +2364,33 @@
       function insertVideoPlaylist(urls, savedRange) {
         restoreDocBodySelection(savedRange);
         if (urls.length === 1) {
-          var html = '<div class="video-playlist"><div class="video-playlist-player"><video controls preload="metadata" src="' + urls[0] + '"></video></div></div>';
+          var vid1Id = 'inline-vjs-' + Date.now();
+          var html = '<div class="video-playlist">' +
+            '<div class="video-playlist-player">' +
+            '<video id="' + vid1Id + '" class="video-js vjs-big-play-centered" controls preload="metadata" data-setup=\'{"playbackRates":[0.5,0.75,1,1.25,1.5,2],"fluid":true}\'>' +
+            '<source src="' + urls[0] + '" type="video/mp4" /></video></div>' +
+            '<div style="text-align:center;padding:0.4rem;"><button type="button" onclick="generateCaptions(\'' + urls[0] + '\',\'' + vid1Id + '\')" style="padding:0.25rem 0.6rem;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);cursor:pointer;font-size:0.75rem;">&#128172; Generate Captions</button> <span id="' + vid1Id + '-caption-status" style="font-size:0.7rem;color:var(--color-text-secondary);"></span></div>' +
+            '</div>';
           document.execCommand('insertHTML', false, html);
+          setTimeout(function() { if (window.videojs) videojs(vid1Id); }, 100);
           return;
         }
 
         var plId = 'vpl-' + Date.now();
+        var vidId = 'inline-vjs-' + Date.now();
         var html = '<div class="video-playlist" id="' + plId + '" data-videos=\'' + JSON.stringify(urls) + '\'>' +
-          '<div class="video-playlist-player"><video controls preload="metadata" src="' + urls[0] + '"></video></div>' +
+          '<div class="video-playlist-player">' +
+          '<video id="' + vidId + '" class="video-js vjs-big-play-centered" controls preload="metadata" data-setup=\'{"playbackRates":[0.5,0.75,1,1.25,1.5,2],"fluid":true}\'>' +
+          '<source src="' + urls[0] + '" type="video/mp4" /></video></div>' +
           '<div class="video-playlist-controls">' +
           '<button type="button" onclick="videoPlaylistNav(\'' + plId + '\',-1)">&#9664; Prev</button>' +
           '<span class="pl-counter">1 / ' + urls.length + '</span>' +
           '<button type="button" onclick="videoPlaylistNav(\'' + plId + '\',1)">Next &#9654;</button>' +
-          '</div></div>';
+          '</div>' +
+          '<div style="text-align:center;padding:0.4rem;"><button type="button" onclick="generateCaptions(\'' + urls[0] + '\',\'' + vidId + '\')" style="padding:0.25rem 0.6rem;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);cursor:pointer;font-size:0.75rem;">&#128172; Generate Captions</button> <span id="' + vidId + '-caption-status" style="font-size:0.7rem;color:var(--color-text-secondary);"></span></div>' +
+          '</div>';
         document.execCommand('insertHTML', false, html);
+        setTimeout(function() { if (window.videojs) videojs(vidId); }, 100);
       }
 
       // --- Insert H5P ---
