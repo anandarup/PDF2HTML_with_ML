@@ -72,7 +72,15 @@ def make_diagram_interactive(image_path: str) -> dict:
             continue
 
         # Skip common watermarks/artifacts
-        if text.lower() in ("ps", "©", "®", "tm"):
+        if text.lower() in ("ps", "©", "®", "tm", "p", "s"):
+            continue
+
+        # Skip figure captions like "(a) Near point of..."
+        if re.match(r"^\([a-z]\)", text):
+            continue
+
+        # Skip very long text (captions, not labels)
+        if len(text) > 35:
             continue
 
         # Get bounding polygon
@@ -127,16 +135,16 @@ def _merge_adjacent_labels(
     labels: list[dict[str, Any]], img_width: int, img_height: int
 ) -> list[dict[str, Any]]:
     """
-    Merge text fragments that are on the same horizontal line and adjacent.
+    Merge text fragments that are adjacent (horizontally or vertically stacked).
 
-    OCR often splits a label like "Crystalline lens" into "Crysta" + "line lens"
-    or "Ciliary" + "muscles". This merges them if they're vertically aligned
-    (within 15px) and horizontally close (gap < 30px).
+    Handles cases like:
+    - "Crysta" + "line lens" → "Crystalline lens" (horizontal)
+    - "Apparent" / "star position" → "Apparent star position" (vertical stack)
+    - "Refractive index" / "increasing" → "Refractive index increasing" (vertical)
     """
     if not labels:
         return labels
 
-    # Sort by y position, then x position
     sorted_labels = sorted(labels, key=lambda l: (l["y_min"], l["x_min"]))
     merged: list[dict[str, Any]] = []
     used: set = set()
@@ -148,35 +156,52 @@ def _merge_adjacent_labels(
         current = dict(label)
         used.add(i)
 
-        # Look for adjacent labels to merge
-        for j in range(i + 1, len(sorted_labels)):
-            if j in used:
-                continue
-            other = sorted_labels[j]
+        # Multiple passes to catch chains (A+B then AB+C)
+        changed = True
+        while changed:
+            changed = False
+            for j in range(len(sorted_labels)):
+                if j in used:
+                    continue
+                other = sorted_labels[j]
 
-            # Check vertical alignment (same line: centers within 15px)
-            current_cy = (current["y_min"] + current["y_max"]) / 2
-            other_cy = (other["y_min"] + other["y_max"]) / 2
-            if abs(current_cy - other_cy) > 15:
-                continue
+                # Horizontal merge: same line (centers within 20px), gap < 40px
+                current_cy = (current["y_min"] + current["y_max"]) / 2
+                other_cy = (other["y_min"] + other["y_max"]) / 2
+                current_h = current["y_max"] - current["y_min"]
+                other_h = other["y_max"] - other["y_min"]
 
-            # Check horizontal proximity (gap < 30px)
-            gap = other["x_min"] - current["x_max"]
-            if gap < -5 or gap > 30:
-                continue
+                is_same_line = abs(current_cy - other_cy) < max(current_h, other_h) * 0.7
+                h_gap = other["x_min"] - current["x_max"]
+                h_adjacent = -10 < h_gap < 40
 
-            # Merge: combine text and expand bounding box
-            current["text"] = current["text"] + " " + other["text"]
-            current["x_min"] = min(current["x_min"], other["x_min"])
-            current["y_min"] = min(current["y_min"], other["y_min"])
-            current["x_max"] = max(current["x_max"], other["x_max"])
-            current["y_max"] = max(current["y_max"], other["y_max"])
-            current["x_pct"] = round(current["x_min"] / img_width * 100, 2)
-            current["y_pct"] = round(current["y_min"] / img_height * 100, 2)
-            current["w_pct"] = round((current["x_max"] - current["x_min"]) / img_width * 100, 2)
-            current["h_pct"] = round((current["y_max"] - current["y_min"]) / img_height * 100, 2)
-            current["confidence"] = max(current["confidence"], other["confidence"])
-            used.add(j)
+                # Vertical merge: overlapping x range, vertical gap < line height
+                x_overlap = (
+                    min(current["x_max"], other["x_max"]) -
+                    max(current["x_min"], other["x_min"])
+                )
+                v_gap = other["y_min"] - current["y_max"]
+                is_vertically_stacked = x_overlap > 0 and 0 < v_gap < max(current_h, other_h) * 1.5
+
+                if (is_same_line and h_adjacent) or is_vertically_stacked:
+                    # Merge
+                    separator = " " if is_same_line and h_adjacent else " "
+                    current["text"] = current["text"] + separator + other["text"]
+                    current["x_min"] = min(current["x_min"], other["x_min"])
+                    current["y_min"] = min(current["y_min"], other["y_min"])
+                    current["x_max"] = max(current["x_max"], other["x_max"])
+                    current["y_max"] = max(current["y_max"], other["y_max"])
+                    current["x_pct"] = round(current["x_min"] / img_width * 100, 2)
+                    current["y_pct"] = round(current["y_min"] / img_height * 100, 2)
+                    current["w_pct"] = round((current["x_max"] - current["x_min"]) / img_width * 100, 2)
+                    current["h_pct"] = round((current["y_max"] - current["y_min"]) / img_height * 100, 2)
+                    current["confidence"] = max(current["confidence"], other["confidence"])
+                    used.add(j)
+                    changed = True
+
+        # Post-merge: skip if result is too long (became a caption after merging)
+        if len(current["text"]) > 40:
+            continue
 
         merged.append(current)
 

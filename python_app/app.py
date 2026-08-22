@@ -677,7 +677,14 @@ def get_label_info(term: str):
         return jsonify({"error": "Term too short"}), 400
 
     try:
-        wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{decoded_term}"
+        # Clean up the term for better Wikipedia match
+        import re as _re
+        # Remove leading/trailing punctuation and partial words
+        clean_term = _re.sub(r'^[^a-zA-Z]+|[^a-zA-Z]+$', '', decoded_term)
+        # Try the cleaned term
+        search_term = clean_term if clean_term else decoded_term
+
+        wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{search_term}"
         resp = http_client.get(wiki_url, timeout=5, headers={"User-Agent": "PDF2WebView/1.0"})
 
         if resp.status_code == 200:
