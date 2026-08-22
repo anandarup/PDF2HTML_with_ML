@@ -45,30 +45,39 @@ def make_diagram_interactive(image_path: str) -> dict:
 
     img_height, img_width = img.shape[:2]
 
-    # Run PaddleOCR (detection + recognition)
-    ocr = PaddleOCR(use_angle_cls=True, lang="en", show_log=False)
-    results = ocr.ocr(image_path, cls=True)
+    # Run PaddleOCR (detection + recognition) — v3.7 API
+    ocr = PaddleOCR()
+    results = list(ocr.predict(image_path))
 
-    if not results or not results[0]:
+    if not results:
+        return {"success": False, "error": "No text labels detected in this image"}
+
+    r = results[0]
+    rec_texts = r.get("rec_texts", [])
+    rec_scores = r.get("rec_scores", [])
+    rec_polys = r.get("rec_polys", [])
+
+    if not rec_texts:
         return {"success": False, "error": "No text labels detected in this image"}
 
     labels: list[dict[str, Any]] = []
 
-    for line in results[0]:
-        # line format: [bbox_points, (text, confidence)]
-        bbox_points = line[0]  # [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
-        text_info = line[1]    # (text_string, confidence)
-
-        text = text_info[0].strip()
-        confidence = text_info[1]
+    for i, text in enumerate(rec_texts):
+        text = text.strip()
+        confidence = rec_scores[i] if i < len(rec_scores) else 0
 
         # Skip low confidence or very short text
         if confidence < 0.5 or len(text) < 2:
             continue
 
-        # Calculate bounding box in percentage (for responsive overlay)
-        x_coords = [p[0] for p in bbox_points]
-        y_coords = [p[1] for p in bbox_points]
+        # Get bounding polygon
+        poly = rec_polys[i] if i < len(rec_polys) else None
+        if poly is None:
+            continue
+
+        # poly is a numpy array of points [[x1,y1],[x2,y2],...]
+        x_coords = [p[0] for p in poly]
+        y_coords = [p[1] for p in poly]
 
         x_min = min(x_coords)
         y_min = min(y_coords)
@@ -77,11 +86,11 @@ def make_diagram_interactive(image_path: str) -> dict:
 
         labels.append({
             "text": text,
-            "x_pct": round(x_min / img_width * 100, 2),
-            "y_pct": round(y_min / img_height * 100, 2),
-            "w_pct": round((x_max - x_min) / img_width * 100, 2),
-            "h_pct": round((y_max - y_min) / img_height * 100, 2),
-            "confidence": round(confidence, 3),
+            "x_pct": round(float(x_min) / img_width * 100, 2),
+            "y_pct": round(float(y_min) / img_height * 100, 2),
+            "w_pct": round(float(x_max - x_min) / img_width * 100, 2),
+            "h_pct": round(float(y_max - y_min) / img_height * 100, 2),
+            "confidence": round(float(confidence), 3),
         })
 
     if not labels:
