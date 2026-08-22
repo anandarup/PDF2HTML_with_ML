@@ -662,6 +662,36 @@ def _rebuild_toc_in_html(full_html: str, body_html: str) -> str:
     return updated
 
 
+@app.route("/api/make-interactive/<path:image_path>", methods=["POST"])
+def make_interactive(image_path: str):
+    """
+    Analyze a diagram image and return detected labels with positions.
+
+    The frontend uses this to overlay interactive hotspots on the image.
+    """
+    from urllib.parse import unquote
+    from diagram_interactive import make_diagram_interactive
+
+    decoded_path = unquote(image_path)
+    full_path = OUTPUT_DIR.resolve() / decoded_path
+
+    if not full_path.exists():
+        return jsonify({"error": "Image not found"}), 404
+
+    # Security: ensure path is within OUTPUT_DIR
+    try:
+        full_path.resolve().relative_to(OUTPUT_DIR.resolve())
+    except ValueError:
+        return jsonify({"error": "Invalid path"}), 403
+
+    result = make_diagram_interactive(str(full_path))
+
+    if result.get("success"):
+        return jsonify(result), 200
+    else:
+        return jsonify(result), 400
+
+
 @app.route("/api/progress", methods=["POST"])
 def save_video_progress():
     """Save video playback progress from the learner's browser."""

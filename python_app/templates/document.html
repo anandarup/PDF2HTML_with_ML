@@ -1461,6 +1461,76 @@
       padding-right: 2rem;
     }
 
+    /* Interactive Diagram Overlay */
+    .interactive-diagram {
+      position: relative;
+      display: inline-block;
+    }
+
+    .interactive-diagram img {
+      display: block;
+      max-width: 100%;
+    }
+
+    .diagram-hotspot {
+      position: absolute;
+      border: 2px solid transparent;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .diagram-hotspot:hover {
+      border-color: var(--color-link);
+      background: rgba(50, 130, 184, 0.15);
+    }
+
+    .diagram-hotspot .hotspot-tooltip {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 0.3rem 0.6rem;
+      background: var(--color-heading);
+      color: #fff;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      white-space: nowrap;
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    .diagram-hotspot:hover .hotspot-tooltip {
+      display: block;
+    }
+
+    .make-interactive-btn {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      padding: 3px 8px;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      background: var(--color-bg);
+      cursor: pointer;
+      font-size: 0.7rem;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 5;
+    }
+
+    body.edit-mode .figure-wrap:hover .make-interactive-btn,
+    body.edit-mode figure:hover .make-interactive-btn,
+    body.edit-mode .interactive-diagram:hover .make-interactive-btn {
+      opacity: 1;
+    }
+
+    .make-interactive-btn:hover {
+      background: var(--color-code-bg);
+      border-color: var(--color-link);
+    }
+
     /* Section level controls (promote/demote heading) */
     .heading-level-ctrl {
       display: none;
@@ -3400,6 +3470,100 @@
         var observer = new MutationObserver(function() { initProgressTracking(); });
         observer.observe(popupBody, { childList: true });
       }
+    })();
+
+    // --- Interactive Diagrams ---
+    (function() {
+      function initMakeInteractiveButtons() {
+        // Add "Make Interactive" button to images in edit mode
+        var figures = docBody.querySelectorAll('.figure-wrap, figure');
+        figures.forEach(function(fig) {
+          if (fig.querySelector('.make-interactive-btn')) return;
+          var btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'make-interactive-btn';
+          btn.textContent = '🎯 Make Interactive';
+          btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var img = fig.querySelector('img');
+            if (img) makeImageInteractive(img, fig);
+          });
+          fig.style.position = 'relative';
+          fig.appendChild(btn);
+        });
+      }
+
+      function makeImageInteractive(img, container) {
+        var src = img.getAttribute('src');
+        if (!src) return;
+
+        var pathParts = window.location.pathname.split('/');
+        var jobDir = pathParts.slice(2, -1).join('/');
+        var fullPath = jobDir + '/' + src;
+
+        var btn = container.querySelector('.make-interactive-btn');
+        if (btn) btn.textContent = '⏳ Analyzing...';
+
+        fetch('/api/make-interactive/' + encodeURI(fullPath), { method: 'POST' })
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (data.success) {
+              renderInteractiveOverlay(img, container, data.labels);
+              if (btn) btn.textContent = '✓ Interactive';
+            } else {
+              if (btn) btn.textContent = '⚠ ' + (data.error || 'Failed');
+              setTimeout(function() { if (btn) btn.textContent = '🎯 Make Interactive'; }, 3000);
+            }
+          })
+          .catch(function(err) {
+            if (btn) btn.textContent = '⚠ Error';
+            setTimeout(function() { if (btn) btn.textContent = '🎯 Make Interactive'; }, 3000);
+          });
+      }
+
+      function renderInteractiveOverlay(img, container, labels) {
+        // Wrap the image in an interactive-diagram container
+        var wrapper = document.createElement('div');
+        wrapper.className = 'interactive-diagram';
+
+        // Move the image into the wrapper
+        var imgClone = img.cloneNode(true);
+        wrapper.appendChild(imgClone);
+
+        // Add hotspots for each label
+        labels.forEach(function(label) {
+          var hotspot = document.createElement('div');
+          hotspot.className = 'diagram-hotspot';
+          hotspot.style.left = label.x_pct + '%';
+          hotspot.style.top = label.y_pct + '%';
+          hotspot.style.width = label.w_pct + '%';
+          hotspot.style.height = label.h_pct + '%';
+
+          var tooltip = document.createElement('span');
+          tooltip.className = 'hotspot-tooltip';
+          tooltip.textContent = label.text;
+          hotspot.appendChild(tooltip);
+
+          wrapper.appendChild(hotspot);
+        });
+
+        // Replace the original image with the interactive wrapper
+        img.parentNode.replaceChild(wrapper, img);
+      }
+
+      // Initialize buttons when entering edit mode
+      var origEnterForDiagrams = enterEditMode;
+      enterEditMode = function() {
+        origEnterForDiagrams();
+        initMakeInteractiveButtons();
+      };
+
+      // Also initialize hotspots on existing interactive diagrams (page load)
+      docBody.querySelectorAll('.interactive-diagram').forEach(function(d) {
+        d.querySelectorAll('.diagram-hotspot').forEach(function(h) {
+          h.style.cursor = 'pointer';
+        });
+      });
     })();
 
     // --- Export to CMS ---
