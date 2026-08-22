@@ -3294,6 +3294,7 @@
           if (h.querySelector('.heading-level-ctrl')) return;
           var ctrl = document.createElement('span');
           ctrl.className = 'heading-level-ctrl';
+          ctrl.setAttribute('contenteditable', 'false');
           ctrl.innerHTML = '<button type="button" data-dir="promote" title="Promote (make parent section)">&#8592;</button>' +
             '<button type="button" data-dir="demote" title="Demote (make sub-section)">&#8594;</button>';
           ctrl.addEventListener('mousedown', function(e) {
