@@ -8,6 +8,7 @@ an interactive HTML overlay with hoverable/clickable hotspots.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
