@@ -2005,6 +2005,7 @@
       var formulaModal = document.getElementById('formulaModal');
       var formulaInput = document.getElementById('formulaInput');
       var formulaPreview = document.getElementById('formulaPreview');
+      var savedFormulaRange = null;
       var formulaInsert = document.getElementById('formulaInsert');
       var formulaCancel = document.getElementById('formulaCancel');
       var formulaTabs = document.querySelectorAll('.formula-tab');
@@ -2012,6 +2013,11 @@
       var formulaTemplates = document.getElementById('formulaTemplates');
 
       document.getElementById('btnFormula').addEventListener('click', function() {
+        // Save cursor position before modal steals focus
+        var sel = window.getSelection();
+        if (sel.rangeCount > 0) {
+          savedFormulaRange = sel.getRangeAt(0).cloneRange();
+        }
         formulaModal.classList.add('visible');
         formulaInput.value = '';
         formulaPreview.innerHTML = '';
@@ -2070,12 +2076,15 @@
         var type = document.querySelector('input[name="formulaType"]:checked').value;
         var wrapped = type === 'inline' ? '\\(' + latex + '\\)' : '\\[' + latex + '\\]';
 
-        // Insert at cursor position in the editable area
+        // Restore cursor position and insert at the saved location
         docBody.focus();
         var span = document.createElement('span');
         span.innerHTML = wrapped;
-        var sel = window.getSelection();
-        if (sel.rangeCount) {
+
+        if (savedFormulaRange) {
+          var sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(savedFormulaRange);
           var range = sel.getRangeAt(0);
           range.deleteContents();
           range.insertNode(span);
@@ -2083,6 +2092,7 @@
           range.collapse(true);
           sel.removeAllRanges();
           sel.addRange(range);
+          savedFormulaRange = null;
         } else {
           docBody.appendChild(span);
         }
@@ -2099,6 +2109,7 @@
       var symbolModal = document.getElementById('symbolModal');
       var symbolGrid = document.getElementById('symbolGrid');
       var symbolCancel = document.getElementById('symbolCancel');
+      var savedSymbolRange = null;
 
       var symbols = [
         '\u00B1','\u00D7','\u00F7','\u2260','\u2248','\u2264','\u2265','\u221E',
@@ -2121,6 +2132,13 @@
         btn.setAttribute('aria-label', 'Insert symbol ' + sym);
         btn.addEventListener('click', function() {
           docBody.focus();
+          // Restore cursor position before inserting symbol
+          if (savedSymbolRange) {
+            var sel2 = window.getSelection();
+            sel2.removeAllRanges();
+            sel2.addRange(savedSymbolRange);
+            savedSymbolRange = null;
+          }
           document.execCommand('insertText', false, sym);
           symbolModal.classList.remove('visible');
         });
@@ -2128,6 +2146,11 @@
       });
 
       document.getElementById('btnSymbol').addEventListener('click', function() {
+        // Save cursor position before modal steals focus
+        var sel = window.getSelection();
+        if (sel.rangeCount > 0) {
+          savedSymbolRange = sel.getRangeAt(0).cloneRange();
+        }
         symbolModal.classList.add('visible');
       });
 
