@@ -27,3 +27,4 @@ secrets.yaml
 secrets.yml
 *.secret
 token.json
+python_app/learner_progress.json
