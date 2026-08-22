@@ -67,7 +67,7 @@ def make_diagram_interactive(image_path: str) -> dict:
         confidence = rec_scores[i] if i < len(rec_scores) else 0
 
         # Skip low confidence or very short text
-        if confidence < 0.5 or len(text) < 2:
+        if confidence < 0.3 or len(text) < 2:
             continue
 
         # Get bounding polygon

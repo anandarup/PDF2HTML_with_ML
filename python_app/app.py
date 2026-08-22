@@ -662,6 +662,51 @@ def _rebuild_toc_in_html(full_html: str, body_html: str) -> str:
     return updated
 
 
+@app.route("/api/label-info/<path:term>", methods=["GET"])
+def get_label_info(term: str):
+    """
+    Fetch a short description for a diagram label term from Wikipedia.
+
+    Uses the Wikipedia REST API to get a summary extract.
+    """
+    import requests as http_client
+    from urllib.parse import unquote
+
+    decoded_term = unquote(term).strip()
+    if not decoded_term or len(decoded_term) < 2:
+        return jsonify({"error": "Term too short"}), 400
+
+    try:
+        wiki_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{decoded_term}"
+        resp = http_client.get(wiki_url, timeout=5, headers={"User-Agent": "PDF2WebView/1.0"})
+
+        if resp.status_code == 200:
+            data = resp.json()
+            return jsonify({
+                "success": True,
+                "title": data.get("title", decoded_term),
+                "description": data.get("description", ""),
+                "extract": data.get("extract", "No information available."),
+                "thumbnail": data.get("thumbnail", {}).get("source", ""),
+            }), 200
+        else:
+            return jsonify({
+                "success": True,
+                "title": decoded_term,
+                "description": "",
+                "extract": f"No Wikipedia article found for '{decoded_term}'.",
+                "thumbnail": "",
+            }), 200
+    except Exception:
+        return jsonify({
+            "success": True,
+            "title": decoded_term,
+            "extract": "Could not fetch information.",
+            "description": "",
+            "thumbnail": "",
+        }), 200
+
+
 @app.route("/api/make-interactive/<path:image_path>", methods=["POST"])
 def make_interactive(image_path: str):
     """

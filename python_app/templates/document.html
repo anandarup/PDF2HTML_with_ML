@@ -1491,18 +1491,32 @@
       bottom: calc(100% + 6px);
       left: 50%;
       transform: translateX(-50%);
-      padding: 0.3rem 0.6rem;
+      padding: 0.5rem 0.75rem;
       background: var(--color-heading);
       color: #fff;
-      border-radius: 4px;
-      font-size: 0.75rem;
-      white-space: nowrap;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      max-width: 280px;
+      white-space: normal;
       z-index: 20;
       pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    .diagram-hotspot .hotspot-tooltip .tooltip-title {
+      font-weight: 600;
+      margin-bottom: 0.25rem;
+    }
+
+    .diagram-hotspot .hotspot-tooltip .tooltip-desc {
+      font-size: 0.72rem;
+      opacity: 0.9;
+      line-height: 1.4;
     }
 
     .diagram-hotspot:hover .hotspot-tooltip {
       display: block;
+      pointer-events: auto;
     }
 
     .make-interactive-btn {
@@ -3558,8 +3572,27 @@
 
           var tooltip = document.createElement('span');
           tooltip.className = 'hotspot-tooltip';
-          tooltip.textContent = label.text;
+          tooltip.innerHTML = '<div class="tooltip-title">' + label.text + '</div><div class="tooltip-desc">Loading...</div>';
           hotspot.appendChild(tooltip);
+
+          // Fetch description from Wikipedia on first hover
+          var fetched = false;
+          hotspot.addEventListener('mouseenter', function() {
+            if (fetched) return;
+            fetched = true;
+            fetch('/api/label-info/' + encodeURIComponent(label.text))
+              .then(function(res) { return res.json(); })
+              .then(function(data) {
+                var desc = data.extract || 'No additional information available.';
+                // Truncate to 150 chars for tooltip
+                if (desc.length > 150) desc = desc.substring(0, 147) + '...';
+                tooltip.innerHTML = '<div class="tooltip-title">' + (data.title || label.text) + '</div><div class="tooltip-desc">' + desc + '</div>';
+              })
+              .catch(function() {
+                tooltip.querySelector('.tooltip-desc').textContent = label.text;
+              });
+          });
+
           wrapper.appendChild(hotspot);
         });
 
