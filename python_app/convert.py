@@ -83,8 +83,8 @@ def convert_pdf_to_html(
     print("[pdf2webview] Step 1/2: Extracting PDF content...")
     report(
         "extracting",
-        "Extracting content with Docling AI — this is the slow part, "
-        "especially for large or scanned PDFs...",
+        "Reading your PDF and identifying text, images, and layout. "
+        "This may take a minute for longer documents...",
     )
     start = time.time()
 
@@ -115,9 +115,9 @@ def convert_pdf_to_html(
     print("[pdf2webview] Step 2/2: Building interactive HTML...")
     report(
         "building",
-        f"Extracted {extraction.page_count} page"
-        f"{'s' if extraction.page_count != 1 else ''} — cleaning up and "
-        "generating the interactive HTML...",
+        f"Found {extraction.page_count} page"
+        f"{'s' if extraction.page_count != 1 else ''} — now creating "
+        "your interactive document...",
     )
     start = time.time()
 
