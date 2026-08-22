@@ -1460,6 +1460,39 @@
       padding-left: 2rem;
       padding-right: 2rem;
     }
+
+    /* Section level controls (promote/demote heading) */
+    .heading-level-ctrl {
+      display: none;
+      position: absolute;
+      top: 2px;
+      right: 4px;
+      gap: 2px;
+      z-index: 5;
+    }
+
+    body.edit-mode h1:hover > .heading-level-ctrl,
+    body.edit-mode h2:hover > .heading-level-ctrl,
+    body.edit-mode h3:hover > .heading-level-ctrl {
+      display: inline-flex;
+    }
+
+    .heading-level-ctrl button {
+      padding: 1px 5px;
+      border: 1px solid var(--color-border);
+      border-radius: 3px;
+      background: var(--color-bg);
+      cursor: pointer;
+      font-size: 0.65rem;
+      color: var(--color-text-secondary);
+      line-height: 1.2;
+    }
+
+    .heading-level-ctrl button:hover {
+      background: var(--color-code-bg);
+      border-color: var(--color-link);
+      color: var(--color-link);
+    }
   </style>
 </head>
 <body>
@@ -3022,6 +3055,7 @@
         });
         wireBlockControls();
         refreshBlockControlsState();
+        initHeadingLevelControls();
       }
 
       function teardownDragDrop() {
@@ -3154,6 +3188,55 @@
         for (var i = 0; i < all.length; i++) {
           all[i].classList.remove('drag-over-top', 'drag-over-bottom');
         }
+      }
+
+      function initHeadingLevelControls() {
+        var headings = docBody.querySelectorAll('h1, h2, h3');
+        headings.forEach(function(h) {
+          if (h.querySelector('.heading-level-ctrl')) return;
+          var ctrl = document.createElement('span');
+          ctrl.className = 'heading-level-ctrl';
+          ctrl.innerHTML = '<button type="button" data-dir="promote" title="Promote (make parent section)">&#8592;</button>' +
+            '<button type="button" data-dir="demote" title="Demote (make sub-section)">&#8594;</button>';
+          ctrl.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            var btn = e.target.closest('button');
+            if (!btn) return;
+            var dir = btn.getAttribute('data-dir');
+            changeHeadingLevel(h, dir);
+          });
+          h.style.position = 'relative';
+          h.appendChild(ctrl);
+        });
+      }
+
+      function changeHeadingLevel(heading, direction) {
+        var currentLevel = parseInt(heading.tagName.charAt(1), 10);
+        var newLevel = direction === 'demote' ? currentLevel + 1 : currentLevel - 1;
+        if (newLevel < 1) newLevel = 1;
+        if (newLevel > 3) newLevel = 3;
+        if (newLevel === currentLevel) return;
+
+        saveUndoSnapshot();
+
+        var newTag = 'h' + newLevel;
+        var newHeading = document.createElement(newTag);
+        newHeading.id = heading.id;
+        newHeading.innerHTML = heading.innerHTML;
+        newHeading.style.position = 'relative';
+
+        // Remove the old level control (will be re-added)
+        var oldCtrl = newHeading.querySelector('.heading-level-ctrl');
+        if (oldCtrl) oldCtrl.remove();
+
+        heading.parentNode.replaceChild(newHeading, heading);
+
+        // Re-add level controls to the new heading
+        initHeadingLevelControls();
+
+        // Refresh the TOC sidebar
+        refreshTOC();
       }
 
       // Initialize on page load (shows icons with content in learner mode)
