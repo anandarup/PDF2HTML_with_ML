@@ -1290,6 +1290,58 @@
       border-radius: 4px;
     }
 
+    /* Video Playlist */
+    .video-playlist {
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin: 1em 0;
+      max-width: 720px;
+    }
+
+    .video-playlist-player {
+      position: relative;
+      width: 100%;
+      padding-bottom: 56.25%;
+      background: #000;
+    }
+
+    .video-playlist-player video,
+    .video-playlist-player iframe {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      border: none;
+    }
+
+    .video-playlist-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      padding: 0.6rem;
+      background: var(--color-code-bg);
+      border-top: 1px solid var(--color-border);
+    }
+
+    .video-playlist-controls button {
+      padding: 0.3rem 0.7rem;
+      border: 1px solid var(--color-border);
+      border-radius: 4px;
+      background: var(--color-bg);
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+
+    .video-playlist-controls button:hover {
+      border-color: var(--color-link);
+    }
+
+    .video-playlist-controls .pl-counter {
+      font-size: 0.8rem;
+      color: var(--color-text-secondary);
+    }
+
     /* Drag and Drop Reordering (edit mode only) */
     body.edit-mode .document-body > * {
       position: relative;
@@ -1577,6 +1629,31 @@
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="mediaInputCancel">Cancel</button>
         <button type="button" class="btn-save" id="mediaInputSubmit">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video Insert Modal -->
+  <div class="modal-overlay" id="videoInsertModal">
+    <div class="modal-dialog" style="max-width:500px">
+      <h3>Insert Video</h3>
+      <div class="media-input-section">
+        <label class="media-input-label">Enter URL</label>
+        <input type="url" id="videoUrlInput" class="media-url-field" placeholder="YouTube, Vimeo, or direct .mp4 link" />
+      </div>
+      <div class="media-input-divider"><span>or</span></div>
+      <div class="media-input-section">
+        <label class="media-input-label">Upload video files</label>
+        <div class="file-upload-area">
+          <input type="file" id="videoFileInput" class="file-input-hidden" accept="video/*" multiple />
+          <label for="videoFileInput" class="file-upload-btn" id="videoFileLabel">Choose files...</label>
+        </div>
+        <div id="videoFileList" style="margin-top:0.5rem;font-size:0.8rem;color:var(--color-text-secondary);"></div>
+      </div>
+      <div class="media-input-status" id="videoInsertStatus"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="videoInsertCancel">Cancel</button>
+        <button type="button" class="btn-save" id="videoInsertSubmit">Insert</button>
       </div>
     </div>
   </div>
@@ -2194,23 +2271,107 @@
       // --- Insert Video ---
       document.getElementById('btnInsertVideo').addEventListener('click', function() {
         var savedRange = saveDocBodySelection();
-        showPromptModal({
-          title: 'Insert Video',
-          label: 'Video URL',
-          placeholder: 'YouTube, Vimeo, or direct .mp4 link'
-        }).then(function(url) {
-          if (!url) return;
-          var embedUrl = getEmbedUrl(url);
-          var html = '';
-          if (embedUrl) {
-            html = '<div style="position:relative;width:100%;padding-bottom:56.25%;margin:1em 0;"><iframe src="' + embedUrl + '" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;border-radius:6px;" allowfullscreen></iframe></div>';
-          } else {
-            html = '<video controls preload="metadata" src="' + url + '" style="width:100%;max-width:640px;border-radius:6px;margin:1em 0;"></video>';
+        var modal = document.getElementById('videoInsertModal');
+        var urlInput = document.getElementById('videoUrlInput');
+        var fileInput = document.getElementById('videoFileInput');
+        var fileLabel = document.getElementById('videoFileLabel');
+        var fileList = document.getElementById('videoFileList');
+        var statusEl = document.getElementById('videoInsertStatus');
+        var submitBtn = document.getElementById('videoInsertSubmit');
+        var cancelBtn = document.getElementById('videoInsertCancel');
+
+        urlInput.value = '';
+        fileInput.value = '';
+        fileLabel.textContent = 'Choose files...';
+        fileList.innerHTML = '';
+        statusEl.textContent = '';
+        modal.classList.add('visible');
+
+        function onFileChange() {
+          var files = fileInput.files;
+          if (files.length > 0) {
+            urlInput.value = '';
+            fileLabel.textContent = files.length + ' file(s) selected';
+            var names = [];
+            for (var i = 0; i < files.length; i++) names.push(files[i].name);
+            fileList.textContent = names.join(', ');
           }
-          restoreDocBodySelection(savedRange);
-          document.execCommand('insertHTML', false, html);
-        });
+        }
+        fileInput.addEventListener('change', onFileChange);
+
+        function cleanup() {
+          modal.classList.remove('visible');
+          fileInput.removeEventListener('change', onFileChange);
+        }
+
+        cancelBtn.onclick = function() { cleanup(); };
+        modal.onclick = function(e) { if (e.target === modal) cleanup(); };
+
+        submitBtn.onclick = function() {
+          var url = urlInput.value.trim();
+          var files = fileInput.files;
+
+          if (!url && files.length === 0) { statusEl.textContent = 'Enter a URL or select files'; return; }
+
+          if (url) {
+            // Single URL — insert directly
+            var embedUrl = getEmbedUrl(url);
+            var html = '';
+            if (embedUrl) {
+              html = '<div style="position:relative;width:100%;padding-bottom:56.25%;margin:1em 0;"><iframe src="' + embedUrl + '" style="position:absolute;top:0;left:0;width:100%;height:100%;border:none;border-radius:6px;" allowfullscreen></iframe></div>';
+            } else {
+              html = '<div class="video-playlist"><div class="video-playlist-player"><video controls preload="metadata" src="' + url + '"></video></div></div>';
+            }
+            restoreDocBodySelection(savedRange);
+            document.execCommand('insertHTML', false, html);
+            cleanup();
+          } else {
+            // Upload files — then build playlist
+            statusEl.textContent = 'Uploading ' + files.length + ' file(s)...';
+            submitBtn.disabled = true;
+            var uploads = [];
+            var completed = 0;
+
+            for (var i = 0; i < files.length; i++) {
+              (function(file) {
+                uploadMediaFile(file, 'video').then(function(result) {
+                  uploads.push(result.url);
+                  completed++;
+                  statusEl.textContent = 'Uploaded ' + completed + '/' + files.length;
+                  if (completed === files.length) {
+                    submitBtn.disabled = false;
+                    insertVideoPlaylist(uploads, savedRange);
+                    cleanup();
+                  }
+                }).catch(function(err) {
+                  completed++;
+                  statusEl.textContent = 'Error: ' + err.message;
+                  submitBtn.disabled = false;
+                });
+              })(files[i]);
+            }
+          }
+        };
       });
+
+      function insertVideoPlaylist(urls, savedRange) {
+        restoreDocBodySelection(savedRange);
+        if (urls.length === 1) {
+          var html = '<div class="video-playlist"><div class="video-playlist-player"><video controls preload="metadata" src="' + urls[0] + '"></video></div></div>';
+          document.execCommand('insertHTML', false, html);
+          return;
+        }
+
+        var plId = 'vpl-' + Date.now();
+        var html = '<div class="video-playlist" id="' + plId + '" data-videos=\'' + JSON.stringify(urls) + '\'>' +
+          '<div class="video-playlist-player"><video controls preload="metadata" src="' + urls[0] + '"></video></div>' +
+          '<div class="video-playlist-controls">' +
+          '<button type="button" onclick="videoPlaylistNav(\'' + plId + '\',-1)">&#9664; Prev</button>' +
+          '<span class="pl-counter">1 / ' + urls.length + '</span>' +
+          '<button type="button" onclick="videoPlaylistNav(\'' + plId + '\',1)">Next &#9654;</button>' +
+          '</div></div>';
+        document.execCommand('insertHTML', false, html);
+      }
 
       // --- Insert H5P ---
       document.getElementById('btnInsertH5P').addEventListener('click', function() {
@@ -2954,6 +3115,30 @@
 
       cards[newIdx].classList.add('active');
       if (counter) counter.textContent = (newIdx + 1) + ' / ' + cards.length;
+    }
+
+    // Global video playlist navigation
+    function videoPlaylistNav(plId, direction) {
+      var pl = document.getElementById(plId);
+      if (!pl) return;
+      var urls = JSON.parse(pl.getAttribute('data-videos') || '[]');
+      if (urls.length === 0) return;
+      var video = pl.querySelector('video');
+      var counter = pl.querySelector('.pl-counter');
+      if (!video) return;
+
+      var currentSrc = video.getAttribute('src');
+      var currentIdx = urls.indexOf(currentSrc);
+      if (currentIdx < 0) currentIdx = 0;
+
+      video.pause();
+      var newIdx = currentIdx + direction;
+      if (newIdx < 0) newIdx = urls.length - 1;
+      if (newIdx >= urls.length) newIdx = 0;
+
+      video.src = urls[newIdx];
+      video.load();
+      if (counter) counter.textContent = (newIdx + 1) + ' / ' + urls.length;
     }
 
     // --- Export to CMS ---
