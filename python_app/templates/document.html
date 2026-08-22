@@ -1848,6 +1848,35 @@
         }
       });
 
+      // Custom undo/redo history stack (execCommand undo/redo deprecated in modern browsers)
+      var undoStack = [];
+      var redoStack = [];
+      var undoTimer = null;
+
+      function saveUndoSnapshot() {
+        undoStack.push(docBody.innerHTML);
+        if (undoStack.length > 50) undoStack.shift();
+        redoStack = [];
+      }
+
+      function customUndo() {
+        if (undoStack.length === 0) return;
+        redoStack.push(docBody.innerHTML);
+        docBody.innerHTML = undoStack.pop();
+      }
+
+      function customRedo() {
+        if (redoStack.length === 0) return;
+        undoStack.push(docBody.innerHTML);
+        docBody.innerHTML = redoStack.pop();
+      }
+
+      // Save snapshots on input (debounced)
+      docBody.addEventListener('input', function() {
+        clearTimeout(undoTimer);
+        undoTimer = setTimeout(saveUndoSnapshot, 500);
+      });
+
       // Toolbar formatting commands — use mousedown to prevent focus theft from contenteditable
       editToolbar.addEventListener('mousedown', function(e) {
         var btn = e.target.closest('button[data-cmd]');
@@ -1855,6 +1884,17 @@
         e.preventDefault();
         var cmd = btn.getAttribute('data-cmd');
         var val = btn.getAttribute('data-val') || null;
+
+        if (cmd === 'undo') {
+          customUndo();
+          return;
+        }
+        if (cmd === 'redo') {
+          customRedo();
+          return;
+        }
+
+        saveUndoSnapshot();
         document.execCommand(cmd, false, val);
       });
 
@@ -1980,6 +2020,14 @@
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
           e.preventDefault();
           saveContent();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) { customRedo(); } else { customUndo(); }
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+          e.preventDefault();
+          customRedo();
         }
       });
 
