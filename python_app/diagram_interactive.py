@@ -46,7 +46,8 @@ def make_diagram_interactive(image_path: str) -> dict:
     img_height, img_width = img.shape[:2]
 
     # Run PaddleOCR (detection + recognition) — v3.7 API
-    ocr = PaddleOCR()
+    # Lower box_thresh to detect smaller/lighter text labels like "Pupil"
+    ocr = PaddleOCR(text_det_box_thresh=0.4, text_det_limit_side_len=960)
     results = list(ocr.predict(image_path))
 
     if not results:

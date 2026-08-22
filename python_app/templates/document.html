@@ -1488,30 +1488,42 @@
     .diagram-hotspot .hotspot-tooltip {
       display: none;
       position: absolute;
-      bottom: calc(100% + 6px);
-      left: 50%;
-      transform: translateX(-50%);
-      padding: 0.5rem 0.75rem;
-      background: var(--color-heading);
-      color: #fff;
-      border-radius: 6px;
-      font-size: 0.8rem;
-      max-width: 280px;
+      bottom: calc(100% + 8px);
+      left: 0;
+      padding: 0.75rem 1rem;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #f0f0f0;
+      border-radius: 10px;
+      font-size: 0.82rem;
+      width: 240px;
       white-space: normal;
-      z-index: 20;
+      z-index: 100;
       pointer-events: none;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+      line-height: 1.5;
+    }
+
+    .diagram-hotspot .hotspot-tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 20px;
+      border: 6px solid transparent;
+      border-top-color: #16213e;
     }
 
     .diagram-hotspot .hotspot-tooltip .tooltip-title {
-      font-weight: 600;
-      margin-bottom: 0.25rem;
+      font-weight: 700;
+      font-size: 0.9rem;
+      margin-bottom: 0.35rem;
+      color: #bbe1fa;
     }
 
     .diagram-hotspot .hotspot-tooltip .tooltip-desc {
-      font-size: 0.72rem;
-      opacity: 0.9;
-      line-height: 1.4;
+      font-size: 0.78rem;
+      opacity: 0.92;
+      line-height: 1.5;
+      color: #d0d0e0;
     }
 
     .diagram-hotspot:hover .hotspot-tooltip {
