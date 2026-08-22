@@ -1839,15 +1839,14 @@
         }
       });
 
-      // Toolbar formatting commands
-      editToolbar.addEventListener('click', function(e) {
+      // Toolbar formatting commands — use mousedown to prevent focus theft from contenteditable
+      editToolbar.addEventListener('mousedown', function(e) {
         var btn = e.target.closest('button[data-cmd]');
         if (!btn) return;
         e.preventDefault();
         var cmd = btn.getAttribute('data-cmd');
         var val = btn.getAttribute('data-val') || null;
         document.execCommand(cmd, false, val);
-        docBody.focus();
       });
 
       // The toolbar now wraps onto multiple rows on narrow screens (tablets
