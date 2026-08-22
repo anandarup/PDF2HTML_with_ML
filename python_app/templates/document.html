@@ -1522,7 +1522,9 @@
 
     body.edit-mode .figure-wrap:hover .make-interactive-btn,
     body.edit-mode figure:hover .make-interactive-btn,
-    body.edit-mode .interactive-diagram:hover .make-interactive-btn {
+    body.edit-mode .interactive-diagram:hover .make-interactive-btn,
+    body.edit-mode span:hover > .make-interactive-btn,
+    body.edit-mode p:hover > .make-interactive-btn {
       opacity: 1;
     }
 
@@ -3476,20 +3478,36 @@
     (function() {
       function initMakeInteractiveButtons() {
         // Add "Make Interactive" button to images in edit mode
-        var figures = docBody.querySelectorAll('.figure-wrap, figure');
-        figures.forEach(function(fig) {
-          if (fig.querySelector('.make-interactive-btn')) return;
+        // Target: figure wraps, figures, AND standalone img tags
+        var images = docBody.querySelectorAll('img');
+        images.forEach(function(img) {
+          // Find or create a container for the button
+          var container = img.closest('.figure-wrap') || img.closest('figure') || img.parentNode;
+          if (!container || container === docBody) {
+            // Wrap standalone img in a span for positioning
+            var wrapper = document.createElement('span');
+            wrapper.style.position = 'relative';
+            wrapper.style.display = 'inline-block';
+            img.parentNode.insertBefore(wrapper, img);
+            wrapper.appendChild(img);
+            container = wrapper;
+          }
+          if (container.querySelector('.make-interactive-btn')) return;
+          // Skip tiny images (icons, decorative)
+          if (img.naturalWidth && img.naturalWidth < 100) return;
+          if (img.width && img.width < 80) return;
+
+          container.style.position = 'relative';
           var btn = document.createElement('button');
           btn.type = 'button';
           btn.className = 'make-interactive-btn';
-          btn.textContent = '🎯 Make Interactive';
-          btn.addEventListener('click', function(e) {
+          btn.textContent = '\uD83C\uDFAF Make Interactive';
+          btn.addEventListener('mousedown', function(e) {
+            e.preventDefault();
             e.stopPropagation();
-            var img = fig.querySelector('img');
-            if (img) makeImageInteractive(img, fig);
+            makeImageInteractive(img, container);
           });
-          fig.style.position = 'relative';
-          fig.appendChild(btn);
+          container.appendChild(btn);
         });
       }
 
