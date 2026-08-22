@@ -2779,10 +2779,14 @@
         switch (type.key) {
           case 'video':
             var videoId = 'vjs-popup-' + Date.now();
-            content = '<video id="' + videoId + '" class="video-js vjs-big-play-centered vjs-fluid" controls preload="auto" data-setup=\'{}\'>' +
+            content = '<video id="' + videoId + '" class="video-js vjs-big-play-centered vjs-fluid" controls preload="auto" data-setup=\'{"playbackRates":[0.5,0.75,1,1.25,1.5,2]}\'>' +
               '<source src="' + escapeAttr(src) + '" type="video/mp4" />' +
               '<p class="vjs-no-js">To view this video please enable JavaScript or use a browser that supports HTML5 video.</p>' +
-              '</video>';
+              '</video>' +
+              '<div style="display:flex;gap:0.5rem;margin-top:0.5rem;align-items:center;justify-content:center;">' +
+              '<button type="button" onclick="generateCaptions(\'' + escapeAttr(src) + '\',\'' + videoId + '\')" style="padding:0.3rem 0.7rem;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);cursor:pointer;font-size:0.8rem;">&#128172; Generate Captions</button>' +
+              '<span id="' + videoId + '-caption-status" style="font-size:0.75rem;color:var(--color-text-secondary);"></span>' +
+              '</div>';
             if (window.location.protocol === 'file:') {
               content += '<p style="text-align:center;margin-top:0.75rem;font-size:0.85rem;color:var(--color-text-secondary);">If video does not play, open this page via <strong>http://localhost:8501</strong> instead of file://</p>';
             }
@@ -3140,6 +3144,104 @@
       video.load();
       if (counter) counter.textContent = (newIdx + 1) + ' / ' + urls.length;
     }
+
+    // --- Caption Generation ---
+    function generateCaptions(videoSrc, videoId) {
+      var statusEl = document.getElementById(videoId + '-caption-status');
+      if (statusEl) statusEl.textContent = 'Generating captions...';
+
+      // Determine the video path relative to /output/
+      var pathParts = window.location.pathname.split('/');
+      var jobDir = pathParts.slice(2, -1).join('/');
+      var fullPath = jobDir + '/' + videoSrc;
+
+      fetch('/api/generate-captions/' + encodeURI(fullPath), { method: 'POST' })
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+          if (data.success && data.vtt_url) {
+            if (statusEl) statusEl.textContent = 'Captions ready!';
+            // Add captions track to the Video.js player
+            var player = videojs.getPlayer(videoId);
+            if (player) {
+              player.addRemoteTextTrack({ kind: 'captions', src: data.vtt_url, srclang: 'en', label: 'English', default: true }, false);
+            }
+          } else {
+            if (statusEl) statusEl.textContent = data.error || 'Failed';
+          }
+        })
+        .catch(function(err) {
+          if (statusEl) statusEl.textContent = 'Error: ' + err.message;
+        });
+    }
+
+    // --- Video Progress Tracking ---
+    (function() {
+      // Generate or retrieve learner ID from localStorage
+      var learnerId = localStorage.getItem('pdf2html_learner_id');
+      if (!learnerId) {
+        learnerId = 'learner_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('pdf2html_learner_id', learnerId);
+      }
+
+      // Track progress for all videos on the page
+      function initProgressTracking() {
+        var videos = document.querySelectorAll('video');
+        videos.forEach(function(video) {
+          var src = video.getAttribute('src') || (video.querySelector('source') ? video.querySelector('source').getAttribute('src') : '');
+          if (!src) return;
+
+          // Restore last position from localStorage
+          var savedTime = localStorage.getItem('vp_' + src);
+          if (savedTime) {
+            video.addEventListener('loadedmetadata', function() {
+              video.currentTime = parseFloat(savedTime);
+            }, { once: true });
+          }
+
+          // Save progress periodically
+          var saveInterval = null;
+          video.addEventListener('play', function() {
+            saveInterval = setInterval(function() {
+              if (!video.paused && video.duration) {
+                localStorage.setItem('vp_' + src, video.currentTime.toFixed(1));
+                // Also save to server
+                fetch('/api/progress', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    learner_id: learnerId,
+                    video_src: src,
+                    current_time: video.currentTime,
+                    duration: video.duration
+                  })
+                }).catch(function() {}); // Best-effort server save
+              }
+            }, 10000); // Save every 10 seconds
+          });
+
+          video.addEventListener('pause', function() {
+            if (saveInterval) clearInterval(saveInterval);
+            if (video.duration) {
+              localStorage.setItem('vp_' + src, video.currentTime.toFixed(1));
+            }
+          });
+
+          video.addEventListener('ended', function() {
+            if (saveInterval) clearInterval(saveInterval);
+            localStorage.removeItem('vp_' + src); // Clear on completion
+          });
+        });
+      }
+
+      // Initialize on page load and after popups open
+      initProgressTracking();
+      // Re-init when media popup opens (MutationObserver on popup body)
+      var popupBody = document.getElementById('mediaPopupBody');
+      if (popupBody) {
+        var observer = new MutationObserver(function() { initProgressTracking(); });
+        observer.observe(popupBody, { childList: true });
+      }
+    })();
 
     // --- Export to CMS ---
     (function() {

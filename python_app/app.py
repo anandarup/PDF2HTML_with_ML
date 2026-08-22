@@ -662,6 +662,97 @@ def _rebuild_toc_in_html(full_html: str, body_html: str) -> str:
     return updated
 
 
+@app.route("/api/progress", methods=["POST"])
+def save_video_progress():
+    """Save video playback progress from the learner's browser."""
+    from progress_tracker import save_progress
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data"}), 400
+
+    learner_id = data.get("learner_id", "")
+    video_src = data.get("video_src", "")
+    current_time = data.get("current_time", 0)
+    duration = data.get("duration", 0)
+
+    if not learner_id or not video_src:
+        return jsonify({"error": "learner_id and video_src required"}), 400
+
+    record = save_progress(learner_id, video_src, current_time, duration)
+    return jsonify({"success": True, "progress": record}), 200
+
+
+@app.route("/api/progress/<learner_id>/<path:video_src>", methods=["GET"])
+def get_video_progress(learner_id: str, video_src: str):
+    """Get saved progress for a specific video."""
+    from progress_tracker import get_progress
+
+    record = get_progress(learner_id, video_src)
+    if record:
+        return jsonify({"progress": record}), 200
+    return jsonify({"progress": None}), 200
+
+
+@app.route("/api/generate-captions/<path:video_path>", methods=["POST"])
+def generate_captions(video_path: str):
+    """
+    Generate VTT captions for a video using Whisper speech-to-text.
+
+    Runs faster-whisper on the video file and returns VTT subtitle content.
+    The VTT file is also saved alongside the video.
+    """
+    from urllib.parse import unquote
+
+    decoded_path = unquote(video_path)
+    video_file = OUTPUT_DIR.resolve() / decoded_path
+
+    if not video_file.exists():
+        return jsonify({"error": "Video file not found"}), 404
+
+    try:
+        vtt_content = _generate_vtt_captions(video_file)
+        # Save VTT file alongside the video
+        vtt_path = video_file.with_suffix(".vtt")
+        vtt_path.write_text(vtt_content, encoding="utf-8")
+
+        # Return the relative URL to the VTT file
+        vtt_relative = str(vtt_path.relative_to(OUTPUT_DIR.resolve()))
+        return jsonify({
+            "success": True,
+            "vtt_url": f"/output/{vtt_relative}",
+            "vtt_content": vtt_content,
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Caption generation failed: {str(e)}"}), 500
+
+
+def _generate_vtt_captions(video_path: Path) -> str:
+    """Generate WebVTT captions from a video file using faster-whisper."""
+    from faster_whisper import WhisperModel
+
+    model = WhisperModel("tiny", compute_type="int8")
+    segments, _ = model.transcribe(str(video_path), language="en")
+
+    vtt_lines = ["WEBVTT", ""]
+    for segment in segments:
+        start = _format_vtt_time(segment.start)
+        end = _format_vtt_time(segment.end)
+        vtt_lines.append(f"{start} --> {end}")
+        vtt_lines.append(segment.text.strip())
+        vtt_lines.append("")
+
+    return "\n".join(vtt_lines)
+
+
+def _format_vtt_time(seconds: float) -> str:
+    """Format seconds to VTT timestamp HH:MM:SS.mmm"""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = seconds % 60
+    return f"{hours:02d}:{minutes:02d}:{secs:06.3f}"
+
+
 if __name__ == "__main__":
     # threaded=True so status-polling requests are served while a
     # background conversion thread is running (see /convert-status/<job_id>).
