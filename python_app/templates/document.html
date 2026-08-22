@@ -1299,19 +1299,28 @@
       max-width: 560px;
     }
 
+    .video-playlist .video-js {
+      width: 100%;
+      max-height: 400px;
+    }
+
+    .video-playlist .vjs-tech {
+      object-fit: contain;
+    }
+
     .video-playlist-player {
       position: relative;
       width: 100%;
-      padding-bottom: 56.25%;
+      height: 315px;
       background: #000;
     }
 
     .video-playlist-player video,
     .video-playlist-player iframe {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
+      width: 100%;
+      height: 100%;
       border: none;
+      object-fit: contain;
     }
 
     .video-playlist-controls {
@@ -2322,7 +2331,7 @@
               var singleVidId = 'inline-vjs-' + Date.now();
               html = '<div class="video-playlist">' +
                 '<div class="video-playlist-player">' +
-                '<video id="' + singleVidId + '" class="video-js vjs-big-play-centered" controls preload="metadata" data-setup=\'{"playbackRates":[0.5,0.75,1,1.25,1.5,2],"fluid":true}\'>' +
+                '<video id="' + singleVidId + '" class="video-js vjs-big-play-centered" controls preload="metadata" data-setup=\'{"playbackRates":[0.5,0.75,1,1.25,1.5,2],"fill":true}\'>' +
                 '<source src="' + url + '" type="video/mp4" /></video></div>' +
                 '<div style="text-align:center;padding:0.4rem;"><button type="button" onclick="generateCaptions(\'' + url + '\',\'' + singleVidId + '\')" style="padding:0.25rem 0.6rem;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);cursor:pointer;font-size:0.75rem;">&#128172; Generate Captions</button> <span id="' + singleVidId + '-caption-status" style="font-size:0.7rem;color:var(--color-text-secondary);"></span></div>' +
                 '</div>';
@@ -2366,7 +2375,7 @@
           var vid1Id = 'inline-vjs-' + Date.now();
           var html = '<div class="video-playlist">' +
             '<div class="video-playlist-player">' +
-            '<video id="' + vid1Id + '" class="video-js vjs-big-play-centered" controls preload="metadata" data-setup=\'{"playbackRates":[0.5,0.75,1,1.25,1.5,2],"fluid":true}\'>' +
+            '<video id="' + vid1Id + '" class="video-js vjs-big-play-centered" controls preload="metadata" data-setup=\'{"playbackRates":[0.5,0.75,1,1.25,1.5,2],"fill":true}\'>' +
             '<source src="' + urls[0] + '" type="video/mp4" /></video></div>' +
             '<div style="text-align:center;padding:0.4rem;"><button type="button" onclick="generateCaptions(\'' + urls[0] + '\',\'' + vid1Id + '\')" style="padding:0.25rem 0.6rem;border:1px solid var(--color-border);border-radius:4px;background:var(--color-bg);cursor:pointer;font-size:0.75rem;">&#128172; Generate Captions</button> <span id="' + vid1Id + '-caption-status" style="font-size:0.7rem;color:var(--color-text-secondary);"></span></div>' +
             '</div>';
@@ -2379,7 +2388,7 @@
         var vidId = 'inline-vjs-' + Date.now();
         var html = '<div class="video-playlist" id="' + plId + '" data-videos=\'' + JSON.stringify(urls) + '\'>' +
           '<div class="video-playlist-player">' +
-          '<video id="' + vidId + '" class="video-js vjs-big-play-centered" controls preload="metadata" data-setup=\'{"playbackRates":[0.5,0.75,1,1.25,1.5,2],"fluid":true}\'>' +
+          '<video id="' + vidId + '" class="video-js vjs-big-play-centered" controls preload="metadata" data-setup=\'{"playbackRates":[0.5,0.75,1,1.25,1.5,2],"fill":true}\'>' +
           '<source src="' + urls[0] + '" type="video/mp4" /></video></div>' +
           '<div class="video-playlist-controls">' +
           '<button type="button" onclick="videoPlaylistNav(\'' + plId + '\',-1)">&#9664; Prev</button>' +
