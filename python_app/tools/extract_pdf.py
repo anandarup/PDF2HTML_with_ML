@@ -105,10 +105,7 @@ def extract_pdf_content(
 
     # Configure Docling pipeline for rich extraction with RapidOCR
     ocr_options = RapidOcrOptions(
-        # Force full-page OCR for scanned PDFs; selective for text-based PDFs
         force_full_page_ocr=is_scanned,
-        bitmap_area_threshold=OCR_BITMAP_AREA_THRESHOLD,
-        text_score=OCR_TEXT_SCORE_THRESHOLD,
         lang=["english"],
     )
 

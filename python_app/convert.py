@@ -145,6 +145,31 @@ def convert_pdf_to_html(
     print("[pdf2webview] ✓ Conversion complete.")
     report("done", "Conversion complete.")
 
+    # Upload images to OCI Object Storage and rewrite HTML paths
+    try:
+        from oci_storage import upload_directory
+        import re as _re
+
+        output_dir = Path(html_result.html_path).parent
+        images_dir = output_dir / "images"
+        job_prefix = output_dir.name + "/"
+
+        if images_dir.exists():
+            url_map = upload_directory(images_dir, job_prefix)
+
+            # Rewrite image paths in the HTML file to use bucket URLs
+            if url_map:
+                html_content = Path(html_result.html_path).read_text(encoding="utf-8")
+                for local_rel, bucket_url in url_map.items():
+                    # Replace relative paths like images/xxx.png with bucket URL
+                    html_content = html_content.replace(f"images/{local_rel}", bucket_url)
+                Path(html_result.html_path).write_text(html_content, encoding="utf-8")
+                print(f"[pdf2webview]   - Uploaded {len(url_map)} files to OCI bucket")
+    except ImportError:
+        pass  # OCI not available (local dev), skip
+    except Exception as e:
+        print(f"[pdf2webview]   - OCI upload warning: {e}")
+
     return {
         "html_path": html_result.html_path,
         "image_directory": extraction.image_directory,

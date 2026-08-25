@@ -1591,6 +1591,15 @@
       border-color: var(--color-link);
       color: var(--color-link);
     }
+
+    /* Image Edit Controls */
+    .img-edit-selected { outline: 3px solid var(--color-link) !important; outline-offset: 2px; }
+    .img-edit-toolbar { position: absolute; top: -36px; left: 0; display: flex; gap: 4px; padding: 4px; background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); z-index: 50; }
+    .img-edit-toolbar button { padding: 4px 8px; border: 1px solid var(--color-border); border-radius: 4px; background: var(--color-bg); cursor: pointer; font-size: 0.75rem; }
+    .img-edit-toolbar button:hover { background: var(--color-code-bg); border-color: var(--color-link); }
+    .img-edit-toolbar button.btn-del { color: #ef4444; border-color: #ef4444; }
+    .img-resize-handle { position: absolute; bottom: -6px; right: -6px; width: 12px; height: 12px; background: var(--color-link); border: 2px solid #fff; border-radius: 2px; cursor: se-resize; z-index: 51; }
+
   </style>
 </head>
 <body>
@@ -3552,7 +3561,11 @@
         var btn = container.querySelector('.make-interactive-btn');
         if (btn) btn.textContent = '\u23F3 Analyzing...';
 
-        fetch('/api/make-interactive/' + encodeURI(fullPath), { method: 'POST' })
+        fetch('/api/make-interactive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_url: src })
+        })
           .then(function(res) { return res.json(); })
           .then(function(data) {
             if (data.success) {
@@ -3628,6 +3641,48 @@
       if (document.body.classList.contains('edit-mode')) {
         initMakeInteractiveButtons();
       }
+    })();
+
+
+    // --- Image Edit Controls ---
+    (function() {
+      var imgBody = document.querySelector('.document-body');
+      var selImg = null, tb = null, rh = null;
+      if (!imgBody) return;
+      imgBody.addEventListener('click', function(e) {
+        if (!document.body.classList.contains('edit-mode')) return;
+        var img = e.target.closest('img');
+        if (img) { e.preventDefault(); selectImg(img); }
+        else if (!e.target.closest('.img-edit-toolbar')) { deselImg(); }
+      });
+      function selectImg(img) {
+        deselImg();
+        selImg = img;
+        img.classList.add('img-edit-selected');
+        var c = img.parentNode; c.style.position = 'relative';
+        tb = document.createElement('div'); tb.className = 'img-edit-toolbar';
+        tb.setAttribute('contenteditable','false');
+        tb.innerHTML = '<button data-a="replace">Replace</button><button class="btn-del" data-a="delete">Delete</button>';
+        tb.addEventListener('mousedown', function(ev) {
+          ev.preventDefault(); ev.stopPropagation();
+          var a = ev.target.closest('button');
+          if (!a) return;
+          if (a.dataset.a === 'delete') { if(confirm('Delete image?')){var p=selImg.closest('.figure-wrap')||selImg.closest('figure')||selImg.parentNode;if(p&&p!==imgBody)p.remove();else selImg.remove();deselImg();} }
+          if (a.dataset.a === 'replace') { var inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=function(){if(!inp.files[0])return;var r=new FileReader();r.onload=function(ev){selImg.src=ev.target.result;selImg.style.width='';deselImg();};r.readAsDataURL(inp.files[0]);};inp.click(); }
+        });
+        c.appendChild(tb);
+        rh = document.createElement('div'); rh.className = 'img-resize-handle';
+        rh.setAttribute('contenteditable','false'); c.appendChild(rh);
+        var sx,sy,sw;
+        rh.addEventListener('mousedown', function(ev) {
+          ev.preventDefault(); ev.stopPropagation();
+          sx=ev.clientX; sw=img.offsetWidth;
+          function mv(e){img.style.width=Math.max(50,sw+(e.clientX-sx))+'px';img.style.height='auto';img.style.maxWidth='none';}
+          function up(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);}
+          document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);
+        });
+      }
+      function deselImg() { if(selImg)selImg.classList.remove('img-edit-selected');selImg=null;if(tb){tb.remove();tb=null;}if(rh){rh.remove();rh=null;} }
     })();
 
     // --- Export to CMS ---

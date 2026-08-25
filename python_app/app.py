@@ -714,29 +714,51 @@ def get_label_info(term: str):
         }), 200
 
 
-@app.route("/api/make-interactive/<path:image_path>", methods=["POST"])
-def make_interactive(image_path: str):
+@app.route("/api/make-interactive", methods=["POST"])
+def make_interactive():
     """
     Analyze a diagram image and return detected labels with positions.
 
-    The frontend uses this to overlay interactive hotspots on the image.
+    Accepts JSON with {image_url: "..."}. Handles both:
+    - Local relative paths (resolved against OUTPUT_DIR)
+    - Full URLs (downloaded to temp file for analysis)
     """
+    import tempfile
+    import requests as http_req
     from urllib.parse import unquote
     from diagram_interactive import make_diagram_interactive
 
-    decoded_path = unquote(image_path)
-    full_path = OUTPUT_DIR.resolve() / decoded_path
+    data = request.get_json()
+    if not data or "image_url" not in data:
+        return jsonify({"error": "image_url required"}), 400
 
-    if not full_path.exists():
-        return jsonify({"error": "Image not found"}), 404
+    image_url = data["image_url"]
 
-    # Security: ensure path is within OUTPUT_DIR
-    try:
-        full_path.resolve().relative_to(OUTPUT_DIR.resolve())
-    except ValueError:
-        return jsonify({"error": "Invalid path"}), 403
-
-    result = make_diagram_interactive(str(full_path))
+    # If it's a full URL (OCI bucket), download it first
+    if image_url.startswith("http://") or image_url.startswith("https://"):
+        try:
+            resp = http_req.get(image_url, timeout=30)
+            if resp.status_code != 200:
+                return jsonify({"error": f"Cannot fetch image: HTTP {resp.status_code}"}), 400
+            tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
+            tmp.write(resp.content)
+            tmp.close()
+            result = make_diagram_interactive(tmp.name)
+            import os
+            os.unlink(tmp.name)
+        except Exception as e:
+            return jsonify({"error": f"Failed to fetch image: {str(e)}"}), 500
+    else:
+        # Local relative path
+        decoded_path = unquote(image_url)
+        full_path = OUTPUT_DIR.resolve() / decoded_path
+        if not full_path.exists():
+            return jsonify({"error": "Image not found"}), 404
+        try:
+            full_path.resolve().relative_to(OUTPUT_DIR.resolve())
+        except ValueError:
+            return jsonify({"error": "Invalid path"}), 403
+        result = make_diagram_interactive(str(full_path))
 
     if result.get("success"):
         return jsonify(result), 200
