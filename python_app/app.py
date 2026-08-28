@@ -44,6 +44,7 @@ UPLOAD_LIMITS: dict = {
     "pptx": 30 * 1024 * 1024,     # 30 MB
     "h5p": 400 * 1024 * 1024,     # 400 MB
     "pdf": 100 * 1024 * 1024,     # 100 MB
+    "image": 1 * 1024 * 1024,     # 1 MB
 }
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
@@ -214,6 +215,14 @@ def upload_media(job_dir: str):
         return jsonify({
             "error": f"File too large. Maximum for {media_type} is {limit_mb} MB."
         }), 413
+
+    # Validate file extension for image uploads
+    if media_type == "image":
+        allowed_extensions = (".png", ".jpg", ".jpeg")
+        if not file.filename.lower().endswith(allowed_extensions):
+            return jsonify({
+                "error": "Only PNG and JPG images are allowed."
+            }), 400
 
     # Validate the target directory exists and is within OUTPUT_DIR
     # URL-decode the job_dir to handle double-encoding from browser JS

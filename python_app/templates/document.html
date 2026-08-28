@@ -28,6 +28,8 @@
       --color-blockquote-border: #3282b8;
       --color-toc-bg: #fafbfc;
       --color-toc-active: #0f4c75;
+      --color-accent: #0071e3;
+      --color-accent-hover: #0077ed;
       --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       --font-heading: "Georgia", "Times New Roman", serif;
       --font-mono: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
@@ -49,6 +51,8 @@
         --color-blockquote-border: #3282b8;
         --color-toc-bg: #16213e;
         --color-toc-active: #bbe1fa;
+        --color-accent: #2997ff;
+        --color-accent-hover: #47a3ff;
       }
     }
 
@@ -487,51 +491,74 @@
       }
     }
 
-    /* Editor Toolbar */
+    /* Editor Toolbar — Apple pro-app style: a translucent vibrancy bar with
+       small-caps section labels over segmented-control button clusters,
+       modeled on the Pages/Keynote/Final Cut toolbar language. Touch
+       targets stay at the 40px minimum established elsewhere in this file
+       — the "Apple-ness" comes from grouping, spacing and material, not
+       from shrinking hit areas below the accessible size. */
     .edit-toolbar {
       position: fixed;
       top: 0;
       left: 0;
       right: 0;
       z-index: 1000;
-      background: var(--color-bg);
-      border-bottom: 2px solid var(--color-border);
-      padding: 0.5rem 1rem;
+      background: color-mix(in srgb, var(--color-bg) 82%, transparent);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+      padding: 0.65rem 1rem;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       flex-wrap: wrap;
-      gap: 0.5rem 0.5rem;
+      gap: 0.65rem 1.5rem;
       max-height: 70vh;
       overflow-y: auto;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.08);
       transform: translateY(-100%);
-      transition: transform 0.3s ease;
+      transition: transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
     }
 
     .edit-toolbar.visible {
       transform: translateY(0);
     }
 
-    .edit-toolbar .toolbar-group {
+    /* Each labeled cluster (TEXT, BLOCK, LIST, INSERT, MEDIA, COLORS,
+       HISTORY) is a column: a small-caps label over its segmented group. */
+    .toolbar-section {
       display: flex;
-      flex-wrap: wrap;
-      gap: 0.25rem;
-      padding-right: 0.75rem;
-      border-right: 1px solid var(--color-border);
-      margin-right: 0.5rem;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
     }
 
-    /* On wide screens the last group (save status/cancel/save) hugs the
-       right edge; once the toolbar wraps to multiple rows it just flows
-       onto its own row like every other group, which reads fine. */
+    .toolbar-section-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--color-text-secondary);
+      opacity: 0.75;
+      padding-left: 2px;
+      white-space: nowrap;
+    }
+
+    /* On wide screens the actions cluster (status/Cancel/Save) hugs the
+       right edge; once the bar wraps to multiple rows it just flows onto
+       its own row like every other section, which still reads fine. */
     @media (min-width: 900px) {
-      .edit-toolbar .toolbar-group:last-child {
+      .toolbar-section.toolbar-section-actions {
         margin-left: auto;
       }
     }
 
-    .edit-toolbar .toolbar-group:last-child {
-      border-right: none;
+    .edit-toolbar .toolbar-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+      background: var(--color-code-bg);
+      border-radius: 9px;
+      padding: 2px;
     }
 
     .edit-toolbar button {
@@ -539,15 +566,15 @@
       align-items: center;
       justify-content: center;
       gap: 0.35rem;
-      padding: 0.5rem 0.65rem;
-      border: 1px solid var(--color-border);
-      border-radius: 4px;
-      background: var(--color-bg);
+      padding: 0.45rem 0.6rem;
+      border: none;
+      border-radius: 7px;
+      background: transparent;
       color: var(--color-text);
       cursor: pointer;
-      font-size: 0.85rem;
+      font-size: 0.8rem;
       font-weight: 500;
-      transition: background 0.15s, border-color 0.15s;
+      transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
       min-width: 40px;
       min-height: 40px;
       text-align: center;
@@ -558,29 +585,95 @@
     }
 
     .edit-toolbar button:hover {
-      background: var(--color-code-bg);
-      border-color: var(--color-link);
+      background: color-mix(in srgb, var(--color-text) 8%, transparent);
+    }
+
+    .edit-toolbar button:active {
+      transform: scale(0.94);
+    }
+
+    .edit-toolbar button:focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 1px;
     }
 
     .edit-toolbar button.active {
-      background: var(--color-link);
-      color: #fff;
-      border-color: var(--color-link);
+      background: var(--color-bg);
+      color: var(--color-accent);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+    }
+
+    /* Font/background color swatches live inside the COLORS segmented
+       group like any other button, rather than each carrying its own box. */
+    .toolbar-color-swatch {
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      min-width: 40px;
+      min-height: 40px;
+      padding: 0.45rem 0.6rem;
+      border-radius: 7px;
+      color: var(--color-text);
+      font-size: 0.8rem;
+      font-weight: 500;
+      transition: background 0.15s ease;
+    }
+
+    .toolbar-color-swatch:hover {
+      background: color-mix(in srgb, var(--color-text) 8%, transparent);
+    }
+
+    .toolbar-color-swatch input[type="color"] {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 1px solid color-mix(in srgb, var(--color-text) 20%, transparent);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .toolbar-color-swatch .swatch-chip {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      background: #ffff00;
+    }
+
+    /* Actions cluster: no segmented-group background — Cancel reads as a
+       plain ghost button, Save as the one filled accent (system-blue) pill
+       per screen, matching macOS/iOS dialog conventions. */
+    .toolbar-section-actions .toolbar-group {
+      background: none;
+      padding: 0;
+      align-items: center;
+      gap: 0.6rem;
     }
 
     .edit-toolbar .btn-save {
-      background: #10b981;
+      background: var(--color-accent);
       color: #fff;
-      border-color: #10b981;
-      padding: 0.4rem 1rem;
+      border-radius: 8px;
+      padding: 0.5rem 1.15rem;
+      font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
     }
 
     .edit-toolbar .btn-save:hover {
-      background: #059669;
+      background: var(--color-accent-hover);
     }
 
     .edit-toolbar .btn-cancel {
-      background: var(--color-bg);
+      background: transparent;
+      color: var(--color-text-secondary);
+      border-radius: 8px;
+      padding: 0.5rem 0.9rem;
+    }
+
+    .edit-toolbar .btn-cancel:hover {
+      background: color-mix(in srgb, var(--color-text) 8%, transparent);
       color: var(--color-text);
     }
 
@@ -589,21 +682,26 @@
       top: 1rem;
       right: 5rem;
       z-index: 999;
-      padding: 0.5rem 1rem;
-      border-radius: 6px;
-      border: 1px solid var(--color-border);
-      background: var(--color-bg);
+      padding: 0.55rem 1.1rem;
+      border-radius: 20px;
+      border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+      background: color-mix(in srgb, var(--color-bg) 85%, transparent);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
       color: var(--color-text);
       cursor: pointer;
       font-size: 0.85rem;
       font-weight: 500;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-      transition: background 0.2s, border-color 0.2s;
+      box-shadow: 0 1px 0 rgba(0, 0, 0, 0.04), 0 4px 14px rgba(0, 0, 0, 0.1);
+      transition: background 0.2s ease, transform 0.1s ease;
     }
 
     .edit-toggle:hover {
-      border-color: var(--color-link);
-      background: var(--color-code-bg);
+      background: color-mix(in srgb, var(--color-text) 8%, var(--color-bg));
+    }
+
+    .edit-toggle:active {
+      transform: scale(0.96);
     }
 
     .document-body[contenteditable="true"] {
@@ -1635,47 +1733,71 @@
   <button class="edit-toggle" id="exportToggle" aria-label="Export to CMS" style="right:10rem;">Export</button>
 
   <div class="edit-toolbar" id="editToolbar" role="toolbar" aria-label="Formatting toolbar">
-    <div class="toolbar-group">
-      <button type="button" data-cmd="bold" title="Bold (Ctrl+B)" aria-label="Bold"><b>B</b></button>
-      <button type="button" data-cmd="italic" title="Italic (Ctrl+I)" aria-label="Italic"><i>I</i></button>
-      <button type="button" data-cmd="underline" title="Underline (Ctrl+U)" aria-label="Underline"><u>U</u></button>
-      <button type="button" data-cmd="strikethrough" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
-      <button type="button" data-cmd="subscript" title="Subscript" aria-label="Subscript">X<sub>2</sub></button>
-      <button type="button" data-cmd="superscript" title="Superscript" aria-label="Superscript">X<sup>2</sup></button>
+    <div class="toolbar-section">
+      <span class="toolbar-section-label">Text</span>
+      <div class="toolbar-group">
+        <button type="button" data-cmd="bold" title="Bold (Ctrl+B)" aria-label="Bold"><b>B</b></button>
+        <button type="button" data-cmd="italic" title="Italic (Ctrl+I)" aria-label="Italic"><i>I</i></button>
+        <button type="button" data-cmd="underline" title="Underline (Ctrl+U)" aria-label="Underline"><u>U</u></button>
+        <button type="button" data-cmd="strikethrough" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
+        <button type="button" data-cmd="subscript" title="Subscript" aria-label="Subscript">X<sub>2</sub></button>
+        <button type="button" data-cmd="superscript" title="Superscript" aria-label="Superscript">X<sup>2</sup></button>
+      </div>
     </div>
-    <div class="toolbar-group">
-      <button type="button" data-cmd="formatBlock" data-val="h1" title="Heading 1" aria-label="Heading 1">H1</button>
-      <button type="button" data-cmd="formatBlock" data-val="h2" title="Heading 2" aria-label="Heading 2">H2</button>
-      <button type="button" data-cmd="formatBlock" data-val="h3" title="Heading 3" aria-label="Heading 3">H3</button>
-      <button type="button" data-cmd="formatBlock" data-val="p" title="Paragraph" aria-label="Paragraph">P</button>
-      <button type="button" data-cmd="formatBlock" data-val="blockquote" title="Blockquote" aria-label="Blockquote">&#8220;</button>
+    <div class="toolbar-section">
+      <span class="toolbar-section-label">Block</span>
+      <div class="toolbar-group">
+        <button type="button" data-cmd="formatBlock" data-val="h1" title="Heading 1" aria-label="Heading 1">H1</button>
+        <button type="button" data-cmd="formatBlock" data-val="h2" title="Heading 2" aria-label="Heading 2">H2</button>
+        <button type="button" data-cmd="formatBlock" data-val="h3" title="Heading 3" aria-label="Heading 3">H3</button>
+        <button type="button" data-cmd="formatBlock" data-val="p" title="Paragraph" aria-label="Paragraph">P</button>
+        <button type="button" data-cmd="formatBlock" data-val="blockquote" title="Blockquote" aria-label="Blockquote">&#8220;</button>
+      </div>
     </div>
-    <div class="toolbar-group">
-      <button type="button" data-cmd="insertUnorderedList" title="Bullet list" aria-label="Bullet list">&#8226; List</button>
-      <button type="button" data-cmd="insertOrderedList" title="Numbered list" aria-label="Numbered list">1. List</button>
+    <div class="toolbar-section">
+      <span class="toolbar-section-label">List</span>
+      <div class="toolbar-group">
+        <button type="button" data-cmd="insertUnorderedList" title="Bullet list" aria-label="Bullet list">&#8226; List</button>
+        <button type="button" data-cmd="insertOrderedList" title="Numbered list" aria-label="Numbered list">1. List</button>
+      </div>
     </div>
-    <div class="toolbar-group">
-      <button type="button" id="btnFormula" title="Insert LaTeX formula" aria-label="Insert LaTeX formula">&#8721; Formula</button>
-      <button type="button" id="btnSymbol" title="Insert symbol" aria-label="Insert symbol">&#937; Symbol</button>
+    <div class="toolbar-section">
+      <span class="toolbar-section-label">Insert</span>
+      <div class="toolbar-group">
+        <button type="button" id="btnFormula" title="Insert LaTeX formula" aria-label="Insert LaTeX formula">&#8721; Formula</button>
+        <button type="button" id="btnSymbol" title="Insert symbol" aria-label="Insert symbol">&#937; Symbol</button>
+      </div>
     </div>
-    <div class="toolbar-group">
-      <label title="Font color" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:3px;padding:0.5rem 0.65rem;min-width:40px;min-height:40px;border:1px solid var(--color-border);border-radius:4px;">A<input type="color" id="btnFontColor" value="#000000" aria-label="Font color" style="width:20px;height:20px;border:none;padding:0;cursor:pointer;" /></label>
-      <label title="Background color" style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:3px;padding:0.5rem 0.65rem;min-width:40px;min-height:40px;border:1px solid var(--color-border);border-radius:4px;">&#9632;<input type="color" id="btnBgColor" value="#ffff00" aria-label="Background color" style="width:20px;height:20px;border:none;padding:0;cursor:pointer;" /></label>
+    <div class="toolbar-section">
+      <span class="toolbar-section-label">Media</span>
+      <div class="toolbar-group">
+        <button type="button" id="btnInsertImage" title="Insert image" aria-label="Insert image"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg> Image</button>
+        <button type="button" id="btnInsertVideo" title="Insert video" aria-label="Insert video"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M10 8l6 4-6 4V8z" fill="currentColor" stroke="none"/></svg> Video</button>
+        <button type="button" id="btnInsertH5P" title="Insert H5P content" aria-label="Insert H5P content"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3a2 2 0 012 2v1h3a2 2 0 012 2v3h-1a2 2 0 000 4h1v3a2 2 0 01-2 2h-3v-1a2 2 0 00-4 0v1H7a2 2 0 01-2-2v-3h1a2 2 0 000-4H5V8a2 2 0 012-2h3V4a2 2 0 012-2z"/></svg> H5P</button>
+        <button type="button" id="btnFlipCard" title="Insert flip card" aria-label="Insert flip card"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="6" width="13" height="16" rx="2"/><rect x="9" y="2" width="13" height="16" rx="2" fill="var(--color-bg)"/></svg> Flip Card</button>
+      </div>
     </div>
-    <div class="toolbar-group">
-      <button type="button" id="btnInsertImage" title="Insert image" aria-label="Insert image"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg> Image</button>
-      <button type="button" id="btnInsertVideo" title="Insert video" aria-label="Insert video"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M10 8l6 4-6 4V8z" fill="currentColor" stroke="none"/></svg> Video</button>
-      <button type="button" id="btnInsertH5P" title="Insert H5P content" aria-label="Insert H5P content"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3a2 2 0 012 2v1h3a2 2 0 012 2v3h-1a2 2 0 000 4h1v3a2 2 0 01-2 2h-3v-1a2 2 0 00-4 0v1H7a2 2 0 01-2-2v-3h1a2 2 0 000-4H5V8a2 2 0 012-2h3V4a2 2 0 012-2z"/></svg> H5P</button>
-      <button type="button" id="btnFlipCard" title="Insert flip card" aria-label="Insert flip card"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="2" y="6" width="13" height="16" rx="2"/><rect x="9" y="2" width="13" height="16" rx="2" fill="var(--color-bg)"/></svg> Flip Card</button>
+    <div class="toolbar-section">
+      <span class="toolbar-section-label">Colors</span>
+      <div class="toolbar-group">
+        <label class="toolbar-color-swatch" title="Font color">A<input type="color" id="btnFontColor" value="#000000" aria-label="Font color" /></label>
+        <label class="toolbar-color-swatch" title="Background color"><span class="swatch-chip" aria-hidden="true"></span><input type="color" id="btnBgColor" value="#ffff00" aria-label="Background color" /></label>
+      </div>
     </div>
-    <div class="toolbar-group">
-      <button type="button" data-cmd="undo" title="Undo (Ctrl+Z)" aria-label="Undo">Undo</button>
-      <button type="button" data-cmd="redo" title="Redo (Ctrl+Y)" aria-label="Redo">Redo</button>
+    <div class="toolbar-section">
+      <span class="toolbar-section-label">History</span>
+      <div class="toolbar-group">
+        <button type="button" data-cmd="undo" title="Undo (Ctrl+Z)" aria-label="Undo">Undo</button>
+        <button type="button" data-cmd="redo" title="Redo (Ctrl+Y)" aria-label="Redo">Redo</button>
+      </div>
     </div>
-    <div class="toolbar-group">
-      <span class="save-status" id="saveStatus"></span>
-      <button type="button" class="btn-cancel" id="editCancel">Cancel</button>
-      <button type="button" class="btn-save" id="editSave">Save</button>
+    <div class="toolbar-section toolbar-section-actions">
+      <span class="toolbar-section-label">Actions</span>
+      <div class="toolbar-group">
+        <span class="save-status" id="saveStatus"></span>
+        <button type="button" class="btn-cancel" id="editCancel">Cancel</button>
+        <button type="button" class="btn-save" id="editSave">Save</button>
+      </div>
     </div>
   </div>
 
@@ -1794,6 +1916,31 @@
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="videoInsertCancel">Cancel</button>
         <button type="button" class="btn-save" id="videoInsertSubmit">Insert</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Image Insert Modal -->
+  <div class="modal-overlay" id="imageInsertModal" role="dialog" aria-modal="true" aria-labelledby="imageInsertModalTitle">
+    <div class="modal-dialog" style="max-width:500px">
+      <h3 id="imageInsertModalTitle">Insert Image</h3>
+      <div class="media-input-section">
+        <label class="media-input-label">Upload image (PNG or JPG, max 1 MB)</label>
+        <div class="file-upload-area">
+          <input type="file" id="imageFileInput" class="file-input-hidden" accept=".png,.jpg,.jpeg,image/png,image/jpeg" />
+          <label for="imageFileInput" class="file-upload-btn" id="imageFileLabel">Choose file...</label>
+        </div>
+        <div id="imageFileInfo" style="margin-top:0.5rem;font-size:0.8rem;color:var(--color-text-secondary);"></div>
+      </div>
+      <div class="media-input-divider"><span>or</span></div>
+      <div class="media-input-section">
+        <label class="media-input-label">Image URL</label>
+        <input type="url" id="imageUrlInput" class="media-url-field" placeholder="https://..." />
+      </div>
+      <div class="media-input-status" id="imageInsertStatus"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="imageInsertCancel">Cancel</button>
+        <button type="button" class="btn-save" id="imageInsertSubmit">Insert</button>
       </div>
     </div>
   </div>
@@ -2430,29 +2577,106 @@
       });
 
       // --- Font Color ---
-      document.getElementById('btnFontColor').addEventListener('input', function(e) {
+      var btnFontColor = document.getElementById('btnFontColor');
+      btnFontColor.addEventListener('input', function(e) {
         document.execCommand('foreColor', false, e.target.value);
+        btnFontColor.closest('.toolbar-color-swatch').style.color = e.target.value;
         docBody.focus();
       });
 
       // --- Background Color ---
-      document.getElementById('btnBgColor').addEventListener('input', function(e) {
+      var btnBgColor = document.getElementById('btnBgColor');
+      var bgColorChip = btnBgColor.closest('.toolbar-color-swatch').querySelector('.swatch-chip');
+      btnBgColor.addEventListener('input', function(e) {
         document.execCommand('hiliteColor', false, e.target.value);
+        if (bgColorChip) bgColorChip.style.background = e.target.value;
         docBody.focus();
       });
 
       // --- Insert Image ---
       document.getElementById('btnInsertImage').addEventListener('click', function() {
         var savedRange = saveDocBodySelection();
-        showPromptModal({
-          title: 'Insert Image',
-          label: 'Image URL',
-          placeholder: 'https://...'
-        }).then(function(url) {
-          if (!url) return;
-          restoreDocBodySelection(savedRange);
-          document.execCommand('insertImage', false, url);
-        });
+        var modal = document.getElementById('imageInsertModal');
+        var urlInput = document.getElementById('imageUrlInput');
+        var fileInput = document.getElementById('imageFileInput');
+        var fileLabel = document.getElementById('imageFileLabel');
+        var fileInfo = document.getElementById('imageFileInfo');
+        var statusEl = document.getElementById('imageInsertStatus');
+        var submitBtn = document.getElementById('imageInsertSubmit');
+        var cancelBtn = document.getElementById('imageInsertCancel');
+
+        var MAX_IMAGE_SIZE = 1 * 1024 * 1024; // 1 MB
+
+        urlInput.value = '';
+        fileInput.value = '';
+        fileLabel.textContent = 'Choose file...';
+        fileInfo.textContent = '';
+        statusEl.textContent = '';
+        submitBtn.disabled = false;
+        modal.classList.add('visible');
+
+        function onFileChange() {
+          var file = fileInput.files[0];
+          if (!file) return;
+          // Validate type
+          if (!file.type.match(/^image\/(png|jpeg)$/)) {
+            statusEl.textContent = 'Only PNG and JPG files are allowed.';
+            fileInput.value = '';
+            fileLabel.textContent = 'Choose file...';
+            fileInfo.textContent = '';
+            return;
+          }
+          // Validate size
+          if (file.size > MAX_IMAGE_SIZE) {
+            statusEl.textContent = 'File too large. Maximum size is 1 MB.';
+            fileInput.value = '';
+            fileLabel.textContent = 'Choose file...';
+            fileInfo.textContent = '';
+            return;
+          }
+          statusEl.textContent = '';
+          urlInput.value = '';
+          fileLabel.textContent = file.name;
+          fileInfo.textContent = (file.size / 1024).toFixed(1) + ' KB';
+        }
+        fileInput.addEventListener('change', onFileChange);
+
+        function cleanup() {
+          modal.classList.remove('visible');
+          fileInput.removeEventListener('change', onFileChange);
+        }
+
+        cancelBtn.onclick = function() { cleanup(); };
+        modal.onclick = function(e) { if (e.target === modal) cleanup(); };
+
+        submitBtn.onclick = function() {
+          var url = urlInput.value.trim();
+          var file = fileInput.files[0];
+
+          if (!url && !file) {
+            statusEl.textContent = 'Select a file or enter a URL.';
+            return;
+          }
+
+          if (url) {
+            // Insert from URL directly
+            restoreDocBodySelection(savedRange);
+            document.execCommand('insertImage', false, url);
+            cleanup();
+          } else {
+            // Upload file
+            statusEl.textContent = 'Uploading...';
+            submitBtn.disabled = true;
+            uploadMediaFile(file, 'image').then(function(result) {
+              restoreDocBodySelection(savedRange);
+              document.execCommand('insertImage', false, result.url);
+              cleanup();
+            }).catch(function(err) {
+              statusEl.textContent = err.message || 'Upload failed.';
+              submitBtn.disabled = false;
+            });
+          }
+        };
       });
 
       // --- Insert Video ---
