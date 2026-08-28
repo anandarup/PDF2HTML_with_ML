@@ -1,109 +1,119 @@
 # PDF2HTML with ML
 
-An AI-powered document conversion application that transforms PDF files into interactive, styled HTML documents with a rich content editor and CMS export capabilities. Uses IBM's Docling for intelligent layout analysis and RapidOCR for text extraction.
+An AI-powered document conversion platform that transforms static PDFs into interactive, styled HTML documents. Features a rich WYSIWYG editor with 15+ interactive element types, publish-to-cloud workflow, learner-facing features (notes, bookmarks, glossary), and CMS integration via iframe embedding.
+
+Built for Indian K-12 educational content — converts NCERT/DIKSHA textbook PDFs into enriched digital learning experiences.
 
 ## Features
 
-### PDF Conversion
-- **AI-Powered Extraction** — Docling's DocLayNet model detects document structure (headings, paragraphs, tables, figures, lists)
-- **OCR Support** — RapidOCR handles scanned/image-based PDFs with automatic detection
+### PDF Conversion (AI-Powered)
+- **Docling Extraction** — IBM's DocLayNet model detects headings, paragraphs, tables, figures, lists
+- **RapidOCR** — Handles scanned/image-based PDFs with automatic detection
 - **QR Code Filtering** — Detects and removes QR codes using OpenCV
-- **Smart Title Detection** — Extracts chapter title from the first page text
-- **PDF Artifact Cleanup** — Strips page numbers, running headers/footers, glyph artifacts, deduplicates headings
-- **MCQ List Restructuring** — Nests multiple-choice options properly under parent questions
+- **Smart Title Detection** — Extracts chapter title from first page
+- **PDF Artifact Cleanup** — Strips page numbers, running headers/footers, deduplicates headings
+- **MCQ Restructuring** — Nests multiple-choice options properly under parent questions
+- **Auto-upload to OCI** — Images uploaded to Object Storage, HTML paths rewritten to public URLs
 
-### Rich Text Editor
-- **Inline Editing** — Click "Edit" to make content editable directly in the browser
-- **Formatting Toolbar** — Bold, Italic, Underline, Strikethrough, Sub/Superscript, Headings (H1-H3), Blockquote, Lists
-- **LaTeX Formulas** — Insert math expressions with live preview via MathJax 3
+### Rich Text Editor (WYSIWYG)
+- **Inline Editing** — Click "Edit" to make content editable
+- **Grouped Toolbar** — Labeled sections (Text, Block, List, Align, Insert, Colors, Media & Elements, History, Actions)
+- **44px Touch Targets** — WCAG-compliant button sizing
+- **Formatting** — Bold, Italic, Underline, Strikethrough, Sub/Superscript, Headings (H1-H3), Blockquote, Lists, Text Alignment (L/C/R)
+- **LaTeX Formulas** — Insert with live MathJax 3 preview + template library
 - **Symbol Picker** — 64 math/science/logic symbols
+- **Highlighted Text** — Background markers (5 colors) + text gradients (5 variants) via inline popover
 - **Font & Background Color** — Native color pickers
-- **Insert Image/Video** — Embed images and YouTube/Vimeo/direct video inline
-- **Flip Cards** — Multi-card decks with rich text, images, and formulas on each face
-- **H5P Content** — Insert interactive H5P packages inline
-- **Drag & Drop Reordering** — Reposition any block element in edit mode
-- **Section Delete** — Remove blocks with confirmation (× button on hover)
+- **Undo/Redo** — Custom history stack (5 levels)
+- **Keyboard Shortcuts** — Ctrl+B/I/U/S/Z/Y
 
-### Media Attachments
-- **6 Content Types** — Video, Audio, Presentation (PPTX), H5P, Glossary, URL
-- **Icon Bar** — Appears after each heading, visible in edit mode (all icons) or learner mode (only with content)
-- **Popup Playback** — Clicking icons in learner mode opens content in a modal popup
-- **File Upload** — Upload or enter URL via a proper dialog (not browser prompt)
-- **Video Optimization** — Uploaded MP4s auto-optimized with ffmpeg faststart for streaming
-- **H5P Extraction** — .h5p files extracted and served via h5p-standalone player
+### Interactive Elements (Insert via Toolbar)
+| Element | Description |
+|---------|-------------|
+| **Image** | Insert from URL, resize (S/M/L/Full), 4-corner drag handles, replace, delete |
+| **Video** | YouTube/Vimeo/direct URL embed (responsive 16:9), file upload with streaming optimization |
+| **H5P** | Interactive H5P packages (iframe or h5p-standalone) |
+| **Flip Cards** | Multi-card decks with rich text, images, LaTeX on each face |
+| **Content Box** | Styled callout containers (Info/Success/Warning/Tip/Highlight) with icon + optional image |
+| **Vertical Tabs** | Left-nav tabs with content panels (ArrowUp/Down keyboard nav) |
+| **Horizontal Tabs** | Top-row tabs with content panels (ArrowLeft/Right keyboard nav) |
+| **Animated Heading** | Static text + rotating colored words with fade animation |
+| **Accordion** | Collapsible panels with CSS Grid animation (keyboard accessible) |
+| **Shape Divider** | Animated SVG wave/zigzag/curve separators (3 shapes, 3 speeds, 3 heights) |
+| **Glossary** | Chapter-level term definitions with auto-highlighting in learner view |
 
-### CMS Export
-- **Strapi ** — Full integration with content-manager API:
-  - Creates Chapter linked to an existing Textbook (via documentId)
-  - Splits content into Sections by headings
-  - Each section contains `content_blocks` dynamic zone with proper block types
-  - Uploads all media to Strapi media library
-  - Maps to native blocks: text-block, image-block, video-block, audio-block, flashcard-set, h5p-block, file-upload-block, media-block
-  - Includes `designLayout` CSS for each block component
-  - Strips editor-only UI (drag handles, delete buttons) from export
-- **WordPress** — Creates draft posts via REST API with full HTML content and uploaded media
+All elements support **double-click to edit** in-place after insertion.
 
-### HTML Output
-- Responsive layout with dark mode support
-- Table of contents sidebar with scroll tracking
-- Textbook-style floating figures
-- Print-friendly styles
-- Video.js player for uploaded videos
-- Back-to-top button
+### Media Attachments (Per-Section)
+- **5 Content Types** — Video, Audio, Presentation (PPTX/PDF), H5P, URL
+- **Icon Bar** — Appears after each heading in edit mode
+- **Popup Playback** — Opens content in modal with Video.js player, iframe embeds, or download links
+- **YouTube URL Support** — watch, shorts, embed, live, youtu.be formats all auto-convert to embed
 
-## Architecture
+### Publish for Learners
+- **One-Click Publish** — Uploads HTML + media to OCI Object Storage
+- **3 Buckets** — HTML → `poc-interactivetxtbk1`, media → `poc-interactivetxt-media-src-bucket`, videos → `poc-interactivetxt-media-dst-bucket`
+- **Editor UI Stripped** — Published HTML has no toolbar, modals, or edit buttons
+- **Learner Runtime** — Injected script handles: flip card nav, accordion toggle, tab switching, animated headings, media popups, bookmarks, notes
+- **Re-publish** — Overwrites same URL (stable learner links)
 
-```
-python_app/
-├── app.py                  # Flask web server + API endpoints
-├── convert.py              # Orchestrator: PDF → Markdown → HTML pipeline
-├── strapi_export.py        # Strapi CMS export module
-├── tools/
-│   ├── extract_pdf.py      # Docling + RapidOCR extraction
-│   └── build_html.py       # Markdown → HTML with Jinja2 + cleanup
-├── templates/
-│   └── document.html       # Jinja2 template (output HTML with editor)
-├── web_templates/
-│   └── index.html          # Frontend upload page
-└── requirements.txt
-```
+### Learner-Facing Features (in Published View)
+- **TOC Sidebar** — Left-column section hierarchy with anchor links
+- **Notes** — Click heading to add/edit/delete personal notes (localStorage, works offline)
+- **Bookmarks** — Save/resume reading position (auto-saves after 10s, auto-scrolls on return)
+- **Glossary Tooltips** — Dotted underline on terms, hover/focus shows definition tooltip
+- **Back-to-Top** — Floating button after 300px scroll
+- **Dark Mode** — Auto via `prefers-color-scheme`
+- **Responsive** — Breakpoints at 900px/600px
 
-## Prerequisites
+### Make Interactive (AI Diagrams)
+- **RapidOCR Label Detection** — Scans diagram images for text labels
+- **Hotspot Overlay** — Clickable/focusable regions positioned at each detected label
+- **Wikipedia Tooltips** — Hover/focus shows live definition fetched from Wikipedia API
+- **Keyboard Accessible** — `role="button"`, `tabindex="0"`, `:focus` tooltip trigger
 
-- Python 3.9+
-- macOS / Linux / Windows
-- ffmpeg (for video optimization): `brew install ffmpeg`
+### CMS Integration (Strapi/iframe)
+- **Iframe Embedding** — Open via `?refId=<uuid>` for tracking
+- **Lookup API** — `GET /api/lookup/<refId>` returns status + edit/render URLs
+- **Sections API** — `GET /api/sections/<refId>` returns heading hierarchy for CMS sidebar
+- **PostMessage** — `scrollToSection`, `applyGlossary`, `sectionPositions` handlers
+- **Export to Strapi** — Creates chapters with dynamic zone content blocks
+- **Export to WordPress** — Creates draft posts via REST API
 
-## Installation
+---
 
-```bash
-git clone https://github.com/anandarup/PDF2HTML_with_ML.git
-cd PDF2HTML_with_ML/python_app
-pip install -r requirements.txt
-```
+## Tech Stack
 
-First run downloads Docling AI models (~500 MB) from HuggingFace.
+| Layer | Technology |
+|-------|-----------|
+| Backend | Python 3.10, Flask |
+| PDF Extraction | IBM Docling, RapidOCR, OpenCV |
+| HTML Generation | Markdown, Jinja2 |
+| Frontend | Vanilla JS (contenteditable), CSS custom properties |
+| Math | MathJax 3 |
+| Video | Video.js 8.10 |
+| Interactive | H5P Standalone 3.8 |
+| Storage | OCI Object Storage (Instance Principals) |
+| Deployment | Gunicorn, Nginx |
 
-## Usage
+---
+
+## Quick Start
 
 ### Web Frontend
-
 ```bash
 cd python_app
+pip install -r requirements.txt
 python3 app.py
 ```
-
-Open **http://localhost:8501** — drag and drop a PDF to convert.
+Open **http://localhost:8501** — drag and drop a PDF.
 
 ### Command Line
-
 ```bash
-cd python_app
 python3 convert.py <path-to-pdf> [output-dir]
 ```
 
 ### Programmatic
-
 ```python
 from convert import convert_pdf_to_html
 
@@ -112,35 +122,41 @@ print(result["html_path"])
 print(result["chapter_title"])
 ```
 
-## CMS Export
+---
 
-### Strapi
+## API Endpoints
 
-1. Click **Export** button on any converted document
-2. Select **Strapi** platform
-3. Enter:
-   - CMS Base URL: `https://xyz.com`
-   - Admin JWT Token (from `POST /admin/login`)
-   - Textbook Document ID (parent textbook's `documentId`)
-   - Chapter Order number
-4. Click Export
+### Core
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Upload page |
+| POST | `/convert` | Upload PDF + start conversion (accepts `ref_id` field) |
+| GET | `/convert-status/<job_id>` | Poll conversion progress |
+| GET | `/output/<dir>/<file>` | Serve converted files |
+| PUT | `/output/<dir>/<file>` | Save edited content |
+| POST | `/upload-media/<dir>` | Upload media file (video/audio/h5p/pptx/pdf) |
+| POST | `/publish` | Publish to OCI for learners |
 
-The system will:
-- Upload all images/media to Strapi's media library
-- Create a Chapter entry linked to the Textbook
-- Split content into Sections with `content_blocks` dynamic zone
-- Map each element to the correct Strapi block type with `designLayout` CSS
+### Integration
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/lookup/<refId>` | Look up job by external reference ID |
+| GET | `/api/sections/<refId>` | Get heading hierarchy by refId |
+| GET | `/api/sections-by-path/<dir>/<file>` | Get heading hierarchy by path |
+| POST | `/api/glossary-highlight` | Server-side glossary term highlighting |
+| POST | `/api/make-interactive` | AI diagram label detection |
+| GET | `/api/label-info/<term>` | Wikipedia summary for a term |
 
-### WordPress
+### CMS Export
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/export-cms` | Export to Strapi or WordPress |
 
-1. Click **Export** → select **WordPress**
-2. Enter site URL, username, and Application Password
-3. Creates a draft post with full content and uploaded media
+---
 
 ## Configuration
 
 ### Upload Limits
-
 | Type | Max Size |
 |------|----------|
 | Video | 1.2 GB |
@@ -149,37 +165,79 @@ The system will:
 | Audio | 50 MB |
 | PPT | 30 MB |
 
-### Extraction Options
+### OCI Storage
+| Bucket | Purpose |
+|--------|---------|
+| `poc-interactivetxtbk1` | Published HTML |
+| `poc-interactivetxt-media-src-bucket` | Images + media files |
+| `poc-interactivetxt-media-dst-bucket` | Streaming video |
 
-| Constant | Default | Description |
+### Environment Variables
+| Variable | Default | Description |
 |----------|---------|-------------|
-| `IMAGE_RESOLUTION_SCALE` | `2.0` | DPI multiplier for extracted images |
-| `OCR_TEXT_SCORE_THRESHOLD` | `0.4` | Minimum OCR confidence |
-| `OCR_BITMAP_AREA_THRESHOLD` | `0.02` | Min image area to trigger OCR |
+| `AWS_REGION` | `ap-south-1` | (Legacy, unused — OCI uses Instance Principals) |
+
+---
+
+## File Structure
+
+```
+python_app/
+├── app.py                    # Flask routes (all endpoints)
+├── convert.py                # PDF→Markdown→HTML orchestrator
+├── s3_publish.py             # OCI publish + learner runtime injection
+├── glossary_highlight.py     # Server-side BeautifulSoup term highlighter
+├── oci_storage.py            # OCI Object Storage client
+├── diagram_interactive.py    # RapidOCR diagram label detection
+├── strapi_export.py          # Strapi DIKSHA CMS export
+├── progress_tracker.py       # Video playback progress (TinyDB)
+├── requirements.txt          # Python dependencies
+├── templates/
+│   └── document.html         # Main document template (editor + viewer)
+├── web_templates/
+│   └── index.html            # Upload/landing page
+├── static/
+│   └── glossary-client.js    # Standalone client-side glossary highlighter
+└── tools/
+    ├── extract_pdf.py        # Docling extraction
+    └── build_html.py         # Markdown→HTML + Jinja2 rendering
+```
+
+---
 
 ## Dependencies
 
 | Package | Purpose |
 |---------|---------|
-| `docling` | AI-powered PDF layout analysis |
-| `onnxruntime` | RapidOCR inference engine |
-| `markdown` | Markdown → HTML conversion |
-| `Jinja2` | HTML template rendering |
+| `docling` | AI PDF layout analysis |
+| `rapidocr` | Text detection in images |
+| `onnxruntime` | ML inference engine |
+| `markdown` | Markdown → HTML |
+| `Jinja2` | Template rendering |
 | `flask` | Web server |
-| `opencv-python` | QR code detection |
-| `requests` | CMS API calls |
+| `opencv-python` | QR code detection, image processing |
+| `boto3` | AWS S3 client (available but OCI used) |
+| `oci` | Oracle Cloud Infrastructure SDK |
+| `beautifulsoup4` | HTML parsing (glossary highlighting) |
+| `requests` | HTTP client for CMS APIs |
 | `Pillow` | Image processing |
+| `faster-whisper` | Video caption generation |
+| `paddleocr` | OCR (alternative backend) |
 
-## API Endpoints
+---
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/` | Upload page |
-| POST | `/convert` | Convert uploaded PDF |
-| GET | `/output/<dir>/<file>` | Serve converted files |
-| PUT | `/output/<dir>/<file>` | Save edited content |
-| POST | `/upload-media/<dir>` | Upload media file |
-| POST | `/export-cms` | Export to Strapi/WordPress |
+## Accessibility
+
+- `role="toolbar"` with grouped labeled sections
+- `aria-modal`, `aria-labelledby`, `aria-expanded` on all modals
+- `aria-live="polite"` status region for screen reader announcements
+- `tabindex="0"` + keyboard handlers on interactive elements
+- `prefers-reduced-motion` support (freezes animations)
+- `prefers-color-scheme: dark` support
+- 44×44px minimum touch targets
+- `:focus-visible` outlines on all interactive controls
+
+---
 
 ## License
 

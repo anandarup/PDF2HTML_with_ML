@@ -12,6 +12,7 @@ Then open http://localhost:5000 in your browser.
 
 from __future__ import annotations
 
+import json
 import os
 import threading
 import uuid
@@ -52,13 +53,33 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# In-memory tracking for background conversion jobs, polled by the frontend
-# via GET /convert-status/<job_id>. This is intentionally simple (no
-# persistence, no TTL/eviction) — fine for a single-process local dev tool;
-# a real multi-worker deployment would need a shared store (Redis, etc.)
-# instead, since each worker process would otherwise have its own dict.
-CONVERSION_JOBS: dict = {}
+# File-based job state persistence — survives gunicorn worker recycling.
+# Each job is stored as a JSON file in JOBS_DIR/<job_id>.json.
+JOBS_DIR = Path("jobs")
+JOBS_DIR.mkdir(parents=True, exist_ok=True)
 CONVERSION_JOBS_LOCK = threading.Lock()
+
+
+def _job_path(job_id: str) -> Path:
+    """Return the filesystem path for a job's state file."""
+    return JOBS_DIR / f"{job_id}.json"
+
+
+def _read_job(job_id: str) -> dict | None:
+    """Read job state from disk. Returns None if job doesn't exist."""
+    path = _job_path(job_id)
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+
+
+def _write_job(job_id: str, data: dict) -> None:
+    """Write job state to disk atomically."""
+    path = _job_path(job_id)
+    tmp_path = path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(data), encoding="utf-8")
+    tmp_path.replace(path)  # atomic on POSIX
 
 
 @app.route("/")
@@ -94,26 +115,33 @@ def convert_pdf():
     job_id = str(uuid.uuid4())[:8]
     pdf_stem = Path(file.filename).stem
 
+    # Accept optional external reference ID (for iframe integration)
+    ref_id = request.form.get("ref_id", "").strip() or None
+
     # Save uploaded file
     upload_path = UPLOAD_DIR / f"{job_id}_{file.filename}"
     file.save(str(upload_path))
 
     with CONVERSION_JOBS_LOCK:
-        CONVERSION_JOBS[job_id] = {
+        _write_job(job_id, {
             "status": "processing",
             "stage": "queued",
             "detail": "Upload complete, starting conversion...",
             "result": None,
             "error": None,
-        }
+            "ref_id": ref_id,
+            "edit_url": None,
+            "render_url": None,
+        })
 
     def run_conversion() -> None:
         def on_progress(stage: str, detail: str) -> None:
             with CONVERSION_JOBS_LOCK:
-                job = CONVERSION_JOBS.get(job_id)
+                job = _read_job(job_id)
                 if job is not None:
                     job["stage"] = stage
                     job["detail"] = detail
+                    _write_job(job_id, job)
 
         try:
             output_dir = str(OUTPUT_DIR.resolve() / f"{job_id}_{pdf_stem}")
@@ -139,11 +167,14 @@ def convert_pdf():
             )
 
             with CONVERSION_JOBS_LOCK:
-                CONVERSION_JOBS[job_id] = {
+                _write_job(job_id, {
                     "status": "done",
                     "stage": "done",
                     "detail": "Conversion complete.",
                     "error": None,
+                    "ref_id": ref_id,
+                    "edit_url": html_url,
+                    "render_url": None,
                     "result": {
                         "success": True,
                         "title": result.get("chapter_title", pdf_stem),
@@ -152,17 +183,20 @@ def convert_pdf():
                         "image_count": result["image_count"],
                         "file_size": result["html_file_size"],
                     },
-                }
+                })
 
         except Exception as e:
             with CONVERSION_JOBS_LOCK:
-                CONVERSION_JOBS[job_id] = {
+                _write_job(job_id, {
                     "status": "error",
                     "stage": "error",
                     "detail": str(e),
                     "result": None,
                     "error": str(e),
-                }
+                    "ref_id": ref_id,
+                    "edit_url": None,
+                    "render_url": None,
+                })
 
         finally:
             if upload_path.exists():
@@ -177,12 +211,320 @@ def convert_pdf():
 def convert_status(job_id: str):
     """Poll the status/progress of a background conversion job."""
     with CONVERSION_JOBS_LOCK:
-        job = CONVERSION_JOBS.get(job_id)
+        job = _read_job(job_id)
 
     if job is None:
         return jsonify({"error": "Unknown job_id"}), 404
 
     return jsonify(job)
+
+
+@app.route("/api/lookup/<ref_id>")
+def lookup_by_ref_id(ref_id: str):
+    """
+    Look up a job by its external reference ID (refId).
+
+    Used by the parent application's backend to poll job status
+    and retrieve edit/render URLs without needing to know our internal job_id.
+
+    Returns:
+        200: { status, editUrl, renderUrl, title, pageCount, imageCount, updatedAt }
+        404: if refId is unknown
+    """
+    import re as _re
+
+    # Validate refId shape (UUID-like, to prevent directory traversal / abuse)
+    if not ref_id or not _re.match(r'^[a-zA-Z0-9\-]{8,64}$', ref_id):
+        return jsonify({"error": "Invalid refId format"}), 400
+
+    # Scan job files for matching ref_id
+    matched_job = None
+    for job_file in JOBS_DIR.glob("*.json"):
+        job = _read_job(job_file.stem)
+        if job and job.get("ref_id") == ref_id:
+            matched_job = job
+            break
+
+    if matched_job is None:
+        return jsonify({"error": "Unknown refId"}), 404
+
+    # Map internal status to the integration's expected states
+    internal_status = matched_job.get("status", "processing")
+    if matched_job.get("render_url"):
+        ext_status = "published"
+    elif internal_status == "done":
+        ext_status = "ready-for-edit"
+    elif internal_status == "error":
+        ext_status = "error"
+    else:
+        ext_status = "converting"
+
+    # Extract metadata from result if available
+    result = matched_job.get("result") or {}
+    title = result.get("title", "")
+    page_count = result.get("page_count", 0)
+    image_count = result.get("image_count", 0)
+
+    return jsonify({
+        "status": ext_status,
+        "editUrl": matched_job.get("edit_url"),
+        "renderUrl": matched_job.get("render_url"),
+        "title": title,
+        "pageCount": page_count,
+        "imageCount": image_count,
+    }), 200
+
+
+@app.route("/api/sections/<ref_id>")
+def get_sections_by_ref_id(ref_id: str):
+    """
+    Return the heading/section structure for a document, keyed by refId.
+
+    Parses the HTML file's headings (h1-h3) and returns a hierarchical
+    list suitable for building a sidebar/TOC in the parent CMS.
+
+    Returns:
+        200: { title, sections: [{ level, id, title, subsections: [...] }] }
+        404: if refId is unknown or document not found
+    """
+    import re as _re
+    from urllib.parse import unquote
+
+    # Validate refId format
+    if not ref_id or not _re.match(r'^[a-zA-Z0-9\-]{8,64}$', ref_id):
+        return jsonify({"error": "Invalid refId format"}), 400
+
+    # Find job by ref_id
+    matched_job = None
+    matched_job_id = None
+    for job_file in JOBS_DIR.glob("*.json"):
+        job = _read_job(job_file.stem)
+        if job and job.get("ref_id") == ref_id:
+            matched_job = job
+            matched_job_id = job_file.stem
+            break
+
+    if matched_job is None:
+        return jsonify({"error": "Unknown refId"}), 404
+
+    # Get the edit_url to find the HTML file
+    edit_url = matched_job.get("edit_url")
+    if not edit_url:
+        return jsonify({"error": "Document not ready yet"}), 404
+
+    # Parse the edit_url to get the file path: /output/<job_dir>/<filename>
+    # edit_url is like: /output/a88b7d1e_Chap%205/a88b7d1e_Chap%205.html
+    url_parts = edit_url.strip("/").split("/")
+    if len(url_parts) < 3 or url_parts[0] != "output":
+        return jsonify({"error": "Invalid edit URL format"}), 500
+
+    job_dir = unquote(url_parts[1])
+    filename = unquote(url_parts[2])
+    html_path = OUTPUT_DIR.resolve() / job_dir / filename
+
+    if not html_path.exists():
+        return jsonify({"error": "HTML file not found"}), 404
+
+    # Parse headings from the HTML
+    html_content = html_path.read_text(encoding="utf-8")
+
+    # Extract content between <article class="document-body">...</article>
+    body_match = _re.search(
+        r'<article class="document-body">(.*?)</article>',
+        html_content, _re.DOTALL
+    )
+    body_html = body_match.group(1) if body_match else html_content
+
+    # Extract all h1-h3 headings with their IDs and text
+    heading_pattern = _re.compile(
+        r'<h([1-3])([^>]*)>(.*?)</h\1>',
+        _re.IGNORECASE | _re.DOTALL
+    )
+
+    sections = []
+    for match in heading_pattern.finditer(body_html):
+        level = int(match.group(1))
+        attrs = match.group(2)
+        raw_text = match.group(3)
+
+        # Extract id from attributes
+        id_match = _re.search(r'id="([^"]*)"', attrs)
+        heading_id = id_match.group(1) if id_match else ""
+
+        # Strip HTML tags from heading text (remove block-controls, etc.)
+        text = _re.sub(r'<[^>]+>', '', raw_text).strip()
+
+        if not text:
+            continue
+
+        # Generate an ID if missing
+        if not heading_id:
+            heading_id = _re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+
+        sections.append({
+            "level": level,
+            "id": heading_id,
+            "title": text,
+        })
+
+    # Build hierarchical structure (h2 = section, h3 = subsection under previous h2)
+    hierarchy = []
+    current_section = None
+
+    for s in sections:
+        if s["level"] <= 2:
+            current_section = {
+                "level": s["level"],
+                "id": s["id"],
+                "title": s["title"],
+                "subsections": [],
+            }
+            hierarchy.append(current_section)
+        elif s["level"] == 3 and current_section:
+            current_section["subsections"].append({
+                "level": s["level"],
+                "id": s["id"],
+                "title": s["title"],
+            })
+        else:
+            # h3 with no parent h2 — treat as top-level
+            hierarchy.append({
+                "level": s["level"],
+                "id": s["id"],
+                "title": s["title"],
+                "subsections": [],
+            })
+
+    # Get document title
+    result = matched_job.get("result") or {}
+    doc_title = result.get("title", "")
+
+    return jsonify({
+        "title": doc_title,
+        "sectionCount": len(hierarchy),
+        "totalHeadings": len(sections),
+        "sections": hierarchy,
+    }), 200
+
+
+@app.route("/api/sections-by-path/<path:job_dir>/<path:filename>")
+def get_sections_by_path(job_dir: str, filename: str):
+    """
+    Return heading structure for a document by its file path.
+
+    Alternative to /api/sections/<refId> — works without a refId,
+    using the same job_dir/filename from the edit or render URL.
+    """
+    import re as _re
+    from urllib.parse import unquote
+
+    job_dir = unquote(job_dir)
+    filename = unquote(filename)
+
+    if not filename.lower().endswith(".html"):
+        return jsonify({"error": "Only HTML files supported"}), 400
+    if ".." in job_dir or ".." in filename:
+        return jsonify({"error": "Invalid path"}), 403
+
+    html_path = OUTPUT_DIR.resolve() / job_dir / filename
+    if not html_path.exists():
+        return jsonify({"error": "File not found"}), 404
+
+    html_content = html_path.read_text(encoding="utf-8")
+
+    # Extract title
+    title_match = _re.search(r'<h1 class="document-title">(.*?)</h1>', html_content, _re.DOTALL)
+    doc_title = _re.sub(r'<[^>]+>', '', title_match.group(1)).strip() if title_match else ""
+
+    # Extract body content
+    body_match = _re.search(
+        r'<article class="document-body">(.*?)</article>',
+        html_content, _re.DOTALL
+    )
+    body_html = body_match.group(1) if body_match else html_content
+
+    # Parse headings
+    heading_pattern = _re.compile(
+        r'<h([1-3])([^>]*)>(.*?)</h\1>',
+        _re.IGNORECASE | _re.DOTALL
+    )
+
+    sections = []
+    for match in heading_pattern.finditer(body_html):
+        level = int(match.group(1))
+        attrs = match.group(2)
+        raw_text = match.group(3)
+
+        id_match = _re.search(r'id="([^"]*)"', attrs)
+        heading_id = id_match.group(1) if id_match else ""
+        text = _re.sub(r'<[^>]+>', '', raw_text).strip()
+        if not text:
+            continue
+        if not heading_id:
+            heading_id = _re.sub(r'[^a-z0-9]+', '-', text.lower()).strip('-')
+
+        sections.append({"level": level, "id": heading_id, "title": text})
+
+    # Build hierarchy
+    hierarchy = []
+    current_section = None
+    for s in sections:
+        if s["level"] <= 2:
+            current_section = {"level": s["level"], "id": s["id"], "title": s["title"], "subsections": []}
+            hierarchy.append(current_section)
+        elif s["level"] == 3 and current_section:
+            current_section["subsections"].append({"level": s["level"], "id": s["id"], "title": s["title"]})
+        else:
+            hierarchy.append({"level": s["level"], "id": s["id"], "title": s["title"], "subsections": []})
+
+    return jsonify({
+        "title": doc_title,
+        "sectionCount": len(hierarchy),
+        "totalHeadings": len(sections),
+        "sections": hierarchy,
+    }), 200
+
+
+@app.route("/api/glossary-highlight", methods=["POST"])
+def apply_glossary_highlight():
+    """
+    Apply glossary term highlighting to an HTML string.
+
+    Accepts JSON with:
+    - html: raw HTML string to process
+    - glossary: array of { term, definition } objects
+    - first_occurrence_only: boolean (default true)
+
+    Returns the HTML with glossary terms wrapped in accessible <dfn> tags.
+    """
+    from glossary_highlight import highlight_glossary_terms, GLOSSARY_CSS
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    html = data.get("html", "")
+    glossary = data.get("glossary", [])
+    first_only = data.get("first_occurrence_only", False)
+    max_highlights = data.get("max_highlights_per_term", 0)
+
+    if not html:
+        return jsonify({"error": "html field is required"}), 400
+    if not glossary:
+        return jsonify({"error": "glossary array is required"}), 400
+
+    try:
+        result_html = highlight_glossary_terms(
+            html, glossary, first_occurrence_only=first_only, max_highlights_per_term=max_highlights
+        )
+        return jsonify({
+            "success": True,
+            "html": result_html,
+            "css": GLOSSARY_CSS,
+            "terms_count": len(glossary),
+        }), 200
+    except Exception as e:
+        return jsonify({"error": f"Processing failed: {str(e)}"}), 500
 
 
 @app.route("/upload-media/<path:job_dir>", methods=["POST"])
@@ -327,6 +669,62 @@ def save_output(job_dir: str, filename: str):
 
     except OSError as e:
         return jsonify({"error": f"File write failed: {e}"}), 500
+
+
+@app.route("/publish", methods=["POST"])
+def publish_for_learners():
+    """
+    Publish a document to S3 for learner access.
+
+    Uploads HTML to poc-interactivetxtbk1, media files to
+    poc-interactivetxt-media-src-bucket, and streaming videos to
+    poc-interactivetxt-media-dst-bucket. Returns the public learner URL.
+    """
+    from urllib.parse import unquote
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data provided"}), 400
+
+    job_dir = unquote(data.get("job_dir", ""))
+    filename = unquote(data.get("filename", ""))
+
+    if not job_dir or not filename:
+        return jsonify({"error": "job_dir and filename are required"}), 400
+
+    if not filename.lower().endswith(".html"):
+        return jsonify({"error": "Only HTML files can be published"}), 400
+
+    # Security: prevent path traversal
+    if ".." in job_dir or ".." in filename or "/" in filename:
+        return jsonify({"error": "Invalid path"}), 403
+
+    try:
+        from s3_publish import publish_document
+
+        result = publish_document(job_dir, filename)
+
+        # Record render_url in the job state for lookup-by-refId
+        render_url = result["html_url"]
+        job_id_from_dir = job_dir.split("_")[0] if "_" in job_dir else job_dir[:8]
+        with CONVERSION_JOBS_LOCK:
+            job = _read_job(job_id_from_dir)
+            if job:
+                job["render_url"] = render_url
+                job["status"] = "published"
+                _write_job(job_id_from_dir, job)
+
+        return jsonify({
+            "success": True,
+            "url": render_url,
+            "media_count": result["media_uploaded"],
+            "video_count": result["videos_uploaded"],
+        }), 200
+
+    except FileNotFoundError as e:
+        return jsonify({"success": False, "error": str(e)}), 404
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Publish failed: {str(e)}"}), 500
 
 
 @app.route("/export-cms", methods=["POST"])

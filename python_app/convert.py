@@ -170,6 +170,19 @@ def convert_pdf_to_html(
     except Exception as e:
         print(f"[pdf2webview]   - OCI upload warning: {e}")
 
+    # Upload the HTML file to the HTML bucket
+    try:
+        from oci_storage import upload_html_to_bucket
+        html_path = Path(html_result.html_path)
+        html_object_name = f"{html_path.parent.name}/{html_path.name}"
+        html_bucket_url = upload_html_to_bucket(html_path, html_object_name)
+        if html_bucket_url:
+            print(f"[pdf2webview]   - HTML uploaded to bucket: {html_object_name}")
+    except ImportError:
+        pass
+    except Exception as e:
+        print(f"[pdf2webview]   - HTML bucket upload warning: {e}")
+
     return {
         "html_path": html_result.html_path,
         "image_directory": extraction.image_directory,

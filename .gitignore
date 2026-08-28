@@ -28,3 +28,9 @@ secrets.yml
 *.secret
 token.json
 python_app/learner_progress.json
+python_app/jobs/
+python_app/uploads/
+*.bak
+*.bak.*
+__pycache__/
+*.pyc

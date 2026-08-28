@@ -89,3 +89,30 @@ def upload_directory(local_dir: Path, object_prefix: str) -> dict:
             _log.warning(f"Failed to upload {relative}: {exc}")
 
     return url_map
+
+
+HTML_BUCKET_NAME = "poc-interactivetxtbk1"
+
+
+def upload_html_to_bucket(local_path, object_name: str) -> str:
+    """Upload the rendered HTML file to the HTML bucket."""
+    from pathlib import Path
+    local_path = Path(local_path)
+    if not local_path.exists():
+        return ""
+
+    with open(local_path, "rb") as f:
+        _client.put_object(
+            _namespace,
+            HTML_BUCKET_NAME,
+            object_name,
+            f,
+            content_type="text/html",
+        )
+
+    url = (
+        f"https://objectstorage.{REGION}.oraclecloud.com"
+        f"/n/{_namespace}/b/{HTML_BUCKET_NAME}/o/{object_name}"
+    )
+    _log.info(f"Uploaded HTML to {HTML_BUCKET_NAME}/{object_name}")
+    return url
