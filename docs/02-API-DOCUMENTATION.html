@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF2HTML — API Documentation</title>
+<style>
+:root{--bg:#0f1117;--ink:#1a1a2e;--text:#2b2f38;--muted:#5b6472;--line:#e3e7ee;
+--accent:#0f4c75;--accent2:#3282b8;--code-bg:#0f1117;--code-ink:#e6edf3;}
+*{box-sizing:border-box;}html{scroll-behavior:smooth;}
+body{margin:0;color:var(--text);background:#f6f8fb;
+font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:940px;margin:0 auto;padding:0 24px 96px;}
+header.hero{background:linear-gradient(135deg,var(--accent) 0%,var(--ink) 100%);color:#fff;padding:52px 24px;}
+header.hero .inner{max-width:940px;margin:0 auto;}
+header.hero h1{margin:0 0 6px;font-size:1.9rem;line-height:1.2;}
+header.hero .sub{opacity:.85;}
+h1{font-size:1.6rem;margin:36px 0 12px;}
+h2{font-size:1.35rem;margin:40px 0 12px;border-bottom:2px solid var(--line);padding-bottom:6px;}
+h3{font-size:1.1rem;margin:26px 0 8px;color:var(--ink);}
+p{margin:12px 0;}
+code{background:#eef1f6;padding:2px 6px;border-radius:5px;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.88em;}
+pre{background:var(--code-bg);color:var(--code-ink);padding:16px 18px;border-radius:10px;overflow-x:auto;
+font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.82rem;line-height:1.5;margin:16px 0;}
+pre code{background:none;padding:0;color:inherit;}
+table{border-collapse:collapse;width:100%;margin:18px 0;font-size:.92rem;background:#fff;}
+th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top;}
+th{background:#eef2f8;font-weight:600;}
+tbody tr:nth-child(even){background:#fafbfd;}
+blockquote{margin:18px 0;padding:12px 18px;background:#ecfeff;border-left:4px solid var(--accent2);border-radius:0 8px 8px 0;color:#0b4f58;}
+ul,ol{padding-left:24px;}li{margin:5px 0;}
+hr{border:none;border-top:1px solid var(--line);margin:32px 0;}
+a{color:var(--accent);}
+nav.toc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:26px 0;}
+nav.toc h2{margin:0 0 8px;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border:0;padding:0;}
+nav.toc a{text-decoration:none;}nav.toc a:hover{text-decoration:underline;}
+nav.toc ul{list-style:none;padding-left:0;margin:0;}
+nav.toc li{margin:3px 0;}nav.toc li.lvl3{padding-left:16px;font-size:.92em;}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem;}
+</style></head>
+<body>
+<header class="hero"><div class="inner">
+<h1>PDF2HTML — API Documentation</h1>
+<div class="sub">Technical documentation · generated from source · 02-API-DOCUMENTATION.md</div>
+</div></header>
+<div class="wrap">
+<nav class="toc"><h2>Contents</h2><ul><li class="lvl2"><a href="#endpoint-index">Endpoint Index</a></li><li class="lvl2"><a href="#1-post-convert">1. `POST /convert`</a></li><li class="lvl2"><a href="#2-get-convert-status">2. `GET /convert-status/`</a></li><li class="lvl2"><a href="#3-get-api-lookup">3. `GET /api/lookup/`</a></li><li class="lvl2"><a href="#4-get-api-sections">4. `GET /api/sections/`</a></li><li class="lvl3"><a href="#4a-get-api-sections-by-path">4a. `GET /api/sections-by-path//`</a></li><li class="lvl2"><a href="#5-post-api-glossary-highlight">5. `POST /api/glossary-highlight`</a></li><li class="lvl2"><a href="#6-post-upload-media">6. `POST /upload-media/`</a></li><li class="lvl2"><a href="#7-get-and-put-output">7. `GET` and `PUT /output//`</a></li><li class="lvl2"><a href="#8-post-publish">8. `POST /publish`</a></li><li class="lvl2"><a href="#9-post-export-cms">9. `POST /export-cms`</a></li><li class="lvl2"><a href="#10-get-api-label-info">10. `GET /api/label-info/`</a></li><li class="lvl2"><a href="#11-post-api-make-interactive">11. `POST /api/make-interactive`</a></li><li class="lvl2"><a href="#12-video-progress">12. Video Progress</a></li><li class="lvl3"><a href="#post-api-progress">`POST /api/progress`</a></li><li class="lvl3"><a href="#get-api-progress">`GET /api/progress//`</a></li><li class="lvl2"><a href="#13-post-api-generate-captions">13. `POST /api/generate-captions/`</a></li><li class="lvl2"><a href="#notes-on-status-error-conventions">Notes on Status &amp; Error Conventions</a></li></ul></nav>
+<h1 id="pdf2html-api-documentation">PDF2HTML — API Documentation</h1>
+<p><strong>Base URL:</strong> <code>https://poc-interactivetxtbk.diksha.gov.in</code> <strong>Source:</strong> <code>python_app/app.py</code> <strong>Date:</strong> 2026-09-09</p>
+<blockquote>Documents the HTTP endpoints exactly as implemented. All routes are defined with <code>@app.route</code> in <code>app.py</code>. Authentication is not enforced at the application layer in the current code (server-to-server callers are expected to be restricted by network/firewall).</blockquote>
+<hr>
+<h2 id="endpoint-index">Endpoint Index</h2>
+<table><thead><tr><th>Method</th><th>Path</th><th>Purpose</th></tr></thead><tbody><tr><td>GET</td><td><code>/</code></td><td>Upload page (drag-and-drop)</td></tr><tr><td>POST</td><td><code>/convert</code></td><td>Upload a PDF, start background conversion</td></tr><tr><td>GET</td><td><code>/convert-status/&lt;job_id&gt;</code></td><td>Poll conversion progress</td></tr><tr><td>GET</td><td><code>/api/lookup/&lt;refId&gt;</code></td><td>Look up a job by external reference ID</td></tr><tr><td>GET</td><td><code>/api/sections/&lt;refId&gt;</code></td><td>Heading hierarchy by refId</td></tr><tr><td>GET</td><td><code>/api/sections-by-path/&lt;job_dir&gt;/&lt;filename&gt;</code></td><td>Heading hierarchy by path</td></tr><tr><td>POST</td><td><code>/api/glossary-highlight</code></td><td>Highlight glossary terms in HTML</td></tr><tr><td>POST</td><td><code>/upload-media/&lt;job_dir&gt;</code></td><td>Upload media for a document</td></tr><tr><td>GET</td><td><code>/output/&lt;job_dir&gt;/&lt;filename&gt;</code></td><td>Serve rendered HTML/assets</td></tr><tr><td>PUT</td><td><code>/output/&lt;job_dir&gt;/&lt;filename&gt;</code></td><td>Save edited HTML</td></tr><tr><td>POST</td><td><code>/publish</code></td><td>Publish document to OCI for learners</td></tr><tr><td>POST</td><td><code>/export-cms</code></td><td>Export to Strapi or WordPress</td></tr><tr><td>GET</td><td><code>/api/label-info/&lt;term&gt;</code></td><td>Diagram label description (Wikipedia)</td></tr><tr><td>POST</td><td><code>/api/make-interactive</code></td><td>Detect diagram labels</td></tr><tr><td>POST</td><td><code>/api/progress</code></td><td>Save video playback progress</td></tr><tr><td>GET</td><td><code>/api/progress/&lt;learner_id&gt;/&lt;video_src&gt;</code></td><td>Get saved video progress</td></tr><tr><td>POST</td><td><code>/api/generate-captions/&lt;video_path&gt;</code></td><td>Generate WebVTT captions (Whisper)</td></tr></tbody></table>
+<hr>
+<h2 id="1-post-convert">1. <code>POST /convert</code></h2>
+<p>Uploads a PDF and starts conversion in a background thread. Returns immediately.</p>
+<ul><li><strong>Content-Type:</strong> <code>multipart/form-data</code></li></ul>
+<table><thead><tr><th>Field</th><th>Type</th><th>Required</th><th>Notes</th></tr></thead><tbody><tr><td><code>pdf</code></td><td>file</td><td>yes</td><td>Must end in <code>.pdf</code>; max 100 MB</td></tr><tr><td><code>ref_id</code></td><td>string</td><td>no</td><td>External reference ID from a parent app</td></tr></tbody></table>
+<p><strong>Success — 202</strong></p>
+<pre><code>{ &quot;job_id&quot;: &quot;a1b2c3d4&quot; }</code></pre>
+<p><strong>Errors:</strong> <code>400</code> — <code>No PDF file provided</code> / <code>No file selected</code> / <code>Only PDF files are accepted</code>.</p>
+<hr>
+<h2 id="2-get-convert-status">2. <code>GET /convert-status/&lt;job_id&gt;</code></h2>
+<p>Polls a conversion job.</p>
+<p><strong>200</strong></p>
+<pre><code>{
+  &quot;status&quot;: &quot;processing | done | error&quot;,
+  &quot;stage&quot;: &quot;queued | extracting | building | done | error&quot;,
+  &quot;detail&quot;: &quot;human-readable message&quot;,
+  &quot;result&quot;: {
+    &quot;success&quot;: true,
+    &quot;title&quot;: &quot;Chapter 5 — Life Processes&quot;,
+    &quot;html_url&quot;: &quot;/output/&lt;job_dir&gt;/&lt;file&gt;.html&quot;,
+    &quot;page_count&quot;: 21,
+    &quot;image_count&quot;: 46,
+    &quot;file_size&quot;: 372136
+  },
+  &quot;error&quot;: null,
+  &quot;ref_id&quot;: &quot;…&quot;,
+  &quot;edit_url&quot;: &quot;/output/&lt;job_dir&gt;/&lt;file&gt;.html&quot;,
+  &quot;render_url&quot;: null
+}</code></pre>
+<p><strong>404</strong> — <code>{ &quot;error&quot;: &quot;Unknown job_id&quot; }</code></p>
+<hr>
+<h2 id="3-get-api-lookup">3. <code>GET /api/lookup/&lt;refId&gt;</code></h2>
+<p>Primary server-to-server integration endpoint. Finds a job by its <code>ref_id</code> and maps status to external states.</p>
+<ul><li><strong>Validation:</strong> <code>refId</code> must match <code>^[a-zA-Z0-9\-]{8,64}$</code>.</li></ul>
+<p><strong>200</strong></p>
+<pre><code>{
+  &quot;status&quot;: &quot;converting | ready-for-edit | published | error&quot;,
+  &quot;editUrl&quot;: &quot;/output/&lt;job_dir&gt;/&lt;file&gt;.html&quot;,
+  &quot;renderUrl&quot;: &quot;https://objectstorage.ap-hyderabad-1.oraclecloud.com/n/&lt;ns&gt;/b/poc-interactivetxtbk1/o/…&quot;,
+  &quot;title&quot;: &quot;Chapter 5 — Life Processes&quot;,
+  &quot;pageCount&quot;: 21,
+  &quot;imageCount&quot;: 46
+}</code></pre>
+<table><thead><tr><th>Status</th><th>Meaning</th><th>editUrl</th><th>renderUrl</th></tr></thead><tbody><tr><td><code>converting</code></td><td>still processing</td><td>null</td><td>null</td></tr><tr><td><code>ready-for-edit</code></td><td>conversion done</td><td>set</td><td>null</td></tr><tr><td><code>published</code></td><td>pushed to OCI</td><td>set</td><td>set</td></tr><tr><td><code>error</code></td><td>conversion failed</td><td>null</td><td>null</td></tr></tbody></table>
+<p><strong>400</strong> — <code>Invalid refId format</code> · <strong>404</strong> — <code>Unknown refId</code></p>
+<hr>
+<h2 id="4-get-api-sections">4. <code>GET /api/sections/&lt;refId&gt;</code></h2>
+<p>Returns the heading hierarchy (h1–h3) parsed from the document body, for building a TOC/sidebar.</p>
+<p><strong>200</strong></p>
+<pre><code>{
+  &quot;title&quot;: &quot;Chapter 5 — Life Processes&quot;,
+  &quot;sectionCount&quot;: 4,
+  &quot;totalHeadings&quot;: 9,
+  &quot;sections&quot;: [
+    { &quot;level&quot;: 2, &quot;id&quot;: &quot;nutrition&quot;, &quot;title&quot;: &quot;Nutrition&quot;,
+      &quot;subsections&quot;: [ { &quot;level&quot;: 3, &quot;id&quot;: &quot;autotrophic&quot;, &quot;title&quot;: &quot;Autotrophic Nutrition&quot; } ] }
+  ]
+}</code></pre>
+<p><strong>400</strong> — <code>Invalid refId format</code> · <strong>404</strong> — <code>Unknown refId</code> / <code>Document not ready yet</code> / <code>HTML file not found</code></p>
+<h3 id="4a-get-api-sections-by-path">4a. <code>GET /api/sections-by-path/&lt;job_dir&gt;/&lt;filename&gt;</code></h3>
+<p>Same output, addressed by path instead of <code>refId</code>. <code>filename</code> must end in <code>.html</code>; <code>..</code> in path → <code>403</code>.</p>
+<hr>
+<h2 id="5-post-api-glossary-highlight">5. <code>POST /api/glossary-highlight</code></h2>
+<p>Wraps glossary terms in accessible <code>&lt;dfn class=&quot;glossary-term&quot;&gt;</code> tooltips.</p>
+<p><strong>Request</strong></p>
+<pre><code>{
+  &quot;html&quot;: &quot;&lt;p&gt;Photosynthesis occurs in the chloroplast.&lt;/p&gt;&quot;,
+  &quot;glossary&quot;: [ { &quot;term&quot;: &quot;Photosynthesis&quot;, &quot;definition&quot;: &quot;…&quot; } ],
+  &quot;first_occurrence_only&quot;: false,
+  &quot;max_highlights_per_term&quot;: 0
+}</code></pre>
+<p><strong>200</strong></p>
+<pre><code>{ &quot;success&quot;: true, &quot;html&quot;: &quot;…&quot;, &quot;css&quot;: &quot;/* GLOSSARY_CSS */&quot;, &quot;terms_count&quot;: 1 }</code></pre>
+<p><strong>400</strong> — <code>No data provided</code> / <code>html field is required</code> / <code>glossary array is required</code> · <strong>500</strong> — <code>Processing failed: …</code></p>
+<hr>
+<h2 id="6-post-upload-media">6. <code>POST /upload-media/&lt;job_dir&gt;</code></h2>
+<p>Uploads a media file into the document&#x27;s <code>media/</code> folder.</p>
+<ul><li><strong>Content-Type:</strong> <code>multipart/form-data</code></li></ul>
+<table><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody><tr><td><code>file</code></td><td>file</td><td>required</td></tr><tr><td><code>type</code></td><td>string</td><td><code>video</code> (default) <code>audio</code> <code>pptx</code> <code>h5p</code> <code>image</code></td></tr></tbody></table>
+<p><strong>Per-type limits:</strong> video 1.2 GB, audio 50 MB, pptx 30 MB, h5p 400 MB, image 1 MB. Images restricted to <code>.png/.jpg/.jpeg</code>. Videos get <code>+faststart</code>; H5P archives are extracted.</p>
+<p><strong>201</strong></p>
+<pre><code>{ &quot;success&quot;: true, &quot;url&quot;: &quot;media/&lt;file&gt;&quot;, &quot;filename&quot;: &quot;&lt;file&gt;&quot; }</code></pre>
+<p><strong>400/403/413</strong> — no file / invalid path / file too large</p>
+<hr>
+<h2 id="7-get-and-put-output">7. <code>GET</code> and <code>PUT /output/&lt;job_dir&gt;/&lt;filename&gt;</code></h2>
+<ul><li><strong>GET</strong> serves the rendered HTML and its assets.</li><li><strong>PUT</strong> saves edited content.</li></ul>
+<p><strong>PUT request</strong></p>
+<pre><code>{ &quot;body_html&quot;: &quot;&lt;updated inner HTML of the document body&gt;&quot; }</code></pre>
+<p>Replaces the content inside <code>&lt;article class=&quot;document-body&quot;&gt;…&lt;/article&gt;</code> and rebuilds the TOC.</p>
+<p><strong>200</strong> — <code>{ &quot;success&quot;: true, &quot;message&quot;: &quot;Content saved&quot; }</code> <strong>400</strong> — non-<code>.html</code> / missing <code>body_html</code> · <strong>403</strong> — invalid path · <strong>404</strong> — file not found · <strong>500</strong> — write failed / content section not found</p>
+<hr>
+<h2 id="8-post-publish">8. <code>POST /publish</code></h2>
+<p>Publishes the edited document to OCI Object Storage for learners.</p>
+<p><strong>Request</strong></p>
+<pre><code>{ &quot;job_dir&quot;: &quot;&lt;url-encoded job dir&gt;&quot;, &quot;filename&quot;: &quot;&lt;url-encoded&gt;.html&quot; }</code></pre>
+<p><strong>200</strong></p>
+<pre><code>{
+  &quot;success&quot;: true,
+  &quot;url&quot;: &quot;https://objectstorage.ap-hyderabad-1.oraclecloud.com/n/&lt;ns&gt;/b/poc-interactivetxtbk1/o/…&quot;,
+  &quot;media_count&quot;: 46,
+  &quot;video_count&quot;: 0
+}</code></pre>
+<p><strong>400</strong> — missing fields / non-<code>.html</code> · <strong>403</strong> — invalid path · <strong>404</strong> — file not found · <strong>500</strong> — publish failed</p>
+<p><strong>Side effect:</strong> sets <code>render_url</code> and <code>status=&quot;published&quot;</code> on the job record.</p>
+<hr>
+<h2 id="9-post-export-cms">9. <code>POST /export-cms</code></h2>
+<p>Exports content to a CMS. Behavior depends on <code>platform</code>.</p>
+<p><strong>Common fields:</strong> <code>platform</code> (<code>strapi</code> | <code>wordpress</code>), <code>base_url</code>, <code>title</code>, <code>body_html</code>, <code>job_dir</code>.</p>
+<p><strong>Strapi (DIKSHA):</strong> additionally requires <code>api_token</code> (JWT) and <code>textbook_id</code>; optional <code>chapter_order</code>. Uploads media to the Strapi media library, then creates a chapter with sections.</p>
+<p><strong>200 (strapi)</strong></p>
+<pre><code>{ &quot;success&quot;: true, &quot;message&quot;: &quot;Created chapter with N/M sections, K media files uploaded&quot;, &quot;url&quot;: &quot;&lt;admin url&gt;&quot; }</code></pre>
+<p><strong>WordPress:</strong> requires <code>username</code>, <code>password</code>; creates a draft post via <code>/wp-json/wp/v2/posts</code>.</p>
+<p><strong>Errors:</strong> <code>400</code> unsupported platform / missing token / missing textbook id · <code>502</code> cannot connect · <code>504</code> timeout.</p>
+<hr>
+<h2 id="10-get-api-label-info">10. <code>GET /api/label-info/&lt;term&gt;</code></h2>
+<p>Fetches a short description for a diagram label from the Wikipedia REST summary API. Always returns <code>200</code> with a best-effort payload (falls back gracefully).</p>
+<p><strong>200</strong></p>
+<pre><code>{ &quot;success&quot;: true, &quot;title&quot;: &quot;Chloroplast&quot;, &quot;description&quot;: &quot;organelle&quot;, &quot;extract&quot;: &quot;…&quot;, &quot;thumbnail&quot;: &quot;https://…&quot; }</code></pre>
+<p><strong>400</strong> — <code>Term too short</code> (fewer than 2 chars)</p>
+<hr>
+<h2 id="11-post-api-make-interactive">11. <code>POST /api/make-interactive</code></h2>
+<p>Detects labels on a diagram image and returns their positions (for building clickable diagrams).</p>
+<p><strong>Request</strong></p>
+<pre><code>{ &quot;image_url&quot;: &quot;images/&lt;file&gt;.png&quot;  /* local relative, or a full http(s) URL */ }</code></pre>
+<p>Full URLs are downloaded to a temp file; local paths are resolved under the output dir with traversal guards.</p>
+<p><strong>200</strong> — detector result with <code>&quot;success&quot;: true</code> · <strong>400</strong> — <code>image_url required</code> / detection failed · <strong>404</strong> — image not found · <strong>403</strong> — invalid path</p>
+<hr>
+<h2 id="12-video-progress">12. Video Progress</h2>
+<h3 id="post-api-progress"><code>POST /api/progress</code></h3>
+<pre><code>{ &quot;learner_id&quot;: &quot;…&quot;, &quot;video_src&quot;: &quot;…&quot;, &quot;current_time&quot;: 42.5, &quot;duration&quot;: 300 }</code></pre>
+<p><strong>200</strong> — <code>{ &quot;success&quot;: true, &quot;progress&quot;: { &quot;percentage&quot;: 14.2, &quot;completed&quot;: false, … } }</code> (completed becomes <code>true</code> at ≥ 90%). <strong>400</strong> — <code>No data</code> / <code>learner_id and video_src required</code></p>
+<h3 id="get-api-progress"><code>GET /api/progress/&lt;learner_id&gt;/&lt;video_src&gt;</code></h3>
+<p><strong>200</strong> — <code>{ &quot;progress&quot;: { … } }</code> or <code>{ &quot;progress&quot;: null }</code></p>
+<hr>
+<h2 id="13-post-api-generate-captions">13. <code>POST /api/generate-captions/&lt;video_path&gt;</code></h2>
+<p>Generates WebVTT captions with <code>faster-whisper</code> (model <code>tiny</code>, <code>int8</code>), saves a <code>.vtt</code> alongside the video, and returns it.</p>
+<p><strong>200</strong></p>
+<pre><code>{ &quot;success&quot;: true, &quot;vtt_url&quot;: &quot;/output/&lt;path&gt;.vtt&quot;, &quot;vtt_content&quot;: &quot;WEBVTT\n\n00:00:00.000 --&gt; 00:00:04.000\n…&quot; }</code></pre>
+<p><strong>404</strong> — video not found · <strong>500</strong> — caption generation failed</p>
+<hr>
+<h2 id="notes-on-status-error-conventions">Notes on Status &amp; Error Conventions</h2>
+<ul><li>Progress and lookup responses reuse the same job record; <code>/convert-status</code> returns internal status, <code>/api/lookup</code> returns the mapped external status.</li><li>Path parameters that include slashes or encoded characters (job dirs, filenames, video paths) use Flask <code>&lt;path:…&gt;</code> converters and are URL-decoded server-side.</li><li>Traversal protection is applied consistently: <code>..</code> rejection and <code>resolve().relative_to(OUTPUT_DIR)</code>.</li></ul>
+<footer>Generated 2026-09-09 · reflects code at <code>/opt/pdf2html/app</code> · no code was modified.</footer>
+</div></body></html>

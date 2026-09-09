@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF2HTML — Technical Architecture</title>
+<style>
+:root{--bg:#0f1117;--ink:#1a1a2e;--text:#2b2f38;--muted:#5b6472;--line:#e3e7ee;
+--accent:#0f4c75;--accent2:#3282b8;--code-bg:#0f1117;--code-ink:#e6edf3;}
+*{box-sizing:border-box;}html{scroll-behavior:smooth;}
+body{margin:0;color:var(--text);background:#f6f8fb;
+font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:940px;margin:0 auto;padding:0 24px 96px;}
+header.hero{background:linear-gradient(135deg,var(--accent) 0%,var(--ink) 100%);color:#fff;padding:52px 24px;}
+header.hero .inner{max-width:940px;margin:0 auto;}
+header.hero h1{margin:0 0 6px;font-size:1.9rem;line-height:1.2;}
+header.hero .sub{opacity:.85;}
+h1{font-size:1.6rem;margin:36px 0 12px;}
+h2{font-size:1.35rem;margin:40px 0 12px;border-bottom:2px solid var(--line);padding-bottom:6px;}
+h3{font-size:1.1rem;margin:26px 0 8px;color:var(--ink);}
+p{margin:12px 0;}
+code{background:#eef1f6;padding:2px 6px;border-radius:5px;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.88em;}
+pre{background:var(--code-bg);color:var(--code-ink);padding:16px 18px;border-radius:10px;overflow-x:auto;
+font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.82rem;line-height:1.5;margin:16px 0;}
+pre code{background:none;padding:0;color:inherit;}
+table{border-collapse:collapse;width:100%;margin:18px 0;font-size:.92rem;background:#fff;}
+th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top;}
+th{background:#eef2f8;font-weight:600;}
+tbody tr:nth-child(even){background:#fafbfd;}
+blockquote{margin:18px 0;padding:12px 18px;background:#ecfeff;border-left:4px solid var(--accent2);border-radius:0 8px 8px 0;color:#0b4f58;}
+ul,ol{padding-left:24px;}li{margin:5px 0;}
+hr{border:none;border-top:1px solid var(--line);margin:32px 0;}
+a{color:var(--accent);}
+nav.toc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:26px 0;}
+nav.toc h2{margin:0 0 8px;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border:0;padding:0;}
+nav.toc a{text-decoration:none;}nav.toc a:hover{text-decoration:underline;}
+nav.toc ul{list-style:none;padding-left:0;margin:0;}
+nav.toc li{margin:3px 0;}nav.toc li.lvl3{padding-left:16px;font-size:.92em;}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem;}
+</style></head>
+<body>
+<header class="hero"><div class="inner">
+<h1>PDF2HTML — Technical Architecture</h1>
+<div class="sub">Technical documentation · generated from source · 01-TECHNICAL-ARCHITECTURE.md</div>
+</div></header>
+<div class="wrap">
+<nav class="toc"><h2>Contents</h2><ul><li class="lvl2"><a href="#1-overview">1. Overview</a></li><li class="lvl2"><a href="#2-runtime-topology">2. Runtime Topology</a></li><li class="lvl2"><a href="#3-component-map">3. Component Map</a></li><li class="lvl2"><a href="#4-conversion-pipeline-end-to-end">4. Conversion Pipeline (end to end)</a></li><li class="lvl2"><a href="#5-job-state-model">5. Job State Model</a></li><li class="lvl2"><a href="#6-editing-persistence">6. Editing &amp; Persistence</a></li><li class="lvl2"><a href="#7-publish-for-learners">7. Publish for Learners</a></li><li class="lvl2"><a href="#8-media-handling">8. Media Handling</a></li><li class="lvl2"><a href="#9-auxiliary-services">9. Auxiliary Services</a></li><li class="lvl2"><a href="#10-external-integrations">10. External Integrations</a></li><li class="lvl2"><a href="#11-key-characteristics-constraints-as-built">11. Key Characteristics &amp; Constraints (as-built)</a></li><li class="lvl2"><a href="#12-directory-layout-relevant-parts">12. Directory Layout (relevant parts)</a></li></ul></nav>
+<h1 id="pdf2html-technical-architecture-document">PDF2HTML — Technical Architecture Document</h1>
+<p><strong>Application:</strong> PDF → Interactive HTML converter (PDF2WebView) <strong>Deployed at:</strong> <code>https://poc-interactivetxtbk.diksha.gov.in</code> <strong>Source of truth:</strong> <code>/opt/pdf2html/app</code> (repo <code>PDF2HTML_with_ML</code>) <strong>Date:</strong> 2026-09-09</p>
+<blockquote>This document describes the system <strong>as it is deployed on the VM</strong>. It is a factual reflection of the code, not a proposal. No code was changed to produce it.</blockquote>
+<hr>
+<h2 id="1-overview">1. Overview</h2>
+<p>PDF2WebView is a Flask web application that converts PDF documents (typically textbook chapters) into styled, interactive HTML. It provides:</p>
+<ul><li>A drag-and-drop upload page.</li><li>An AI-driven conversion pipeline (Docling) that produces Markdown + extracted images.</li><li>An HTML builder that renders the Markdown into an interactive, editable document.</li><li>An in-browser editor (Apple-style toolbar) for teachers/editors.</li><li>A &quot;Publish for Learners&quot; workflow that pushes a clean, learner-facing HTML to OCI Object Storage.</li><li>CMS integration endpoints (Strapi / WordPress) and a <code>refId</code>-based lookup API for a parent application.</li></ul>
+<hr>
+<h2 id="2-runtime-topology">2. Runtime Topology</h2>
+<pre><code>Browser (editor / learner)
+      │  HTTPS
+      ▼
+Nginx  (server_name poc-interactivetxtbk.diksha.gov.in)
+  - client_max_body_size 1200M
+  - proxy_read_timeout / proxy_send_timeout 600s
+  - proxy_pass → 127.0.0.1:8501
+      │
+      ▼
+Gunicorn  (systemd unit: pdf2html.service)
+  - gunicorn --workers 1 --threads 4 --timeout 600
+  - --bind 127.0.0.1:8501 --max-requests 200 --max-requests-jitter 30
+  - app:app   (Flask application object)
+      │
+      ├── conversion runs in a background threading.Thread
+      │
+      ▼
+OCI Object Storage  (Instance Principals, region ap-hyderabad-1)
+  - poc-interactivetxtbk1               (rendered HTML)
+  - poc-interactivetxt-media-src-bucket (images / media)
+  - poc-interactivetxt-media-dst-bucket (streaming video)</code></pre>
+<p><strong>Host facts (as observed):</strong> Ubuntu 22.04, 4 vCPU, 15 GB RAM, no GPU. The Python virtualenv at <code>/opt/pdf2html/venv</code> is ~7.3 GB (ML dependencies); ML model caches live under the service user&#x27;s home.</p>
+<hr>
+<h2 id="3-component-map">3. Component Map</h2>
+<table><thead><tr><th>Layer</th><th>File(s)</th><th>Responsibility</th></tr></thead><tbody><tr><td>Web / API</td><td><code>python_app/app.py</code></td><td>Flask routes (~18), job orchestration, media upload, publish, CMS export</td></tr><tr><td>Conversion orchestration</td><td><code>python_app/convert.py</code></td><td>Runs extract → build, detects title, uploads results to OCI</td></tr><tr><td>PDF extraction</td><td><code>python_app/tools/extract_pdf.py</code></td><td>Docling pipeline (layout, tables, OCR), image export, Markdown</td></tr><tr><td>HTML building</td><td><code>python_app/tools/build_html.py</code></td><td>Markdown→HTML, artifact cleanup, figure wrapping, TOC</td></tr><tr><td>Document template</td><td><code>python_app/templates/document.html</code></td><td>Jinja2 template + full CSS/JS (editor + reader)</td></tr><tr><td>Upload UI</td><td><code>python_app/web_templates/index.html</code></td><td>Drag-and-drop upload page</td></tr><tr><td>Publish</td><td><code>python_app/s3_publish.py</code></td><td>Strip editor UI, inject learner runtime, upload to OCI buckets</td></tr><tr><td>Object storage</td><td><code>python_app/oci_storage.py</code></td><td>OCI SDK upload helpers (Instance Principals)</td></tr><tr><td>Glossary</td><td><code>python_app/glossary_highlight.py</code></td><td>Wrap glossary terms in accessible <code>&lt;dfn&gt;</code> tooltips</td></tr><tr><td>Diagram labels</td><td><code>python_app/diagram_interactive.py</code></td><td>Detect labels on diagram images</td></tr><tr><td>CMS export</td><td><code>python_app/strapi_export.py</code></td><td>Push chapters/sections to DIKSHA Strapi</td></tr><tr><td>Progress</td><td><code>python_app/progress_tracker.py</code></td><td>Video playback progress via TinyDB</td></tr></tbody></table>
+<hr>
+<h2 id="4-conversion-pipeline-end-to-end">4. Conversion Pipeline (end to end)</h2>
+<p>The flow when an editor uploads a PDF:</p>
+<ol><li><strong><code>POST /convert</code></strong> (<code>app.py</code>) receives the <code>pdf</code> file (and optional <code>ref_id</code>), saves it to <code>uploads/</code>, writes an initial job record, and starts a <strong>background thread</strong>. It returns <code>202 {job_id}</code> immediately.</li><li><strong><code>convert_pdf_to_html</code></strong> (<code>convert.py</code>) orchestrates two steps and reports progress via a callback (<code>extracting</code> → <code>building</code> → <code>done</code>).</li><li><strong><code>extract_pdf_content</code></strong> (<code>tools/extract_pdf.py</code>) runs the <strong>Docling</strong> pipeline: layout analysis, table recognition, OCR, image export, and Markdown export. It also detects whether the PDF is scanned (PyMuPDF sampling) to decide on full-page OCR.</li><li><strong><code>build_interactive_html</code></strong> (<code>tools/build_html.py</code>) converts the Markdown to HTML (Python <code>markdown</code> with <code>tables</code>, <code>fenced_code</code>, <code>toc</code>, <code>sane_lists</code>), cleans PDF artifacts, removes QR codes (OpenCV), wraps images as figures, builds a table of contents, and renders the <code>document.html</code> Jinja2 template.</li><li>Back in <code>convert.py</code>, extracted <strong>images are uploaded</strong> to <code>poc-interactivetxt-media-src-bucket</code> and the local <code>images/...</code> references in the HTML are rewritten to bucket URLs. The <strong>HTML file is uploaded</strong> to <code>poc-interactivetxtbk1</code>.</li><li>The job record is updated to <code>status=&quot;done&quot;</code> with an <code>edit_url</code>.</li></ol>
+<pre><code>/convert (thread)
+   └─ convert_pdf_to_html()
+        ├─ extract_pdf_content()   [Docling]  → markdown + images + page_count
+        ├─ build_interactive_html()[markdown+Jinja2] → document HTML
+        ├─ oci_storage.upload_directory(images) → rewrite &lt;img&gt; paths to bucket URLs
+        └─ oci_storage.upload_html_to_bucket(html)</code></pre>
+<p>Conversion is CPU-bound (no GPU); per the code&#x27;s progress messaging it may take from ~15s up to a couple of minutes for longer documents.</p>
+<hr>
+<h2 id="5-job-state-model">5. Job State Model</h2>
+<p>Job state is <strong>file-based</strong>, persisted as one JSON file per job under <code>python_app/jobs/&lt;job_id&gt;.json</code>.</p>
+<ul><li>Writes are <strong>atomic</strong>: the record is written to a <code>.tmp</code> file and then <code>replace()</code>d (POSIX-atomic).</li><li>A module-level <code>threading.Lock</code> (<code>CONVERSION_JOBS_LOCK</code>) guards read/modify/write.</li><li>The design comment notes this deliberately survives Gunicorn worker recycling (<code>--max-requests 200</code>).</li></ul>
+<p>A job record contains:</p>
+<pre><code>{
+  &quot;status&quot;: &quot;processing | done | error | published&quot;,
+  &quot;stage&quot;: &quot;queued | extracting | building | done | error&quot;,
+  &quot;detail&quot;: &quot;human-readable progress message&quot;,
+  &quot;result&quot;: { &quot;title&quot;: &quot;...&quot;, &quot;html_url&quot;: &quot;...&quot;, &quot;page_count&quot;: 0, &quot;image_count&quot;: 0, &quot;file_size&quot;: 0 },
+  &quot;error&quot;: null,
+  &quot;ref_id&quot;: &quot;external UUID or null&quot;,
+  &quot;edit_url&quot;: &quot;/output/&lt;job_dir&gt;/&lt;file&gt;.html | null&quot;,
+  &quot;render_url&quot;: &quot;https://objectstorage.../... | null&quot;
+}</code></pre>
+<p><strong><code>refId</code> lookup:</strong> <code>GET /api/lookup/&lt;refId&gt;</code> scans <code>jobs/*.json</code> to find the job whose <code>ref_id</code> matches, then maps the internal <code>status</code> to the external states <code>converting | ready-for-edit | published | error</code>.</p>
+<hr>
+<h2 id="6-editing-persistence">6. Editing &amp; Persistence</h2>
+<ul><li>Rendered documents are served by <strong><code>GET /output/&lt;job_dir&gt;/&lt;filename&gt;</code></strong> (<code>send_from_directory</code>).</li><li>The in-browser editor saves edits via <strong><code>PUT /output/&lt;job_dir&gt;/&lt;filename&gt;</code></strong>, which replaces the content inside <code>&lt;article class=&quot;document-body&quot;&gt;...&lt;/article&gt;</code> and rebuilds the TOC (<code>_rebuild_toc_in_html</code>).</li><li>Media added in the editor is uploaded via <strong><code>POST /upload-media/&lt;job_dir&gt;</code></strong> into the document&#x27;s <code>media/</code> folder, with per-type size limits enforced server-side.</li><li>Path-traversal is guarded by <code>..</code> checks and <code>Path.resolve().relative_to(OUTPUT_DIR)</code>.</li></ul>
+<hr>
+<h2 id="7-publish-for-learners">7. Publish for Learners</h2>
+<p><strong><code>POST /publish</code></strong> → <code>s3_publish.publish_document(job_dir, filename)</code>:</p>
+<ol><li>Reads the edited HTML.</li><li><strong>Strips editor-only UI</strong> (<code>_strip_editor_ui</code>): removes Edit/Export/Publish buttons, the edit toolbar, modals, and editor JS.</li><li><strong>Injects the learner runtime</strong>: media popups, flip cards, accordions, tabs, animated headings, back-to-top, learner notes (localStorage), and a reader shell/theme.</li><li><strong>Pre-highlights glossary</strong> terms server-side for the learner view.</li><li>Uploads the HTML to <code>poc-interactivetxtbk1</code>, media files to <code>poc-interactivetxt-media-src-bucket</code>, and streaming video to <code>poc-interactivetxt-media-dst-bucket</code>.</li><li>Updates the job record with <code>render_url</code> and <code>status=&quot;published&quot;</code>.</li></ol>
+<p>The returned <code>url</code> is the public OCI Object Storage URL for the learner-facing document.</p>
+<hr>
+<h2 id="8-media-handling">8. Media Handling</h2>
+<table><thead><tr><th>Type</th><th>Limit (from <code>UPLOAD_LIMITS</code>)</th><th>Special handling</th></tr></thead><tbody><tr><td>Video</td><td>1.2 GB</td><td>MP4 <code>moov</code> atom moved to front for progressive streaming (<code>ffmpeg -movflags +faststart</code>)</td></tr><tr><td>Audio</td><td>50 MB</td><td>—</td></tr><tr><td>PPTX</td><td>30 MB</td><td>—</td></tr><tr><td>H5P</td><td>400 MB</td><td>ZIP archive extracted for the <code>h5p-standalone</code> player</td></tr><tr><td>PDF</td><td>100 MB</td><td>Source for conversion</td></tr><tr><td>Image</td><td>1 MB</td><td>Restricted to <code>.png</code>, <code>.jpg</code>, <code>.jpeg</code></td></tr></tbody></table>
+<p>The global Flask <code>MAX_CONTENT_LENGTH</code> is 1200 MB, matching Nginx&#x27;s <code>client_max_body_size 1200M</code>.</p>
+<hr>
+<h2 id="9-auxiliary-services">9. Auxiliary Services</h2>
+<ul><li><strong>Captions:</strong> <code>POST /api/generate-captions/&lt;video_path&gt;</code> runs <code>faster-whisper</code> (<code>WhisperModel(&quot;tiny&quot;, compute_type=&quot;int8&quot;)</code>) and returns/saves WebVTT.</li><li><strong>Diagram interactivity:</strong> <code>POST /api/make-interactive</code> detects labels on a diagram image.</li><li><strong>Label info:</strong> <code>GET /api/label-info/&lt;term&gt;</code> fetches a short summary from the Wikipedia REST API.</li><li><strong>Glossary:</strong> <code>POST /api/glossary-highlight</code> wraps terms in <code>&lt;dfn&gt;</code> tooltips.</li><li><strong>Sections/TOC:</strong> <code>GET /api/sections/&lt;refId&gt;</code> and <code>/api/sections-by-path/...</code> return the heading hierarchy for building a CMS sidebar.</li><li><strong>Progress:</strong> <code>POST /api/progress</code> + <code>GET /api/progress/&lt;learner_id&gt;/&lt;video_src&gt;</code> store/read video playback progress in TinyDB (<code>learner_progress.json</code>), marking a video complete at ≥ 90%.</li></ul>
+<hr>
+<h2 id="10-external-integrations">10. External Integrations</h2>
+<ul><li><strong>OCI Object Storage</strong> via <code>InstancePrincipalsSecurityTokenSigner</code> (no keys on disk), region <code>ap-hyderabad-1</code>, three buckets (HTML, media, video).</li><li><strong>DIKSHA Strapi</strong> via <code>strapi_export.py</code> — creates a chapter and its sections (dynamic zones), uploading media to the Strapi media library first.</li><li><strong>WordPress</strong> via the REST <code>posts</code> endpoint (draft).</li><li><strong>Wikipedia REST API</strong> for diagram label descriptions.</li><li><strong>Parent CMS</strong> via <code>refId</code> — see <code>DOCLING-INTEGRATION-REPORT.md</code>.</li></ul>
+<hr>
+<h2 id="11-key-characteristics-constraints-as-built">11. Key Characteristics &amp; Constraints (as-built)</h2>
+<ul><li><strong>Single process, background threads.</strong> Conversion runs inside the web worker via <code>threading.Thread</code>. <code>app.run(..., threaded=True)</code> in dev; Gunicorn <code>--threads 4</code> in production.</li><li><strong>Local disk state.</strong> <code>jobs/</code>, <code>uploads/</code>, and <code>output/</code> live on the VM&#x27;s local disk; rendered output is also mirrored to OCI on publish.</li><li><strong>ML-heavy dependencies.</strong> Docling, RapidOCR (via Docling), OpenCV, faster-whisper, PyMuPDF.</li><li><strong>Stateless OCI auth.</strong> Instance Principals; the VM&#x27;s identity grants bucket access.</li></ul>
+<hr>
+<h2 id="12-directory-layout-relevant-parts">12. Directory Layout (relevant parts)</h2>
+<pre><code>/opt/pdf2html/
+├── venv/                         # Python virtualenv (~7.3 GB)
+└── app/
+    ├── docs/                     # architecture &amp; deployment docs
+    ├── output/                   # rendered documents (served via /output)
+    └── python_app/
+        ├── app.py                # Flask routes
+        ├── convert.py            # orchestration
+        ├── oci_storage.py        # OCI upload helpers
+        ├── s3_publish.py         # publish workflow
+        ├── strapi_export.py      # Strapi/WordPress export
+        ├── glossary_highlight.py # &lt;dfn&gt; glossary tooltips
+        ├── progress_tracker.py   # TinyDB video progress
+        ├── diagram_interactive.py
+        ├── jobs/                 # per-job JSON state files
+        ├── uploads/              # temporary uploaded PDFs
+        ├── templates/document.html      # document template (editor + reader)
+        ├── web_templates/index.html     # upload page
+        └── tools/
+            ├── extract_pdf.py    # Docling extraction
+            └── build_html.py     # Markdown → HTML</code></pre>
+<footer>Generated 2026-09-09 · reflects code at <code>/opt/pdf2html/app</code> · no code was modified.</footer>
+</div></body></html>
