@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF2HTML — How Docling Is Used</title>
+<style>
+:root{--bg:#0f1117;--ink:#1a1a2e;--text:#2b2f38;--muted:#5b6472;--line:#e3e7ee;
+--accent:#0f4c75;--accent2:#3282b8;--code-bg:#0f1117;--code-ink:#e6edf3;}
+*{box-sizing:border-box;}html{scroll-behavior:smooth;}
+body{margin:0;color:var(--text);background:#f6f8fb;
+font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:940px;margin:0 auto;padding:0 24px 96px;}
+header.hero{background:linear-gradient(135deg,var(--accent) 0%,var(--ink) 100%);color:#fff;padding:52px 24px;}
+header.hero .inner{max-width:940px;margin:0 auto;}
+header.hero h1{margin:0 0 6px;font-size:1.9rem;line-height:1.2;}
+header.hero .sub{opacity:.85;}
+h1{font-size:1.6rem;margin:36px 0 12px;}
+h2{font-size:1.35rem;margin:40px 0 12px;border-bottom:2px solid var(--line);padding-bottom:6px;}
+h3{font-size:1.1rem;margin:26px 0 8px;color:var(--ink);}
+p{margin:12px 0;}
+code{background:#eef1f6;padding:2px 6px;border-radius:5px;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.88em;}
+pre{background:var(--code-bg);color:var(--code-ink);padding:16px 18px;border-radius:10px;overflow-x:auto;
+font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.82rem;line-height:1.5;margin:16px 0;}
+pre code{background:none;padding:0;color:inherit;}
+table{border-collapse:collapse;width:100%;margin:18px 0;font-size:.92rem;background:#fff;}
+th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top;}
+th{background:#eef2f8;font-weight:600;}
+tbody tr:nth-child(even){background:#fafbfd;}
+blockquote{margin:18px 0;padding:12px 18px;background:#ecfeff;border-left:4px solid var(--accent2);border-radius:0 8px 8px 0;color:#0b4f58;}
+ul,ol{padding-left:24px;}li{margin:5px 0;}
+hr{border:none;border-top:1px solid var(--line);margin:32px 0;}
+a{color:var(--accent);}
+nav.toc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:26px 0;}
+nav.toc h2{margin:0 0 8px;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border:0;padding:0;}
+nav.toc a{text-decoration:none;}nav.toc a:hover{text-decoration:underline;}
+nav.toc ul{list-style:none;padding-left:0;margin:0;}
+nav.toc li{margin:3px 0;}nav.toc li.lvl3{padding-left:16px;font-size:.92em;}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem;}
+</style></head>
+<body>
+<header class="hero"><div class="inner">
+<h1>PDF2HTML — How Docling Is Used</h1>
+<div class="sub">Technical documentation · generated from source · 03-HOW-DOCLING-IS-USED.md</div>
+</div></header>
+<div class="wrap">
+<nav class="toc"><h2>Contents</h2><ul><li class="lvl2"><a href="#1-role-of-docling">1. Role of Docling</a></li><li class="lvl2"><a href="#2-pipeline-configuration">2. Pipeline Configuration</a></li><li class="lvl2"><a href="#3-scanned-vs-digital-pdf-detection">3. Scanned vs. Digital PDF Detection</a></li><li class="lvl2"><a href="#4-extracting-images-and-tables">4. Extracting Images and Tables</a></li><li class="lvl2"><a href="#5-markdown-export">5. Markdown Export</a></li><li class="lvl2"><a href="#6-output-of-the-docling-step">6. Output of the Docling Step</a></li><li class="lvl2"><a href="#7-what-happens-to-docling-s-output-next">7. What Happens to Docling&#x27;s Output Next</a></li><li class="lvl2"><a href="#8-title-detection-uses-docling-pymupdf">8. Title Detection (uses Docling + PyMuPDF)</a></li><li class="lvl2"><a href="#9-performance-characteristics">9. Performance Characteristics</a></li><li class="lvl2"><a href="#10-summary">10. Summary</a></li></ul></nav>
+<h1 id="how-docling-is-used-in-pdf2html">How Docling Is Used in PDF2HTML</h1>
+<p><strong>Primary file:</strong> <code>python_app/tools/extract_pdf.py</code> <strong>Called from:</strong> <code>python_app/convert.py</code> → <code>extract_pdf_content(...)</code> <strong>Date:</strong> 2026-09-09</p>
+<blockquote>This describes exactly how the deployed code uses <a href="https://github.com/docling-project/docling">Docling</a> (IBM&#x27;s document-conversion library) to turn a PDF into structured Markdown plus extracted images. Content is drawn directly from the source; nothing was changed.</blockquote>
+<hr>
+<h2 id="1-role-of-docling">1. Role of Docling</h2>
+<p>Docling is the <strong>PDF understanding engine</strong>. It performs AI-powered:</p>
+<ul><li><strong>Layout analysis</strong> (reading order, structure) — the code&#x27;s docstring attributes this to the DocLayNet model.</li><li><strong>Table structure recognition</strong> — attributed to the TableFormer model.</li><li><strong>OCR</strong> for scanned/image content — via <strong>RapidOCR</strong> (configured through Docling).</li><li><strong>Image/figure extraction</strong> — pictures and table crops are exported as PNGs.</li><li><strong>Structured Markdown export</strong> with referenced images.</li></ul>
+<p>Everything downstream (HTML building, editor, publish) consumes the Markdown + images that Docling produces.</p>
+<blockquote><strong>Accuracy note:</strong> although <code>requirements.txt</code> lists <code>paddleocr</code>/<code>paddlepaddle</code>, the extraction code configures Docling with <strong><code>RapidOcrOptions</code></strong> — so RapidOCR is the OCR engine actually wired into the pipeline. <code>PyMuPDF</code> (<code>pymupdf</code>) is used separately for scanned-PDF detection and first-page text.</blockquote>
+<hr>
+<h2 id="2-pipeline-configuration">2. Pipeline Configuration</h2>
+<p>The converter is built in <code>extract_pdf_content</code> with these Docling options:</p>
+<pre><code>from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions
+from docling.document_converter import DocumentConverter, PdfFormatOption
+from docling.datamodel.base_models import InputFormat
+
+ocr_options = RapidOcrOptions(
+    force_full_page_ocr=is_scanned,   # decided per document (see §3)
+    lang=[&quot;english&quot;],
+)
+
+pipeline_options = PdfPipelineOptions()
+pipeline_options.images_scale = 2.0          # IMAGE_RESOLUTION_SCALE (~144 DPI)
+pipeline_options.generate_page_images = True
+pipeline_options.generate_picture_images = True
+pipeline_options.do_ocr = True
+pipeline_options.ocr_options = ocr_options
+
+doc_converter = DocumentConverter(
+    format_options={ InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options) }
+)
+
+conv_result = doc_converter.convert(resolved_path)
+document = conv_result.document</code></pre>
+<p><strong>Constants that tune the pipeline</strong> (defined at module level):</p>
+<table><thead><tr><th>Constant</th><th>Value</th><th>Meaning</th></tr></thead><tbody><tr><td><code>IMAGE_RESOLUTION_SCALE</code></td><td><code>2.0</code></td><td>Render/extract images at ~144 DPI</td></tr><tr><td><code>OCR_TEXT_SCORE_THRESHOLD</code></td><td><code>0.4</code></td><td>OCR text below this confidence is discarded</td></tr><tr><td><code>OCR_BITMAP_AREA_THRESHOLD</code></td><td><code>0.02</code></td><td>Min bitmap area (fraction of page) to OCR a region</td></tr><tr><td><code>_SCANNED_TEXT_THRESHOLD</code></td><td><code>50</code></td><td>Below this avg chars/page → treat PDF as scanned</td></tr></tbody></table>
+<hr>
+<h2 id="3-scanned-vs-digital-pdf-detection">3. Scanned vs. Digital PDF Detection</h2>
+<p>Before running Docling, the code decides whether to force <strong>full-page OCR</strong>:</p>
+<pre><code>is_scanned = _is_scanned_pdf(str(resolved_path))</code></pre>
+<p><code>_is_scanned_pdf</code> opens the PDF with <strong>PyMuPDF</strong>, samples up to the first <strong>5 pages</strong>, sums extractable text, and computes average characters per page. If that average is <strong>below 50</strong>, the PDF is considered scanned and <code>force_full_page_ocr=True</code> is passed to <code>RapidOcrOptions</code>. Digital PDFs keep normal OCR (only where needed).</p>
+<p>This avoids running expensive full-page OCR on documents that already have a real text layer, while still handling image-only scans.</p>
+<hr>
+<h2 id="4-extracting-images-and-tables">4. Extracting Images and Tables</h2>
+<p>After conversion, the code iterates the document tree and exports images:</p>
+<pre><code>for element, _level in document.iterate_items():
+    if isinstance(element, PictureItem):
+        # saved as &quot;&lt;stem&gt;-figure-N.png&quot;
+    elif isinstance(element, TableItem):
+        # saved as &quot;&lt;stem&gt;-table-N.png&quot;</code></pre>
+<ul><li><strong>Pictures</strong> → <code>&lt;pdf_stem&gt;-figure-&lt;n&gt;.png</code></li><li><strong>Tables</strong> → <code>&lt;pdf_stem&gt;-table-&lt;n&gt;.png</code> (the table is captured as an image crop)</li><li>Each <code>element.get_image(document)</code> PIL image is saved as PNG into the image output directory.</li></ul>
+<p>Then <strong>page images</strong> are also saved for completeness:</p>
+<pre><code>for page_no, page in document.pages.items():
+    if page.image and page.image.pil_image:
+        # saved as &quot;&lt;stem&gt;-page-&lt;page_no&gt;.png&quot;</code></pre>
+<hr>
+<h2 id="5-markdown-export">5. Markdown Export</h2>
+<p>Docling exports the whole document to Markdown with <strong>referenced</strong> (not embedded) images:</p>
+<pre><code>document.save_as_markdown(md_filename, image_mode=ImageRefMode.REFERENCED)
+markdown_content = md_filename.read_text(encoding=&quot;utf-8&quot;)</code></pre>
+<p>Referenced mode keeps images as separate files (linked from the Markdown), which is what the downstream HTML builder expects so it can rewrite paths to OCI bucket URLs later.</p>
+<p>The number of pages is taken from <code>len(document.pages)</code>.</p>
+<hr>
+<h2 id="6-output-of-the-docling-step">6. Output of the Docling Step</h2>
+<p><code>extract_pdf_content</code> returns an <code>ExtractionResult</code> dataclass:</p>
+<table><thead><tr><th>Field</th><th>Description</th></tr></thead><tbody><tr><td><code>markdown</code></td><td>Structured Markdown from Docling</td></tr><tr><td><code>image_paths</code></td><td>All extracted image files (figures, tables, pages), collected and sorted</td></tr><tr><td><code>image_directory</code></td><td>Directory containing the images</td></tr><tr><td><code>page_count</code></td><td>Number of pages</td></tr><tr><td><code>source_path</code></td><td>Resolved PDF path</td></tr><tr><td><code>first_page_text</code></td><td>Raw first-page text (via PyMuPDF) used for title detection</td></tr></tbody></table>
+<p>If Docling produces no text (e.g. a pure image scan where OCR still yields nothing), the caller substitutes a fallback Markdown stub noting the document appears image-based.</p>
+<hr>
+<h2 id="7-what-happens-to-docling-s-output-next">7. What Happens to Docling&#x27;s Output Next</h2>
+<p>Docling&#x27;s Markdown is <strong>not</strong> shown as-is. <code>tools/build_html.py</code> post-processes it to clean up the artifacts that PDF extraction commonly introduces:</p>
+<table><thead><tr><th>Step</th><th>Function</th><th>Purpose</th></tr></thead><tbody><tr><td>Remove QR codes</td><td><code>_remove_qr_code_images</code></td><td>OpenCV <code>QRCodeDetector</code> drops publisher/QR images</td></tr><tr><td>Rewrite image paths</td><td><code>_rewrite_image_paths</code></td><td>Absolute → relative (<code>images/…</code>) for portability</td></tr><tr><td>Clean artifacts</td><td><code>_clean_pdf_artifacts</code></td><td>Strip page numbers, running headers/footers (repeated 3+ times), PostScript glyph names</td></tr><tr><td>Fix numbered lists</td><td><code>_fix_numbered_lists</code></td><td>Turn flat MCQ options <code>(a)(b)(c)</code> into nested list items</td></tr><tr><td>Deduplicate headings</td><td><code>_deduplicate_heading</code></td><td>Fix Docling&#x27;s occasional doubled heading text</td></tr><tr><td>Wrap figures</td><td><code>_wrap_images_as_figures</code></td><td><code>&lt;p&gt;&lt;img&gt;&lt;/p&gt;</code> → <code>&lt;figure&gt;&lt;figcaption&gt;</code></td></tr><tr><td>Build TOC</td><td><code>_extract_toc</code> / <code>_slugify</code></td><td>Heading hierarchy for the sidebar</td></tr></tbody></table>
+<p>The cleaned Markdown is then converted to HTML with the Python <code>markdown</code> library (extensions: <code>tables</code>, <code>fenced_code</code>, <code>toc</code>, <code>sane_lists</code>) and rendered into the <code>document.html</code> Jinja2 template.</p>
+<hr>
+<h2 id="8-title-detection-uses-docling-pymupdf">8. Title Detection (uses Docling + PyMuPDF)</h2>
+<p><code>convert.py</code> derives a chapter title with a layered strategy:</p>
+<ol><li><strong>First-page raw text</strong> (from PyMuPDF <code>first_page_text</code>) — textbooks usually put the chapter title in the first lines.</li><li><strong>Markdown headings</strong> produced by Docling — first clean <code>#</code>/<code>##</code> heading.</li><li><strong>Filename fallback</strong> — cleaned-up stem.</li></ol>
+<p>It also removes duplicated/garbled title fragments (a known PDF-extraction artifact).</p>
+<hr>
+<h2 id="9-performance-characteristics">9. Performance Characteristics</h2>
+<ul><li>Docling runs on <strong>CPU only</strong> on this VM (no GPU). Layout, table, and OCR models are loaded per process; caches are stored under the service user&#x27;s home.</li><li>Cost scales with page count and whether full-page OCR is triggered. Scanned documents (full-page OCR) are the most expensive.</li><li>Image extraction at <code>images_scale = 2.0</code> yields readable figures/tables while keeping file sizes reasonable.</li></ul>
+<hr>
+<h2 id="10-summary">10. Summary</h2>
+<p>Docling is the single source of document structure in this system: it turns a PDF into Markdown + images with layout and table awareness, uses RapidOCR for scanned content, and hands off clean, referenced Markdown to the HTML builder. PyMuPDF complements it for scanned-detection and title extraction, and OpenCV cleans QR/barcode noise from the results.</p>
+<footer>Generated 2026-09-09 · reflects code at <code>/opt/pdf2html/app</code> · no code was modified.</footer>
+</div></body></html>

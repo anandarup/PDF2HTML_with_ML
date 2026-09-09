@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF2HTML — Apple Design System</title>
+<style>
+:root{--bg:#0f1117;--ink:#1a1a2e;--text:#2b2f38;--muted:#5b6472;--line:#e3e7ee;
+--accent:#0f4c75;--accent2:#3282b8;--code-bg:#0f1117;--code-ink:#e6edf3;}
+*{box-sizing:border-box;}html{scroll-behavior:smooth;}
+body{margin:0;color:var(--text);background:#f6f8fb;
+font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:940px;margin:0 auto;padding:0 24px 96px;}
+header.hero{background:linear-gradient(135deg,var(--accent) 0%,var(--ink) 100%);color:#fff;padding:52px 24px;}
+header.hero .inner{max-width:940px;margin:0 auto;}
+header.hero h1{margin:0 0 6px;font-size:1.9rem;line-height:1.2;}
+header.hero .sub{opacity:.85;}
+h1{font-size:1.6rem;margin:36px 0 12px;}
+h2{font-size:1.35rem;margin:40px 0 12px;border-bottom:2px solid var(--line);padding-bottom:6px;}
+h3{font-size:1.1rem;margin:26px 0 8px;color:var(--ink);}
+p{margin:12px 0;}
+code{background:#eef1f6;padding:2px 6px;border-radius:5px;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.88em;}
+pre{background:var(--code-bg);color:var(--code-ink);padding:16px 18px;border-radius:10px;overflow-x:auto;
+font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.82rem;line-height:1.5;margin:16px 0;}
+pre code{background:none;padding:0;color:inherit;}
+table{border-collapse:collapse;width:100%;margin:18px 0;font-size:.92rem;background:#fff;}
+th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top;}
+th{background:#eef2f8;font-weight:600;}
+tbody tr:nth-child(even){background:#fafbfd;}
+blockquote{margin:18px 0;padding:12px 18px;background:#ecfeff;border-left:4px solid var(--accent2);border-radius:0 8px 8px 0;color:#0b4f58;}
+ul,ol{padding-left:24px;}li{margin:5px 0;}
+hr{border:none;border-top:1px solid var(--line);margin:32px 0;}
+a{color:var(--accent);}
+nav.toc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:26px 0;}
+nav.toc h2{margin:0 0 8px;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border:0;padding:0;}
+nav.toc a{text-decoration:none;}nav.toc a:hover{text-decoration:underline;}
+nav.toc ul{list-style:none;padding-left:0;margin:0;}
+nav.toc li{margin:3px 0;}nav.toc li.lvl3{padding-left:16px;font-size:.92em;}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem;}
+</style></head>
+<body>
+<header class="hero"><div class="inner">
+<h1>PDF2HTML — Apple Design System</h1>
+<div class="sub">Technical documentation · generated from source · 04-APPLE-DESIGN-SYSTEM.md</div>
+</div></header>
+<div class="wrap">
+<nav class="toc"><h2>Contents</h2><ul><li class="lvl2"><a href="#1-design-principles-as-expressed-in-the-code">1. Design Principles (as expressed in the code)</a></li><li class="lvl2"><a href="#2-design-tokens-css-custom-properties">2. Design Tokens (CSS Custom Properties)</a></li><li class="lvl3"><a href="#color">Color</a></li><li class="lvl3"><a href="#typography">Typography</a></li><li class="lvl3"><a href="#layout">Layout</a></li><li class="lvl3"><a href="#editor-rail-surface-tints">Editor &quot;rail&quot; surface tints</a></li><li class="lvl2"><a href="#3-the-edit-toolbar-edit-toolbar-frosted-rail">3. The Edit Toolbar (`.edit-toolbar`) — Frosted Rail</a></li><li class="lvl2"><a href="#4-rail-controls-rail-ctl">4. Rail Controls (`.rail-ctl`)</a></li><li class="lvl2"><a href="#5-segmented-control-alignment">5. Segmented Control (alignment)</a></li><li class="lvl2"><a href="#6-popovers-rail-pop">6. Popovers (`.rail-pop`)</a></li><li class="lvl2"><a href="#7-primary-secondary-buttons">7. Primary &amp; Secondary Buttons</a></li><li class="lvl2"><a href="#8-insert-panel">8. Insert Panel</a></li><li class="lvl2"><a href="#9-reading-surface-document-body">9. Reading Surface (document body)</a></li><li class="lvl2"><a href="#10-motion-interaction-language">10. Motion &amp; Interaction Language</a></li><li class="lvl2"><a href="#11-accessibility-built-into-the-system">11. Accessibility Built Into the System</a></li><li class="lvl2"><a href="#12-the-upload-page-index-html">12. The Upload Page (`index.html`)</a></li><li class="lvl2"><a href="#13-summary-of-the-system">13. Summary of the System</a></li></ul></nav>
+<h1 id="apple-design-system-pdf2html-editor">Apple Design System — PDF2HTML Editor</h1>
+<p><strong>Primary file:</strong> <code>python_app/templates/document.html</code> (document + editor + reader) <strong>Upload page:</strong> <code>python_app/web_templates/index.html</code> <strong>Date:</strong> 2026-09-09</p>
+<blockquote>This documents the Apple-inspired visual system already implemented in the document template&#x27;s CSS. It reflects the code as-is (the &quot;Apple-style editor toolbar redesign&quot; per the git history). No styles were changed.</blockquote>
+<hr>
+<h2 id="1-design-principles-as-expressed-in-the-code">1. Design Principles (as expressed in the code)</h2>
+<p>The editor UI follows Apple&#x27;s macOS/iOS toolbar language:</p>
+<ul><li><strong>Frosted glass</strong> surfaces (<code>backdrop-filter: blur() saturate()</code>) that let content show through.</li><li><strong>Soft, layered shadows</strong> rather than hard borders.</li><li><strong>Pill-shaped controls</strong> and rounded rectangles.</li><li><strong>Spring-like easing</strong> using <code>cubic-bezier(.22, 1, .36, 1)</code>.</li><li><strong>Segmented controls</strong> with a sliding thumb.</li><li><strong>System fonts</strong> (<code>-apple-system</code>) for native feel.</li><li><strong>Focus-visible rings</strong> for keyboard accessibility.</li><li><strong>Graceful degradation</strong> via <code>@supports</code> fallbacks.</li></ul>
+<hr>
+<h2 id="2-design-tokens-css-custom-properties">2. Design Tokens (CSS Custom Properties)</h2>
+<p>Defined in <code>:root</code> and overridden for dark mode under <code>@media (prefers-color-scheme: dark)</code>.</p>
+<h3 id="color">Color</h3>
+<table><thead><tr><th>Token</th><th>Light</th><th>Dark</th></tr></thead><tbody><tr><td><code>--color-bg</code></td><td><code>#ffffff</code></td><td><code>#1a1a2e</code></td></tr><tr><td><code>--color-text</code></td><td><code>#1a1a2e</code></td><td><code>#e0e0e0</code></td></tr><tr><td><code>--color-text-secondary</code></td><td><code>#4a4a6a</code></td><td><code>#a0a0b0</code></td></tr><tr><td><code>--color-heading</code></td><td><code>#16213e</code></td><td><code>#bbe1fa</code></td></tr><tr><td><code>--color-link</code></td><td><code>#0f4c75</code></td><td><code>#3282b8</code></td></tr><tr><td><code>--color-link-hover</code></td><td><code>#3282b8</code></td><td><code>#bbe1fa</code></td></tr><tr><td><code>--color-border</code></td><td><code>#e0e0e0</code></td><td><code>#2a2a4a</code></td></tr><tr><td><code>--color-code-bg</code></td><td><code>#f5f5f7</code></td><td><code>#16213e</code></td></tr><tr><td><code>--color-toc-bg</code></td><td><code>#fafbfc</code></td><td><code>#16213e</code></td></tr><tr><td><code>--color-toc-active</code></td><td><code>#0f4c75</code></td><td><code>#bbe1fa</code></td></tr></tbody></table>
+<h3 id="typography">Typography</h3>
+<table><thead><tr><th>Token</th><th>Value</th></tr></thead><tbody><tr><td><code>--font-body</code></td><td><code>-apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto, &quot;Helvetica Neue&quot;, Arial, sans-serif</code></td></tr><tr><td><code>--font-heading</code></td><td><code>&quot;Georgia&quot;, &quot;Times New Roman&quot;, serif</code></td></tr><tr><td><code>--font-mono</code></td><td><code>&quot;SF Mono&quot;, &quot;Fira Code&quot;, &quot;Fira Mono&quot;, Menlo, Consolas, monospace</code></td></tr></tbody></table>
+<p>Body text uses <code>-webkit-font-smoothing: antialiased</code> and a base <code>line-height: 1.7</code>.</p>
+<h3 id="layout">Layout</h3>
+<table><thead><tr><th>Token</th><th>Value</th></tr></thead><tbody><tr><td><code>--max-width</code></td><td><code>780px</code></td></tr><tr><td><code>--sidebar-width</code></td><td><code>260px</code></td></tr></tbody></table>
+<h3 id="editor-rail-surface-tints">Editor &quot;rail&quot; surface tints</h3>
+<p>Defined on <code>.edit-toolbar</code>, with <code>color-mix</code> upgrades where supported:</p>
+<table><thead><tr><th>Token</th><th>Fallback</th><th>Enhanced (<code>color-mix</code>)</th></tr></thead><tbody><tr><td><code>--rail-hover</code></td><td><code>rgba(125,125,135,0.13)</code></td><td><code>color-mix(in srgb, var(--color-text) 8%, transparent)</code></td></tr><tr><td><code>--rail-press</code></td><td><code>rgba(125,125,135,0.22)</code></td><td><code>color-mix(… 15% …)</code></td></tr><tr><td><code>--rail-tint</code></td><td><code>rgba(50,130,184,0.18)</code></td><td><code>color-mix(in srgb, var(--color-link) 18%, transparent)</code></td></tr><tr><td><code>--rail-line</code></td><td><code>rgba(125,125,135,0.22)</code></td><td><code>color-mix(… 13% …)</code></td></tr></tbody></table>
+<hr>
+<h2 id="3-the-edit-toolbar-edit-toolbar-frosted-rail">3. The Edit Toolbar (<code>.edit-toolbar</code>) — Frosted Rail</h2>
+<p>A fixed top rail that slides in when editing begins.</p>
+<pre><code>.edit-toolbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 2px;
+  padding: 6px 10px; min-height: 52px;
+  background: color-mix(in srgb, var(--color-bg) 82%, transparent);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  backdrop-filter: blur(22px) saturate(180%);
+  border-bottom: 1px solid var(--rail-line);
+  box-shadow: 0 1px 3px rgba(0,0,0,.05), 0 10px 30px -18px rgba(0,0,0,.28);
+  transform: translateY(-100%);
+  transition: transform 0.28s cubic-bezier(.22, 1, .36, 1);
+}
+.edit-toolbar.visible { transform: translateY(0); }</code></pre>
+<ul><li><strong>Translucency:</strong> 82% background tint + blur/saturate produces the macOS &quot;vibrancy&quot; look.</li><li><strong>Motion:</strong> slides down with a spring easing when <code>.visible</code> is toggled.</li><li><strong>Replaces</strong> the floating Edit/Export/Publish cluster (<code>body.edit-mode .top-actions { display: none; }</code>).</li></ul>
+<p><strong>Fallbacks:</strong></p>
+<pre><code>@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .edit-toolbar { background: var(--color-bg); }  /* solid when blur unsupported */
+}</code></pre>
+<hr>
+<h2 id="4-rail-controls-rail-ctl">4. Rail Controls (<code>.rail-ctl</code>)</h2>
+<p>The individual toolbar buttons — 34px tall, pill-rounded, transparent until interacted with.</p>
+<pre><code>.rail-ctl {
+  height: 34px; min-width: 34px; padding: 0 8px;
+  border: 0; background: transparent; color: var(--color-text);
+  border-radius: 8px; cursor: pointer;
+  font-size: 13px; font-weight: 500; letter-spacing: -0.01em;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+.rail-ctl:hover  { background: var(--rail-hover); }
+.rail-ctl:active { background: var(--rail-press); }
+.rail-ctl[aria-pressed=&quot;true&quot;],
+.rail-ctl[aria-expanded=&quot;true&quot;] { background: var(--rail-tint); color: var(--color-link); }
+.rail-ctl:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-link);
+}</code></pre>
+<ul><li><strong>State-driven styling</strong> via ARIA attributes (<code>aria-pressed</code>, <code>aria-expanded</code>).</li><li><strong>Accessible focus:</strong> a double box-shadow ring (inner bg color, outer accent) — the Apple focus-ring idiom.</li><li>Glyph variants: <code>.rail-glyph.b</code> (bold), <code>.rail-glyph.i</code> (italic, serif), <code>.rail-glyph.u</code> (underline); SVG icons are 19×19.</li></ul>
+<hr>
+<h2 id="5-segmented-control-alignment">5. Segmented Control (alignment)</h2>
+<p>An iOS-style segmented control with a physically sliding thumb.</p>
+<pre><code>.rail-seg { position: relative; display: inline-flex; padding: 2px;
+  background: var(--rail-hover); border-radius: 9px; }
+.rail-seg button { height: 30px; width: 36px; border: 0; background: transparent;
+  color: var(--color-text-secondary); border-radius: 7px; }
+.rail-seg button[aria-checked=&quot;true&quot;] { color: var(--color-text); }
+.rail-seg-thumb {
+  position: absolute; z-index: 1; top: 2px; left: 2px; height: 30px; width: 36px;
+  background: var(--color-bg); border-radius: 7px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.18), 0 0 1px rgba(0,0,0,.12);
+  transition: transform 0.22s cubic-bezier(.22, 1, .36, 1);
+}</code></pre>
+<p>The <code>.rail-seg-thumb</code> translates under the active option with the same spring easing.</p>
+<hr>
+<h2 id="6-popovers-rail-pop">6. Popovers (<code>.rail-pop</code>)</h2>
+<p>Dropdown menus/popovers use the same frosted material, rounded 13px corners, and a scale+fade entrance.</p>
+<pre><code>.rail-pop {
+  position: absolute; top: calc(100% + 9px); left: 0;
+  min-width: 224px; padding: 6px;
+  background: color-mix(in srgb, var(--color-bg) 92%, transparent);
+  -webkit-backdrop-filter: blur(26px) saturate(180%);
+  backdrop-filter: blur(26px) saturate(180%);
+  border: 1px solid var(--color-border); border-radius: 13px;
+  box-shadow: 0 12px 44px -10px rgba(0,0,0,.32);
+  opacity: 0; transform: translateY(-7px) scale(0.97); transform-origin: top left;
+  pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.17s cubic-bezier(.22, 1, .36, 1);
+}
+.rail-pop.open { opacity: 1; transform: none; pointer-events: auto; }
+.rail-pop.rail-right { left: auto; right: 0; transform-origin: top right; }</code></pre>
+<p><strong>Popover rows</strong> (<code>.rail-row</code>) show an icon, label, and a <strong>monospace keyboard shortcut</strong> on the right; the active row shows a <code>✓</code> (<code>\2713</code>) and highlights with the accent color on hover.</p>
+<hr>
+<h2 id="7-primary-secondary-buttons">7. Primary &amp; Secondary Buttons</h2>
+<pre><code>.edit-toolbar .btn-save {
+  height: 34px; padding: 0 17px; border: 0; border-radius: 17px;  /* full pill */
+  background: var(--color-link); color: #fff;
+  font-size: 13px; font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0,0,0,.2);
+  transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.edit-toolbar .btn-cancel {
+  height: 34px; padding: 0 11px; border: 0; background: transparent;
+  color: var(--color-text-secondary); border-radius: 8px;
+}</code></pre>
+<ul><li><strong>Save</strong> is a filled accent pill (radius = half the height → capsule).</li><li><strong>Cancel</strong> is a quiet, text-only button.</li><li><strong>Save status</strong> text uses semantic colors: success <code>#1e874b</code>, error <code>#c9382e</code>.</li></ul>
+<hr>
+<h2 id="8-insert-panel">8. Insert Panel</h2>
+<p>A wider popover variant (<code>.rail-pop--insert</code>, 340px) with a search field and a two-column grid of insertable blocks.</p>
+<pre><code>.rail-insert-search:focus {
+  outline: none; border-color: var(--color-link);
+  box-shadow: 0 0 0 3px var(--rail-tint);   /* soft accent focus glow */
+}
+.rail-insert-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px;
+  max-height: 322px; overflow-y: auto; }
+.rail-insert-item .ico { width: 28px; height: 28px; border-radius: 8px;
+  background: var(--rail-hover); display: grid; place-items: center; }</code></pre>
+<p>Each item is an icon tile + label — the app-grid metaphor.</p>
+<hr>
+<h2 id="9-reading-surface-document-body">9. Reading Surface (document body)</h2>
+<p>The reading layout is calm and text-first, complementing the chrome:</p>
+<ul><li><strong>Sticky TOC sidebar</strong> (<code>.toc-sidebar</code>, 260px) with hover/active states in the accent color.</li><li><strong>Serif headings</strong> (<code>--font-heading</code>) over a <strong>sans-serif body</strong>, an editorial pairing.</li><li><strong>Content column</strong> capped for readability, generous padding, <code>scroll-behavior: smooth</code>.</li><li>Responsive breakpoints at <strong>900px</strong> and <strong>600px</strong>; a dedicated <strong><code>@media print</code></strong> block.</li></ul>
+<hr>
+<h2 id="10-motion-interaction-language">10. Motion &amp; Interaction Language</h2>
+<table><thead><tr><th>Pattern</th><th>Value</th></tr></thead><tbody><tr><td>Signature easing</td><td><code>cubic-bezier(.22, 1, .36, 1)</code> (spring-like ease-out)</td></tr><tr><td>Toolbar slide-in</td><td><code>transform</code> over <code>0.28s</code></td></tr><tr><td>Popover entrance</td><td><code>opacity 0.15s</code> + <code>transform 0.17s</code> (scale 0.97 → 1)</td></tr><tr><td>Segment thumb</td><td><code>transform 0.22s</code></td></tr><tr><td>Hover/press feedback</td><td><code>background 0.12s ease</code></td></tr></tbody></table>
+<p>Short, eased, transform-based transitions keep the UI feeling responsive and physical rather than abrupt.</p>
+<hr>
+<h2 id="11-accessibility-built-into-the-system">11. Accessibility Built Into the System</h2>
+<ul><li><strong>Keyboard focus:</strong> <code>:focus-visible</code> double-ring on controls; <code>outline: 2px solid var(--color-link)</code> on swatches.</li><li><strong>ARIA state → visual state:</strong> <code>aria-pressed</code>, <code>aria-expanded</code>, <code>aria-checked</code>, <code>aria-selected</code> drive styling (toolbar, segmented control, tabs, accordions).</li><li><strong>Dark mode:</strong> automatic via <code>prefers-color-scheme</code>.</li><li><strong>Reduced motion:</strong> the learner runtime respects <code>prefers-reduced-motion</code> for animated headings.</li><li><strong>Glossary tooltips</strong> use semantic <code>&lt;dfn&gt;</code> elements with <code>role=&quot;term&quot;</code> and keyboard focusability (see <code>GLOSSARY_CSS</code>).</li></ul>
+<hr>
+<h2 id="12-the-upload-page-index-html">12. The Upload Page (<code>index.html</code>)</h2>
+<p>The entry page carries the same language in a lighter form:</p>
+<ul><li>A <strong>drop zone</strong> (<code>.drop-zone</code>) with a distinct <code>.drag-over</code> state; the icon lifts (<code>transform: translateY(-2px)</code>) and tints on hover/drag.</li><li>Accepts <code>application/pdf,.pdf</code>.</li><li>Reads a <code>refId</code> from the URL query and posts it as <code>ref_id</code> for parent-app integration.</li><li>Shows <strong>real upload progress</strong> (XHR <code>progress</code> events) capped at 90%, then switches to an indeterminate bar while server-side conversion runs, polling <code>/convert-status/&lt;job_id&gt;</code>.</li></ul>
+<hr>
+<h2 id="13-summary-of-the-system">13. Summary of the System</h2>
+<p>The design system is a <strong>token-driven, Apple-inspired</strong> layer: system fonts, an accent built around <code>#0f4c75</code>, frosted-glass toolbars and popovers, pill controls, a sliding segmented control, spring easing, and accessible focus rings — all with <code>@supports</code> fallbacks so the experience degrades cleanly on browsers without <code>backdrop-filter</code> or <code>color-mix</code>. It cleanly separates a rich <strong>editor chrome</strong> from a calm, readable <strong>document surface</strong>, and the same visual language extends to the upload page.</p>
+<footer>Generated 2026-09-09 · reflects code at <code>/opt/pdf2html/app</code> · no code was modified.</footer>
+</div></body></html>
