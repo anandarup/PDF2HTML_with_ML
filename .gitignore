@@ -16,6 +16,8 @@ testFiles/*.pdf
 .env.*
 .env.local
 .env.production
+# Allow the placeholder template (contains no real secrets)
+!.env.example
 *.pem
 *.key
 *.cert
