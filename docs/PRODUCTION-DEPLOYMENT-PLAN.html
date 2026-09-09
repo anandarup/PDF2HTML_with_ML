@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF2HTML — Production Deployment Plan (500 Editors)</title>
+<style>
+  :root{
+    --bg:#0f1117; --panel:#161a23; --ink:#1a1a2e; --text:#2b2f38;
+    --muted:#5b6472; --line:#e3e7ee; --accent:#0f4c75; --accent2:#3282b8;
+    --code-bg:#0f1117; --code-ink:#e6edf3; --warn:#b45309; --ok:#0f766e;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; color:var(--text); background:#f6f8fb;
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:960px; margin:0 auto; padding:0 24px 96px;}
+  header.hero{
+    background:linear-gradient(135deg,var(--accent) 0%,var(--ink) 100%);
+    color:#fff; padding:56px 24px; margin-bottom:8px;
+  }
+  header.hero .inner{max-width:960px; margin:0 auto;}
+  header.hero h1{margin:0 0 8px; font-size:2rem; line-height:1.2;}
+  header.hero .sub{opacity:.85; font-size:1.05rem;}
+  .meta{margin-top:20px; display:flex; flex-wrap:wrap; gap:8px;}
+  .meta span{
+    background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.2);
+    padding:4px 12px; border-radius:999px; font-size:.8rem;
+  }
+  nav.toc{
+    background:#fff; border:1px solid var(--line); border-radius:12px;
+    padding:18px 22px; margin:28px 0; box-shadow:0 1px 4px rgba(0,0,0,.04);
+  }
+  nav.toc h2{margin:0 0 10px; font-size:.85rem; text-transform:uppercase; letter-spacing:.08em; color:var(--muted);}
+  nav.toc ol{margin:0; padding-left:20px; columns:2; column-gap:32px;}
+  nav.toc a{color:var(--accent); text-decoration:none;}
+  nav.toc a:hover{text-decoration:underline;}
+  h2{font-size:1.4rem; margin:44px 0 12px; padding-top:8px; border-bottom:2px solid var(--line); padding-bottom:6px;}
+  h3{font-size:1.12rem; margin:28px 0 10px; color:var(--ink);}
+  p{margin:12px 0;}
+  code{background:#eef1f6; padding:2px 6px; border-radius:5px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:.88em;}
+  pre{
+    background:var(--code-bg); color:var(--code-ink); padding:18px 20px;
+    border-radius:10px; overflow-x:auto; font-family:"SF Mono",Menlo,Consolas,monospace;
+    font-size:.82rem; line-height:1.5; margin:16px 0;
+  }
+  pre code{background:none; padding:0; color:inherit;}
+  table{border-collapse:collapse; width:100%; margin:18px 0; font-size:.92rem; background:#fff;}
+  th,td{border:1px solid var(--line); padding:9px 12px; text-align:left; vertical-align:top;}
+  th{background:#eef2f8; font-weight:600;}
+  tbody tr:nth-child(even){background:#fafbfd;}
+  blockquote{margin:18px 0; padding:12px 18px; background:#fff7ed; border-left:4px solid var(--warn); border-radius:0 8px 8px 0; color:#7c4a03;}
+  .callout{background:#ecfeff; border:1px solid #a5f3fc; border-left:4px solid var(--accent2); padding:14px 18px; border-radius:0 8px 8px 0; margin:18px 0;}
+  ul,ol{padding-left:24px;}
+  li{margin:5px 0;}
+  hr{border:none; border-top:1px solid var(--line); margin:36px 0;}
+  .tag-ok{color:var(--ok); font-weight:600;}
+  .tag-warn{color:var(--warn); font-weight:600;}
+  footer{margin-top:48px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:.85rem;}
+  @media (max-width:640px){ nav.toc ol{columns:1;} header.hero h1{font-size:1.5rem;} }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="inner">
+    <h1>PDF2HTML — Production Deployment Plan</h1>
+    <div class="sub">Scaling to 500 editors · Dockerized · API Gateway · OCI</div>
+    <div class="meta">
+      <span>Author: DevOps Lead</span>
+      <span>Date: 2026-09-09</span>
+      <span>Region: ap-hyderabad-1</span>
+      <span>Status: Proposed</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#s1">Executive Summary</a></li>
+    <li><a href="#s2">Review of Current Deployment</a></li>
+    <li><a href="#s3">Target Architecture</a></li>
+    <li><a href="#s4">Required Application Changes</a></li>
+    <li><a href="#s5">Dockerization</a></li>
+    <li><a href="#s6">OCI API Gateway</a></li>
+    <li><a href="#s7">OKE (Kubernetes) Deployment</a></li>
+    <li><a href="#s8">Data &amp; State Services</a></li>
+    <li><a href="#s9">Security</a></li>
+    <li><a href="#s10">CI/CD</a></li>
+    <li><a href="#s11">Observability</a></li>
+    <li><a href="#s12">Rollout Plan</a></li>
+    <li><a href="#s13">Cost Estimate</a></li>
+    <li><a href="#s14">Summary of Recommendations</a></li>
+  </ol>
+</nav>
+
+<h2 id="s1">1. Executive Summary</h2>
+<p>The application today runs as a single Flask/Gunicorn process on one 4‑vCPU / 15 GB VM, behind Nginx, with PDF conversion executed on background threads <em>inside</em> the web worker. Job state, uploads, and rendered output all live on the VM's local disk. This is fine for a POC but will not hold 500 concurrent editors.</p>
+<p>This plan re-architects the deployment to be <strong>containerized (Docker)</strong>, <strong>fronted by OCI API Gateway</strong>, and <strong>horizontally scalable</strong> on OCI Kubernetes Engine (OKE). The core change is separating the <strong>synchronous API tier</strong> from the <strong>CPU-heavy conversion tier</strong> using a <strong>job queue</strong>, and moving all shared state off local disk into managed OCI services.</p>
+<div class="callout"><strong>Headline capacity target:</strong> 500 named editors, ~100–150 concurrent active sessions, peak of ~40–60 simultaneous PDF conversions, each 15–90s of CPU-bound work.</div>
+
+<h2 id="s2">2. Review of Current Deployment (As-Is)</h2>
+<h3>2.1 What is running</h3>
+<table>
+<thead><tr><th>Aspect</th><th>Current state</th></tr></thead>
+<tbody>
+<tr><td>App</td><td>Flask app (<code>python_app/app.py</code>), ~18 routes, served by Gunicorn</td></tr>
+<tr><td>Process model</td><td><code>gunicorn --workers 1 --threads 4 --timeout 600</code>, bind <code>127.0.0.1:8501</code></td></tr>
+<tr><td>Reverse proxy</td><td>Nginx, <code>poc-interactivetxtbk.diksha.gov.in</code>, <code>client_max_body_size 1200M</code>, HTTP :80 (no TLS in the reviewed config)</td></tr>
+<tr><td>Conversion</td><td>Runs in a <code>threading.Thread</code> inside the web worker (docling + PaddleOCR + Whisper), CPU-bound, no GPU</td></tr>
+<tr><td>Job state</td><td>JSON files under <code>python_app/jobs/*.json</code> (local disk)</td></tr>
+<tr><td>Rendered output</td><td><code>app/output/</code> (3.9 GB, local disk) served via Flask <code>/output/...</code></td></tr>
+<tr><td>Uploads</td><td><code>python_app/uploads/</code> (local disk)</td></tr>
+<tr><td>Learner progress</td><td><code>learner_progress.json</code> / TinyDB (local file)</td></tr>
+<tr><td>Object storage</td><td>OCI buckets via <strong>Instance Principals</strong>: <code>poc-interactivetxtbk1</code> (HTML), <code>poc-interactivetxt-media-src-bucket</code> (media), <code>poc-interactivetxt-media-dst-bucket</code> (video)</td></tr>
+<tr><td>VM</td><td>4 vCPU, 15 GB RAM, 45 GB disk (58% used), Ubuntu 22.04</td></tr>
+<tr><td>Dependencies</td><td><code>docling</code>, <code>paddleocr</code>, <code>paddlepaddle</code>, <code>faster-whisper</code>, <code>onnxruntime</code>, <code>opencv</code> — venv 7.3 GB, model cache ~4.7 GB</td></tr>
+</tbody>
+</table>
+
+<h3>2.2 Scaling blockers (must be fixed for 500 editors)</h3>
+<ol>
+<li><strong>Conversion runs inside the web worker.</strong> A long CPU-bound job blocks the process. With one worker, one big PDF stalls everyone.</li>
+<li><strong>File-based job state (<code>jobs/*.json</code>).</strong> Not shared across hosts; <code>/api/lookup/&lt;refId&gt;</code> scans the directory — O(n) and host-local. Breaks with more than one container.</li>
+<li><strong>Local <code>output/</code> and <code>uploads/</code> directories.</strong> Rendered HTML served from local disk; two replicas would serve different content.</li>
+<li><strong>Local TinyDB for learner progress.</strong> Single-writer file, host-local, not concurrency-safe at scale.</li>
+<li><strong>Single Gunicorn worker.</strong> No real concurrency; <code>max-requests 200</code> recycles the process and drops in-flight threads.</li>
+<li><strong>No API Gateway.</strong> No central auth, throttling, quotas, or routing.</li>
+<li><strong>No TLS at the edge</strong> in the reviewed Nginx config.</li>
+<li><strong>One monolithic 7 GB+ ML image footprint</strong> mixed with the web tier — slow to scale, wasteful for pure-API traffic.</li>
+</ol>
+
+<h2 id="s3">3. Target Architecture (To-Be)</h2>
+<h3>3.1 Principles</h3>
+<ul>
+<li><strong>Split the tiers.</strong> A stateless <strong>API/web tier</strong> handles HTTP fast; a separate <strong>conversion worker tier</strong> does the heavy ML work, pulled from a queue.</li>
+<li><strong>No local state.</strong> All shared state moves to managed OCI services (Object Storage, Redis/Queue, Autonomous DB).</li>
+<li><strong>Everything containerized.</strong> Reproducible images in OCI Container Registry (OCIR), orchestrated by OKE.</li>
+<li><strong>All APIs behind OCI API Gateway.</strong> Single ingress for auth, throttling, quotas, CORS, and routing.</li>
+<li><strong>Scale independently.</strong> API pods scale on request rate; workers scale on queue depth.</li>
+</ul>
+<h3>3.2 Architecture diagram</h3>
+<pre><code>                         Internet (500 editors + learners)
+                                      &#9474;  HTTPS 443
+                          &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+                          &#9474;      OCI WAF            &#9474;  OWASP, rate limit
+                          &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+                          &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+                          &#9474;    OCI API Gateway      &#9474;  TLS, JWT auth,
+                          &#9474;  (routes + throttling)  &#9474;  usage plans, CORS
+                          &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+                    &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9524;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+       (sync APIs)  &#9474;        (uploads) &#9474;         (static/rendered)
+          &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9488;  &#9484;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;  &#9484;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+          &#9474;  OKE: API Tier    &#9474;  &#9474;OKE: API   &#9474;  &#9474; Object Storage &#9474;
+          &#9474;  Flask (gunicorn) &#9474;  &#9474;(multipart)&#9474;  &#9474; + CDN edge     &#9474;
+          &#9474;  Deployment + HPA &#9474;  &#9474;           &#9474;  &#9474; HTML/media/HLS &#9474;
+          &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9524;&#9472;&#9472;&#9472;&#9496;  &#9492;&#9472;&#9472;&#9524;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;  &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+                    &#9474;  enqueue        &#9474;  put object
+          &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+          &#9474;   OCI Queue / Redis (broker)  &#9474;
+          &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+                    &#9474; dequeue
+          &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+          &#9474;   OKE: Conversion Workers     &#9474;  docling+OCR+Whisper
+          &#9474;   Deployment + KEDA (queue)   &#9474;  own node pool
+          &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9524;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;
+          &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9660;&#9472;&#9472;&#9472;&#9472;&#9488;   &#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;
+          &#9474; OCI Cache   &#9474;   &#9474; Autonomous JSON DB &#9474;
+          &#9474; (Redis)     &#9474;   &#9474; jobs/refId/progress&#9474;
+          &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;   &#9492;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9496;</code></pre>
+
+<h3>3.3 Component responsibilities</h3>
+<table>
+<thead><tr><th>Tier</th><th>Runs</th><th>Scales on</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><strong>API / Web</strong></td><td>Flask via Gunicorn (gevent), no ML libs</td><td>Request rate / CPU (HPA)</td><td>Enqueue <code>/convert</code>, <code>/convert-status</code>, <code>/api/lookup</code>, <code>/publish</code> trigger, sections, glossary. Stateless.</td></tr>
+<tr><td><strong>Conversion Worker</strong></td><td>Consumer: docling + PaddleOCR + Whisper</td><td>Queue depth (KEDA)</td><td>Pulls jobs, converts, writes to Object Storage + DB. Dedicated node pool with more RAM.</td></tr>
+<tr><td><strong>Broker</strong></td><td>OCI Queue (or Redis Streams)</td><td>—</td><td>Decouples enqueue from processing; enables backpressure.</td></tr>
+<tr><td><strong>State store</strong></td><td>OCI Cache (Redis) hot status; Autonomous JSON DB durable records</td><td>Managed</td><td>Replaces <code>jobs/*.json</code> and TinyDB.</td></tr>
+<tr><td><strong>Object Storage + CDN</strong></td><td>Rendered HTML, media, HLS</td><td>Managed</td><td><code>/output/...</code> served from Object Storage via CDN, not a pod.</td></tr>
+</tbody>
+</table>
+
+<h2 id="s4">4. Required Application Changes</h2>
+<p>These are prerequisites, not optional. Containerizing without them just moves the same single-host bottlenecks into pods.</p>
+<h3>4.1 Move conversion to a queue-backed worker</h3>
+<p>Replace the in-process <code>threading.Thread(target=run_conversion)</code> in <code>/convert</code> with an enqueue call. <code>/convert</code> becomes: save upload to Object Storage → push a job message (<code>job_id</code>, <code>ref_id</code>, object key) → return <code>202 {job_id}</code>. The worker consumes and runs <code>convert_pdf_to_html</code>.</p>
+<h3>4.2 Externalize job state</h3>
+<ul>
+<li><strong>Redis</strong> for live status/stage/detail (fast polling from <code>/convert-status</code> and <code>/api/lookup</code>).</li>
+<li><strong>Autonomous JSON DB</strong> as the durable record, indexed by both <code>job_id</code> and <code>ref_id</code> so <code>/api/lookup/&lt;refId&gt;</code> is an indexed query, not a directory scan.</li>
+</ul>
+<h3>4.3 Serve rendered output from Object Storage</h3>
+<p>The <code>/output/&lt;job_dir&gt;/&lt;file&gt;</code> GET should redirect to (or be fronted by) the CDN/Object Storage URL rather than <code>send_from_directory</code>. The editor save (<code>PUT /output/...</code>) writes back to Object Storage. This removes the local-disk dependency blocking multiple replicas.</p>
+<h3>4.4 Externalize learner progress</h3>
+<p>Move <code>learner_progress.json</code> / TinyDB to the Autonomous JSON DB (or Redis with persistence). Progress writes must be concurrency-safe.</p>
+<h3>4.5 Config via environment / OCI Vault</h3>
+<p>Bucket names, region, DB connection string, queue/Redis endpoints, and CMS tokens come from env vars, with secrets in <strong>OCI Vault</strong>. Keep <strong>Instance/Workload Principals</strong> for OCI auth — no keys on disk (already the pattern in <code>oci_storage.py</code>).</p>
+<blockquote>These changes are backward-compatible behind the existing route contract in <code>DOCLING-INTEGRATION-REPORT.md</code>, so the parent CMS integration (<code>/api/lookup/&lt;refId&gt;</code>, <code>?refId=</code>, <code>/publish</code>) does not change.</blockquote>
+
+<h2 id="s5">5. Dockerization</h2>
+<p>Two images from one repo: a lightweight <strong>API image</strong> and a heavy <strong>worker image</strong>. This keeps API pods small and fast to scale while isolating the 7 GB ML stack in the worker.</p>
+<h3>5.1 Worker image (heavy — ML stack)</h3>
+<pre><code># Dockerfile.worker
+FROM python:3.11-slim AS base
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    HF_HOME=/models PADDLE_HOME=/models/paddle
+
+RUN apt-get update &amp;&amp; apt-get install -y --no-install-recommends \
+    ffmpeg libgl1 libglib2.0-0 poppler-utils \
+    &amp;&amp; rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY python_app/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-bake ML models (~4.7 GB) so pods start warm (no first-request download)
+COPY scripts/prefetch_models.py .
+RUN python prefetch_models.py
+
+COPY python_app/ /app/
+CMD ["python", "worker.py"]</code></pre>
+<h3>5.2 API image (light — no ML libs)</h3>
+<pre><code># Dockerfile.api
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY python_app/requirements-api.txt .
+RUN pip install --no-cache-dir -r requirements-api.txt gunicorn gevent
+COPY python_app/ /app/
+EXPOSE 8501
+CMD ["gunicorn", "--workers", "4", "--worker-class", "gevent", \
+     "--worker-connections", "200", "--timeout", "120", \
+     "--bind", "0.0.0.0:8501", "app:app"]</code></pre>
+<p><code>requirements-api.txt</code> = current <code>requirements.txt</code> minus <code>docling</code>, <code>paddleocr</code>, <code>paddlepaddle</code>, <code>faster-whisper</code>, <code>onnxruntime</code>, <code>opencv-python</code> (those stay in the worker).</p>
+<h3>5.3 Local composition for dev / CI</h3>
+<pre><code>services:
+  api:
+    build: { context: ., dockerfile: Dockerfile.api }
+    ports: ["8501:8501"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      QUEUE_NAME: pdf-convert
+    depends_on: [redis]
+  worker:
+    build: { context: ., dockerfile: Dockerfile.worker }
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      QUEUE_NAME: pdf-convert
+    deploy: { replicas: 2 }
+    depends_on: [redis]
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]</code></pre>
+<p>Images are built in CI and pushed to <strong>OCIR</strong> (<code>&lt;region&gt;.ocir.io/&lt;tenancy-namespace&gt;/pdf2html/api</code> and <code>.../worker</code>), tagged with the git SHA.</p>
+
+<h2 id="s6">6. OCI API Gateway</h2>
+<p>All routes are published through a single API Gateway deployment. It becomes the only public entry point; OKE services stay private.</p>
+<h3>6.1 Routing</h3>
+<table>
+<thead><tr><th>Path</th><th>Backend</th><th>Method(s)</th><th>Auth</th><th>Throttle</th></tr></thead>
+<tbody>
+<tr><td><code>/convert</code></td><td>API service</td><td>POST</td><td>JWT (editor)</td><td>10 / min / user</td></tr>
+<tr><td><code>/convert-status/{job_id}</code></td><td>API service</td><td>GET</td><td>JWT</td><td>60 / min / user</td></tr>
+<tr><td><code>/upload-media/{job_dir}</code></td><td>API service</td><td>POST</td><td>JWT</td><td>20 / min / user</td></tr>
+<tr><td><code>/publish</code></td><td>API service</td><td>POST</td><td>JWT</td><td>10 / min / user</td></tr>
+<tr><td><code>/export-cms</code></td><td>API service</td><td>POST</td><td>JWT</td><td>5 / min / user</td></tr>
+<tr><td><code>/api/lookup/{refId}</code></td><td>API service</td><td>GET</td><td>mTLS / service token</td><td>server-to-server</td></tr>
+<tr><td><code>/api/sections/*</code>, <code>/api/glossary-highlight</code>, <code>/api/make-interactive</code>, <code>/api/label-info</code>, <code>/api/progress</code>, <code>/api/generate-captions</code></td><td>API service</td><td>GET/POST</td><td>JWT</td><td>per-route</td></tr>
+<tr><td><code>/output/{job_dir}/{file}</code> (GET)</td><td>Object Storage / CDN</td><td>GET</td><td>public/PAR</td><td>CDN-cached</td></tr>
+<tr><td><code>/output/{job_dir}/{file}</code> (PUT save)</td><td>API service</td><td>PUT</td><td>JWT (editor)</td><td>30 / min / user</td></tr>
+</tbody>
+</table>
+<h3>6.2 Gateway features to enable</h3>
+<ul>
+<li><strong>TLS termination</strong> with an OCI-managed certificate for <code>poc-interactivetxtbk.diksha.gov.in</code>.</li>
+<li><strong>JWT validation</strong> (OCI IAM / IDCS or the CMS IdP) so editor identity is enforced at the edge.</li>
+<li><strong>Usage plans &amp; quotas</strong> — per-editor rate limits protect the CPU-bound worker tier from a stampede.</li>
+<li><strong>Request/response limits</strong> — keep the <code>1200M</code> body limit for large media uploads on relevant routes only.</li>
+<li><strong>CORS</strong> — allow the CMS origin for iframe integration.</li>
+<li><strong>Logging &amp; metrics</strong> to OCI Logging and Monitoring.</li>
+</ul>
+
+<h2 id="s7">7. OKE (Kubernetes) Deployment</h2>
+<h3>7.1 Cluster and node pools</h3>
+<table>
+<thead><tr><th>Node pool</th><th>Shape</th><th>Nodes (min→max)</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>api-pool</code></td><td>E4.Flex 2 OCPU / 16 GB</td><td>3 → 8</td><td>API/web pods (stateless)</td></tr>
+<tr><td><code>worker-pool</code></td><td>E4.Flex 4 OCPU / 32 GB</td><td>3 → 20</td><td>Conversion workers (CPU/RAM heavy)</td></tr>
+<tr><td><code>system-pool</code></td><td>E4.Flex 1 OCPU / 8 GB</td><td>2</td><td>ingress, metrics, KEDA, autoscaler</td></tr>
+</tbody>
+</table>
+<h3>7.2 API autoscaling (HPA)</h3>
+<pre><code>apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: api-hpa }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: pdf2html-api }
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource: { name: cpu, target: { type: Utilization, averageUtilization: 60 } }</code></pre>
+<h3>7.3 Worker autoscaling on queue depth (KEDA)</h3>
+<pre><code>apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata: { name: worker-scaler }
+spec:
+  scaleTargetRef: { name: pdf2html-worker }
+  minReplicaCount: 2
+  maxReplicaCount: 40
+  triggers:
+    - type: redis
+      metadata:
+        address: &lt;redis-host&gt;:6379
+        listName: pdf-convert
+        listLength: "3"   # add a worker per ~3 queued jobs</code></pre>
+<p>Each worker pod requests ~4 GB RAM / 1.5 CPU (docling + OCR peak). Models are baked into the image, so pods start warm.</p>
+<h3>7.4 Sizing for 500 editors</h3>
+<ul>
+<li><strong>Assumption:</strong> 500 named editors → ~100–150 concurrent sessions → peak ~40–60 conversions in a burst; steady state ~10–20 conversions/min.</li>
+<li><strong>Worker throughput:</strong> ~1 conversion / 45s / worker → ~1.3/min/worker. Clearing ~20/min steady needs ~15 workers; bursts scale toward the <code>maxReplicaCount: 40</code> cap. Conversion is queue-decoupled — bursts queue instead of failing.</li>
+<li><strong>API tier:</strong> polling dominates request volume; gevent workers + HPA at 60% CPU handle it at 3–20 pods.</li>
+</ul>
+
+<h2 id="s8">8. Data &amp; State Services</h2>
+<table>
+<thead><tr><th>Concern</th><th>Service</th><th>Replaces</th></tr></thead>
+<tbody>
+<tr><td>Live job status (hot, polled)</td><td><strong>OCI Cache with Redis</strong></td><td><code>jobs/*.json</code> reads</td></tr>
+<tr><td>Durable job / refId records</td><td><strong>OCI Autonomous JSON DB</strong></td><td><code>jobs/*.json</code>, directory scan in <code>/api/lookup</code></td></tr>
+<tr><td>Learner progress</td><td><strong>Autonomous JSON DB</strong></td><td><code>learner_progress.json</code> (TinyDB)</td></tr>
+<tr><td>Rendered HTML / media / video</td><td><strong>OCI Object Storage</strong> (existing 3 buckets) + <strong>CDN</strong></td><td>local <code>output/</code></td></tr>
+<tr><td>Job queue / broker</td><td><strong>OCI Queue</strong> or <strong>Redis Streams</strong></td><td>in-process <code>threading.Thread</code></td></tr>
+<tr><td>Secrets</td><td><strong>OCI Vault</strong></td><td>env/plain files</td></tr>
+</tbody>
+</table>
+<p>Bucket lifecycle: auto-expire <code>uploads</code> after 24h; transition rendered output to Infrequent Access after 90 days.</p>
+
+<h2 id="s9">9. Security</h2>
+<table>
+<thead><tr><th>Control</th><th>Implementation</th></tr></thead>
+<tbody>
+<tr><td>Edge TLS</td><td>TLS 1.3 at API Gateway (OCI-managed cert)</td></tr>
+<tr><td>Auth</td><td>JWT validation at Gateway; <code>/api/lookup</code> restricted to service caller (mTLS/token)</td></tr>
+<tr><td>OCI auth</td><td><strong>Workload Identity / Instance Principals</strong> in OKE — no keys on disk</td></tr>
+<tr><td>Secrets</td><td>OCI Vault, mounted via CSI / injected as env</td></tr>
+<tr><td>Network</td><td>OKE nodes in private subnets; only API Gateway + LB public</td></tr>
+<tr><td>WAF</td><td>OCI WAF (OWASP) in front of the Gateway</td></tr>
+<tr><td>Upload validation</td><td>File type + magic-byte check server-side; per-type size limits (already in <code>app.py</code>)</td></tr>
+<tr><td>Rate limiting</td><td>API Gateway usage plans per editor</td></tr>
+<tr><td>Path traversal</td><td>Keep existing <code>..</code> and <code>relative_to(OUTPUT_DIR)</code> guards</td></tr>
+</tbody>
+</table>
+
+<h2 id="s10">10. CI/CD</h2>
+<ol>
+<li><strong>Build:</strong> on merge to <code>main</code>, CI builds <code>Dockerfile.api</code> + <code>Dockerfile.worker</code>, tags with git SHA, pushes to OCIR.</li>
+<li><strong>Scan:</strong> image vulnerability scan (OCIR scanning) gates the release.</li>
+<li><strong>Deploy:</strong> <code>kubectl</code>/Helm applies manifests to OKE; rolling update for zero-downtime.</li>
+<li><strong>Migrate:</strong> run DB migration job (create JSON collections/indexes) before switching traffic.</li>
+<li><strong>Promote:</strong> blue/green at the Gateway — new deployment gets a fraction of traffic, then full cutover.</li>
+<li><strong>Rollback:</strong> re-point Gateway backend / <code>kubectl rollout undo</code>.</li>
+</ol>
+
+<h2 id="s11">11. Observability</h2>
+<table>
+<thead><tr><th>Signal</th><th>Tool</th><th>Alert</th></tr></thead>
+<tbody>
+<tr><td>API latency / 5xx rate</td><td>OCI APM + Monitoring</td><td>5xx &gt; 1% for 5 min</td></tr>
+<tr><td>Queue depth</td><td>Redis/OCI Queue metric</td><td>depth &gt; 100 sustained</td></tr>
+<tr><td>Worker conversion failures</td><td>App metric → Monitoring</td><td>failure rate &gt; 5%</td></tr>
+<tr><td>Conversion duration p95</td><td>App metric</td><td>p95 &gt; 180s</td></tr>
+<tr><td>Node/pod CPU &amp; memory</td><td>OKE metrics</td><td>node CPU &gt; 80% for 5 min</td></tr>
+<tr><td>Object Storage / DB errors</td><td>OCI Logging</td><td>any spike</td></tr>
+</tbody>
+</table>
+<p>Centralize logs in OCI Logging; dashboards in OCI Monitoring; traces via APM across Gateway → API → worker.</p>
+
+<h2 id="s12">12. Rollout Plan</h2>
+<table>
+<thead><tr><th>Phase</th><th>Work</th><th>Duration</th></tr></thead>
+<tbody>
+<tr><td><strong>0. Prereq refactor</strong></td><td>Queue-backed worker, external state (Redis + JSON DB), serve output from Object Storage</td><td>1–2 weeks</td></tr>
+<tr><td><strong>1. Containerize</strong></td><td>Build API + worker images, docker-compose, push to OCIR</td><td>3 days</td></tr>
+<tr><td><strong>2. Provision OCI</strong></td><td>OKE + node pools, OCI Cache, Autonomous JSON DB, Queue, Vault, API Gateway, WAF, CDN</td><td>3 days</td></tr>
+<tr><td><strong>3. Deploy to staging</strong></td><td>Helm deploy, wire Gateway routes, load test</td><td>3 days</td></tr>
+<tr><td><strong>4. Load test</strong></td><td>Simulate 500 editors / 60 concurrent conversions; tune HPA/KEDA</td><td>2–3 days</td></tr>
+<tr><td><strong>5. Cutover</strong></td><td>DNS to API Gateway, blue/green, monitor, decommission old VM</td><td>1 day</td></tr>
+</tbody>
+</table>
+<h3>12.1 Load-test exit criteria</h3>
+<p>500 simulated editors, 60 concurrent conversions: <span class="tag-ok">p95 conversion &lt; 120s</span>, API <span class="tag-ok">p95 &lt; 500ms</span>, <span class="tag-ok">error rate &lt; 1%</span>, no queue starvation, autoscalers stabilize.</p>
+
+<h2 id="s13">13. Cost Estimate (Monthly, indicative)</h2>
+<table>
+<thead><tr><th>Service</th><th>Spec</th><th>Est. (USD)</th></tr></thead>
+<tbody>
+<tr><td>OKE control plane</td><td>Basic</td><td>free / minimal</td></tr>
+<tr><td>API node pool</td><td>3–8 × E4.Flex 2 OCPU/16 GB (avg ~4)</td><td>~$380</td></tr>
+<tr><td>Worker node pool</td><td>3–20 × E4.Flex 4 OCPU/32 GB (avg ~8)</td><td>~$1,500</td></tr>
+<tr><td>OCI Cache (Redis)</td><td>HA small</td><td>~$150</td></tr>
+<tr><td>Autonomous JSON DB</td><td>2 OCPU / 1 TB</td><td>~$260</td></tr>
+<tr><td>API Gateway</td><td>per-call + hours</td><td>~$80</td></tr>
+<tr><td>Object Storage + CDN</td><td>~2 TB + egress</td><td>~$120</td></tr>
+<tr><td>WAF</td><td>edge policy</td><td>~$40</td></tr>
+<tr><td>Load Balancer / networking</td><td>flexible LB</td><td>~$60</td></tr>
+<tr><td><strong>Total</strong></td><td></td><td><strong>~$2,600 / month</strong></td></tr>
+</tbody>
+</table>
+<p>Cost scales with actual conversion volume because the worker pool is the dominant line item and is autoscaled — off-peak it drops toward the <code>min</code> node count.</p>
+
+<h2 id="s14">14. Summary of Recommendations</h2>
+<ol>
+<li><strong>Decouple conversion from the web tier</strong> via a queue — the single most important change.</li>
+<li><strong>Two Docker images</strong> (light API, heavy worker) pushed to OCIR.</li>
+<li><strong>Front all APIs with OCI API Gateway</strong> for TLS, JWT auth, throttling, and quotas.</li>
+<li><strong>Move all state off local disk</strong> to OCI Cache (Redis), Autonomous JSON DB, and Object Storage + CDN.</li>
+<li><strong>Run on OKE</strong> with HPA (API on CPU) and KEDA (workers on queue depth) for independent, elastic scaling to 500 editors.</li>
+<li><strong>Keep the existing route contract and Instance-Principal OCI auth</strong> so the CMS integration and buckets are unchanged.</li>
+</ol>
+
+<footer>
+  Generated 2026-09-09 · PDF2HTML production deployment plan · supersedes <code>docs/OCI_DEPLOYMENT.md</code> (40-user POC target).
+</footer>
+
+</div>
+</body>
+</html>
