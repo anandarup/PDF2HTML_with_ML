@@ -835,6 +835,17 @@ body{background:var(--rd-bg);color:var(--rd-ink);font-family:var(--rd-font);-web
 .document-body th{background:var(--rd-surface-2);font-weight:600;}
 .content-box{border-radius:14px;box-shadow:none;}
 
+/* flip cards — inherit the reader palette + a touch of extra polish */
+.flip-card-front{background:var(--rd-surface);border-color:var(--rd-hairline);box-shadow:var(--rd-shadow-card);}
+.flip-card-back{
+  background:linear-gradient(158deg,var(--rd-accent),color-mix(in srgb,var(--rd-accent) 58%,#000));
+  box-shadow:var(--rd-shadow-card);
+}
+.flip-card-hint{background:color-mix(in srgb,currentColor 14%,transparent);}
+.flip-card-nav button{background:var(--rd-surface);border-color:var(--rd-hairline-2);color:var(--rd-ink);}
+.flip-card-nav button:hover{background:var(--rd-tint);border-color:var(--rd-accent);color:var(--rd-accent);}
+.flip-card-nav .card-counter{color:var(--rd-ink-2);}
+
 /* ===== reader toolbar ===== */
 .rd-toolbar{
   position:fixed;top:0;left:0;right:0;height:52px;z-index:900;
@@ -1189,6 +1200,13 @@ READER_SHELL_SCRIPT = r'''<script>
   if(nBtn)nBtn.addEventListener('click',function(){
     var off=body.classList.toggle('rd-notes-off');
     nBtn.setAttribute('aria-pressed',String(!off));
+  });
+
+  /* ---- flip cards: keyboard flip ---- */
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Enter'&&e.key!==' ')return;
+    var c=e.target&&e.target.closest?e.target.closest('.flip-card'):null;
+    if(c){e.preventDefault();c.classList.toggle('flipped');}
   });
 
   /* ---- bookmark (proxy the runtime's hidden save button) ---- */
