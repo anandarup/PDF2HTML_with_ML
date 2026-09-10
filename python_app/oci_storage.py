@@ -7,6 +7,7 @@ Uses Instance Principal authentication (no config files needed on VM).
 import logging
 import mimetypes
 from pathlib import Path
+from urllib.parse import quote
 
 import oci
 
@@ -22,10 +23,15 @@ _namespace = _client.get_namespace().data
 
 
 def get_public_url(object_name: str) -> str:
-    """Get the public URL for an object in the bucket."""
+    """Get the public URL for an object in the bucket.
+
+    Percent-encode the object name (it may contain spaces / em-dashes / other
+    special characters from the job-dir/filename) so the resulting URL is
+    valid and the browser can actually fetch the object.
+    """
     return (
         f"https://objectstorage.{REGION}.oraclecloud.com"
-        f"/n/{_namespace}/b/{BUCKET_NAME}/o/{object_name}"
+        f"/n/{_namespace}/b/{BUCKET_NAME}/o/{quote(object_name, safe='/')}"
     )
 
 
@@ -112,7 +118,7 @@ def upload_html_to_bucket(local_path, object_name: str) -> str:
 
     url = (
         f"https://objectstorage.{REGION}.oraclecloud.com"
-        f"/n/{_namespace}/b/{HTML_BUCKET_NAME}/o/{object_name}"
+        f"/n/{_namespace}/b/{HTML_BUCKET_NAME}/o/{quote(object_name, safe='/')}"
     )
     _log.info(f"Uploaded HTML to {HTML_BUCKET_NAME}/{object_name}")
     return url
