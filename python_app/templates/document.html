@@ -173,6 +173,75 @@
       padding: 3rem 3rem;
     }
 
+    /* ---- Editor-only Split View (HTML | original pages) ---- */
+    /* Scoped under body.split-view so the learner view is never affected.
+       (The toggle button + JS that add this class live in stripped-on-publish
+       editor regions, so learners can never enter split view anyway.) */
+    .split-source { display: none; }
+    body.split-view .toc-sidebar { display: none; }
+    body.split-view .document-wrapper {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+    }
+    /* Left pane: the converted HTML. Fills its half and scrolls on its own. */
+    body.split-view .content {
+      max-width: none;
+      margin: 0;
+      width: 50%;
+      flex: 0 0 50%;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 2rem 2.5rem;
+      border-right: 1px solid var(--color-border);
+    }
+    /* Right pane: the original document pages (rasterised PNGs). */
+    body.split-view .split-source {
+      display: block;
+      width: 50%;
+      flex: 0 0 50%;
+      height: 100vh;
+      overflow-y: auto;
+      background: var(--color-toc-bg);
+      padding: 2rem 1.75rem;
+    }
+    /* When the edit rail pushes the wrapper down (marginTop), keep each pane
+       filling the remaining viewport by using the shared --rail-offset. */
+    body.split-view.edit-mode .content,
+    body.split-view.edit-mode .split-source {
+      height: calc(100vh - var(--rail-offset, 0px));
+    }
+    .split-source-head {
+      display: flex; align-items: center; gap: 8px;
+      font: 600 12px/1 var(--font-body); letter-spacing: 0.02em;
+      text-transform: uppercase; color: var(--color-text-secondary);
+      margin: 0 0 1rem; padding-bottom: 0.6rem;
+      border-bottom: 1px solid var(--color-border);
+    }
+    .split-source-pages { display: flex; flex-direction: column; gap: 14px; }
+    .split-source-page {
+      width: 100%; height: auto; display: block;
+      border: 1px solid var(--color-border); border-radius: 8px;
+      background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .split-source-empty {
+      color: var(--color-text-secondary); font-size: 0.9rem;
+      font-style: italic; padding: 1rem 0;
+    }
+    .split-source-num {
+      font: 500 11px/1 var(--font-mono); color: var(--color-text-secondary);
+      margin: 4px 0 0; text-align: center;
+    }
+    /* Narrow screens: stack the two panes instead of side-by-side. */
+    @media (max-width: 820px) {
+      body.split-view .document-wrapper { flex-direction: column; }
+      body.split-view .content,
+      body.split-view .split-source {
+        width: 100%; flex: none; height: 50vh;
+      }
+      body.split-view .content { border-right: 0; border-bottom: 1px solid var(--color-border); }
+    }
+
     .document-header {
       margin-bottom: 2.5rem;
       padding-bottom: 1.5rem;
@@ -797,59 +866,102 @@
       .rail-pop--insert { min-width: min(340px, 86vw); max-width: 86vw; }
     }
 
-    .edit-toggle {
-      position: fixed;
-      top: 1rem;
-      right: 1rem;
-      z-index: 999;
-      padding: 0.5rem 1rem;
-      border-radius: 6px;
-      border: 1px solid var(--color-border);
-      background: var(--color-bg);
-      color: var(--color-text);
-      cursor: pointer;
-      font-size: 0.85rem;
-      font-weight: 500;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-      transition: background 0.2s, border-color 0.2s;
-    }
-
+    /* ===================================================================
+       Top action cluster — Publish / Export / Edit
+       =================================================================== */
     .top-actions {
       position: fixed;
-      top: 1rem;
-      right: 1rem;
+      top: 14px;
+      right: 14px;
       z-index: 999;
       display: flex;
-      gap: 0.5rem;
       align-items: center;
+      gap: 3px;
+      padding: 5px;
+      border-radius: 15px;
+      background: color-mix(in srgb, var(--color-bg) 78%, transparent);
+      -webkit-backdrop-filter: blur(20px) saturate(180%);
+      backdrop-filter: blur(20px) saturate(180%);
+      border: 1px solid color-mix(in srgb, var(--color-text) 12%, transparent);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06), 0 12px 32px -14px rgba(0, 0, 0, 0.24);
+    }
+    @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+      .top-actions { background: var(--color-bg); }
     }
 
-    .top-actions .edit-toggle {
+    .edit-toggle {
       position: static;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 34px;
+      padding: 0 13px;
+      border: 0;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--color-text);
+      font: 600 13px/1 var(--font-body);
+      letter-spacing: -0.01em;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.13s ease, color 0.13s ease;
+    }
+    .edit-toggle svg { width: 16px; height: 16px; flex: none; }
+    .edit-toggle:hover { background: color-mix(in srgb, var(--color-text) 8%, transparent); }
+    .edit-toggle:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-link);
     }
 
-    .edit-toggle:hover {
-      border-color: var(--color-link);
-      background: var(--color-code-bg);
-    }
+    /* Edit — the primary workspace action */
+    #editToggle { background: color-mix(in srgb, var(--color-link) 14%, transparent); color: var(--color-link); }
+    #editToggle:hover { background: color-mix(in srgb, var(--color-link) 22%, transparent); }
+    #editToggle.is-active { background: var(--color-link); color: #fff; }
 
-    .publish-btn {
-      background: #059669;
-      color: #fff;
-      border-color: #059669;
-    }
-    .publish-btn:hover {
-      background: #047857;
-      border-color: #047857;
-    }
+    /* Publish — ship it live */
+    .publish-btn { background: #1d9a52; color: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18); }
+    .publish-btn:hover { background: #17823f; }
 
-    .publish-spinner {
-      animation: publish-spin 1s linear infinite;
-    }
+    .publish-spinner { animation: publish-spin 1s linear infinite; }
     @keyframes publish-spin {
       from { transform: rotate(0deg); }
       to { transform: rotate(360deg); }
     }
+
+    /* Publish for Learners modal */
+    .pub-icon {
+      width: 44px; height: 44px; border-radius: 13px;
+      display: grid; place-items: center; margin-bottom: 14px;
+    }
+    .pub-icon svg { width: 22px; height: 22px; }
+    .pub-icon--brand, .pub-icon--ok { background: color-mix(in srgb, #1d9a52 15%, transparent); color: #1d9a52; }
+    .pub-icon--err { background: color-mix(in srgb, #e5484d 14%, transparent); color: #e5484d; }
+    .pub-h { margin: 0; font: 700 1.2rem/1.2 var(--font-body); letter-spacing: -0.02em; color: var(--color-heading); }
+    .pub-sub { margin: 0.4rem 0 0; font-size: 0.9rem; line-height: 1.55; color: var(--color-text-secondary); }
+    .pub-ring {
+      width: 22px; height: 22px; flex: none; border-radius: 50%;
+      border: 2.5px solid color-mix(in srgb, var(--color-text) 12%, transparent);
+      border-top-color: #1d9a52; animation: publish-spin 0.8s linear infinite;
+    }
+    .pub-urlrow { display: flex; gap: 8px; margin-top: 12px; }
+    .pub-url {
+      flex: 1; min-width: 0; padding: 9px 11px;
+      border: 1px solid var(--color-border); border-radius: 10px;
+      background: var(--color-code-bg); color: var(--color-text);
+      font: 500 12px/1.3 var(--font-mono);
+    }
+    .pub-stats { margin: 0.7rem 0 0; font-size: 0.8rem; color: var(--color-text-secondary); }
+    .pub-btn {
+      height: 36px; padding: 0 16px; border: 0; border-radius: 999px;
+      font: 600 13px/1 var(--font-body); cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+    }
+    .pub-btn svg { width: 15px; height: 15px; }
+    .pub-btn--green { background: #1d9a52; color: #fff; }
+    .pub-btn--green:hover { background: #17823f; }
+    .pub-btn--quiet { background: color-mix(in srgb, var(--color-text) 8%, transparent); color: var(--color-text); }
+    .pub-btn--quiet:hover { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
+    .pub-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; margin-top: 1.35rem; }
 
     .document-body[contenteditable="true"] {
       outline: 2px dashed var(--color-link);
@@ -912,129 +1024,309 @@
       margin-top: 1rem;
     }
 
-    /* Formula Dialog */
-    .formula-tabs {
-      display: flex;
-      gap: 0.25rem;
-      margin-bottom: 1rem;
-      border-bottom: 1px solid var(--color-border);
-      padding-bottom: 0.5rem;
+    /* ===================================================================
+       Apple-style modal system — upgrades every insert / settings dialog
+       by restyling the shared classes. After the base rules, so it wins.
+       =================================================================== */
+    .modal-overlay {
+      background: color-mix(in srgb, #000 46%, transparent);
+      -webkit-backdrop-filter: blur(3px);
+      backdrop-filter: blur(3px);
+      padding: 1.5rem;
     }
-
-    .formula-tab {
-      padding: 0.4rem 0.8rem;
-      border: none;
-      background: none;
-      cursor: pointer;
-      font-size: 0.85rem;
-      color: var(--color-text-secondary);
-      border-radius: 4px;
-    }
-
-    .formula-tab.active {
-      background: var(--color-code-bg);
-      color: var(--color-text);
-      font-weight: 500;
-    }
-
-    .formula-panel.hidden {
-      display: none;
-    }
-
-    .formula-panel label {
-      display: block;
-      font-size: 0.85rem;
-      color: var(--color-text-secondary);
-      margin-bottom: 0.4rem;
-    }
-
-    .formula-panel textarea {
-      width: 100%;
-      font-family: var(--font-mono);
-      font-size: 0.9rem;
-      padding: 0.75rem;
+    .modal-dialog {
       border: 1px solid var(--color-border);
-      border-radius: 6px;
-      background: var(--color-code-bg);
-      color: var(--color-text);
-      resize: vertical;
-    }
-
-    .formula-panel textarea:focus {
-      outline: 2px solid var(--color-link);
-      border-color: transparent;
-    }
-
-    .formula-options {
-      display: flex;
-      gap: 1.5rem;
-      margin: 0.75rem 0;
-      font-size: 0.85rem;
-    }
-
-    .formula-options label {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.3rem;
-      cursor: pointer;
-    }
-
-    .formula-preview {
-      min-height: 40px;
-      padding: 0.75rem;
-      border: 1px solid var(--color-border);
-      border-radius: 6px;
-      background: var(--color-bg);
-      font-size: 1.1rem;
-      text-align: center;
-      margin-top: 0.5rem;
-    }
-
-    .formula-grid {
-      display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 0.4rem;
-    }
-
-    .formula-tpl {
-      padding: 0.6rem;
-      border: 1px solid var(--color-border);
-      border-radius: 4px;
-      background: var(--color-bg);
-      cursor: pointer;
-      font-size: 1.1rem;
-      text-align: center;
-      transition: background 0.15s;
-    }
-
-    .formula-tpl:hover {
-      background: var(--color-code-bg);
-      border-color: var(--color-link);
-    }
-
-    /* Symbol Grid */
-    .symbol-grid {
-      display: grid;
-      grid-template-columns: repeat(8, 1fr);
-      gap: 0.3rem;
-      max-height: 300px;
+      border-radius: 18px;
+      padding: 22px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 40px 90px -24px rgba(0, 0, 0, 0.42);
+      max-height: min(88vh, 820px);
       overflow-y: auto;
+      animation: dlg-in 0.22s cubic-bezier(.22, 1, .36, 1);
+    }
+    @keyframes dlg-in {
+      from { opacity: 0; transform: translateY(8px) scale(.98); }
+      to { opacity: 1; transform: none; }
+    }
+    @media (prefers-reduced-motion: reduce) { .modal-dialog { animation: none; } }
+
+    .modal-dialog h3:first-child {
+      margin: 0 0 0.4rem;
+      font-size: 1.28rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--color-heading);
+    }
+    .modal-dialog > h3 + p, .modal-dialog > p:first-of-type {
+      margin: 0 0 1.25rem !important;
+      font-size: 0.9rem !important;
+      line-height: 1.55;
+      color: var(--color-text-secondary) !important;
     }
 
-    .symbol-btn {
-      padding: 0.5rem;
+    .media-input-section { margin-bottom: 16px; }
+    .media-input-label {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--color-text-secondary);
+    }
+
+    .media-url-field,
+    .modal-dialog input[type="text"],
+    .modal-dialog input[type="url"],
+    .modal-dialog input[type="password"],
+    .modal-dialog input[type="number"],
+    .modal-dialog input[type="search"],
+    .modal-dialog input[type="email"],
+    .modal-dialog textarea,
+    .modal-dialog select {
+      width: 100%;
+      padding: 10px 12px;
       border: 1px solid var(--color-border);
-      border-radius: 4px;
+      border-radius: 10px;
       background: var(--color-bg);
-      cursor: pointer;
-      font-size: 1.2rem;
-      text-align: center;
-      transition: background 0.15s;
+      color: var(--color-text);
+      font: 500 13.5px/1.5 var(--font-body);
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .media-url-field:focus,
+    .modal-dialog input:focus,
+    .modal-dialog textarea:focus,
+    .modal-dialog select:focus {
+      outline: none;
+      border-color: var(--color-link);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-link) 16%, transparent);
+    }
+    .modal-dialog [contenteditable]:empty::before {
+      content: attr(data-placeholder);
+      color: var(--color-text-secondary);
+      opacity: 0.6;
     }
 
-    .symbol-btn:hover {
-      background: var(--color-code-bg);
+    .file-upload-btn {
+      border: 1.5px dashed var(--color-border);
+      border-radius: 12px;
+      padding: 18px;
+      background: transparent;
+      font: 600 13px/1 var(--font-body);
+      color: var(--color-text-secondary);
+      gap: 8px;
+    }
+    .file-upload-btn::before {
+      content: "";
+      width: 16px; height: 16px; flex: none;
+      background: currentColor;
+      -webkit-mask: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 15V4M8 8l4-4 4 4M5 14v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3'/%3E%3C/svg%3E");
+      mask: no-repeat center / contain url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 15V4M8 8l4-4 4 4M5 14v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3'/%3E%3C/svg%3E");
+    }
+    .file-upload-btn:hover {
       border-color: var(--color-link);
+      color: var(--color-link);
+      background: color-mix(in srgb, var(--color-link) 6%, transparent);
+    }
+
+    .media-input-divider { margin: 18px 0; }
+    .media-input-divider::before { background: var(--color-border); }
+    .media-input-divider span {
+      background: var(--color-bg);
+      font-size: 0.74rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--color-text-secondary);
+    }
+
+    .modal-actions { gap: 8px; margin-top: 1.5rem; align-items: center; }
+    .modal-actions .btn-cancel,
+    .modal-actions .btn-save {
+      appearance: none;
+      -webkit-appearance: none;
+      height: 36px;
+      padding: 0 17px;
+      border: 0;
+      border-radius: 999px;
+      font: 600 13px/1 var(--font-body);
+      letter-spacing: -0.01em;
+      cursor: pointer;
+    }
+    .modal-actions .btn-save {
+      background: var(--color-link);
+      color: #fff;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+    }
+    .modal-actions .btn-save:hover { background: var(--color-link-hover); }
+    .modal-actions .btn-cancel {
+      background: color-mix(in srgb, var(--color-text) 8%, transparent);
+      color: var(--color-text);
+    }
+    .modal-actions .btn-cancel:hover { background: color-mix(in srgb, var(--color-text) 14%, transparent); }
+    .modal-actions .btn-cancel:focus-visible,
+    .modal-actions .btn-save:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-link) 20%, transparent);
+    }
+
+    .media-input-status { font-size: 0.82rem; margin-top: 8px; }
+
+    #accordionAddRow, #animAddWord, #glossaryAddRow, #htabsAddRow, #vtabsAddRow {
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      width: 100%; margin: 4px 0 2px; padding: 11px;
+      border: 1px dashed var(--color-border); border-radius: 11px;
+      background: transparent; color: var(--color-link);
+      font: 600 12.5px/1 var(--font-body); cursor: pointer;
+    }
+    #accordionAddRow:hover, #animAddWord:hover, #glossaryAddRow:hover, #htabsAddRow:hover, #vtabsAddRow:hover {
+      background: color-mix(in srgb, var(--color-link) 7%, transparent);
+      border-color: var(--color-link);
+    }
+
+    /* Glossary CSV bulk-import controls */
+    .gloss-csv-bar {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      margin: 10px 0 2px; padding-top: 10px;
+      border-top: 1px solid var(--color-border);
+    }
+    .gloss-csv-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 13px; border: 1px solid var(--color-border); border-radius: 9px;
+      background: var(--color-bg); color: var(--color-text);
+      font: 600 12.5px/1 var(--font-body); cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .gloss-csv-btn:hover {
+      background: color-mix(in srgb, var(--color-link) 8%, transparent);
+      border-color: var(--color-link);
+    }
+    .gloss-csv-link {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 4px; border: 0; background: transparent; color: var(--color-link);
+      font: 500 12px/1 var(--font-body); cursor: pointer; text-decoration: none;
+    }
+    .gloss-csv-link:hover { text-decoration: underline; }
+    .gloss-csv-summary {
+      margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+      font: 500 12px/1.5 var(--font-body);
+      background: var(--color-blockquote-bg); border: 1px solid var(--color-border);
+      max-height: 160px; overflow-y: auto;
+    }
+    .gloss-csv-summary .csv-ok { color: #1e874b; font-weight: 600; }
+    .gloss-csv-summary .csv-warn { color: #b45309; font-weight: 600; }
+    .gloss-csv-summary ul { margin: 6px 0 0; padding-left: 18px; }
+    .gloss-csv-summary li { margin: 2px 0; }
+    .gloss-csv-summary code {
+      background: var(--color-code-bg); padding: 1px 5px; border-radius: 4px;
+      font-family: var(--font-mono); font-size: 0.95em;
+    }
+
+    .ah-remove {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; flex: none; padding: 0;
+      border: 0; border-radius: 8px; background: transparent;
+      color: var(--color-text-secondary); cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+    .ah-remove:hover { background: color-mix(in srgb, #e5484d 13%, transparent); color: #e5484d; }
+
+    /* Image insert dialog */
+    .img-dlg-preview {
+      margin-top: 12px; border: 1px solid var(--color-border); border-radius: 12px;
+      background: var(--color-code-bg); overflow: hidden; display: none;
+    }
+    .img-dlg-preview.show { display: block; }
+    .img-dlg-preview img { display: block; width: 100%; max-height: 240px; object-fit: contain; }
+
+    /* Formula Dialog */
+    /* Formula dialog — Apple treatment */
+    .formula-tabs {
+      display: inline-flex; gap: 2px; padding: 2px; margin-bottom: 16px; border: 0;
+      background: color-mix(in srgb, var(--color-text) 8%, transparent);
+      border-radius: 9px;
+    }
+    .formula-tab {
+      padding: 6px 14px; border: 0; border-radius: 7px; background: transparent;
+      color: var(--color-text-secondary); cursor: pointer;
+      font: 600 12.5px/1 var(--font-body); letter-spacing: -0.01em;
+    }
+    .formula-tab.active {
+      background: var(--color-bg); color: var(--color-text);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+    .formula-panel.hidden { display: none; }
+    .formula-panel > label {
+      display: block; margin-bottom: 7px;
+      font: 600 0.78rem/1 var(--font-body); letter-spacing: 0.02em;
+      color: var(--color-text-secondary);
+    }
+    .formula-panel textarea {
+      width: 100%; font-family: var(--font-mono); font-size: 13px; line-height: 1.5;
+      padding: 11px 12px; border: 1px solid var(--color-border); border-radius: 10px;
+      background: var(--color-bg); color: var(--color-text); resize: vertical; min-height: 76px;
+      transition: border-color 0.12s, box-shadow 0.12s;
+    }
+    .formula-panel textarea:focus {
+      outline: none; border-color: var(--color-link);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-link) 16%, transparent);
+    }
+    .formula-options {
+      display: inline-flex; gap: 2px; padding: 2px; margin: 14px 0 4px;
+      background: color-mix(in srgb, var(--color-text) 8%, transparent); border-radius: 9px;
+    }
+    .formula-options label {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 7px; cursor: pointer;
+      font: 600 12px/1 var(--font-body); color: var(--color-text-secondary);
+    }
+    .formula-options label:has(input:checked) {
+      background: var(--color-bg); color: var(--color-text);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+    .formula-options input { position: absolute; opacity: 0; width: 0; height: 0; }
+    @supports not selector(:has(*)) {
+      .formula-options input { position: static; opacity: 1; width: auto; height: auto; }
+    }
+    .formula-preview {
+      min-height: 46px; padding: 14px; border: 1px solid var(--color-border); border-radius: 12px;
+      background: var(--color-code-bg); font-size: 1.15rem; text-align: center; margin-top: 12px;
+      display: flex; align-items: center; justify-content: center; color: var(--color-text);
+    }
+    .formula-preview:empty::before {
+      content: "Preview appears here"; font-size: 0.8rem; color: var(--color-text-secondary); opacity: 0.6;
+    }
+    .formula-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 5px;
+    }
+    .formula-tpl {
+      aspect-ratio: 1; display: grid; place-items: center;
+      border: 1px solid var(--color-border); border-radius: 10px;
+      background: var(--color-bg); color: var(--color-text); cursor: pointer;
+      font-size: 1.1rem; transition: background 0.12s, border-color 0.12s, transform 0.08s;
+    }
+    .formula-tpl:hover {
+      background: color-mix(in srgb, var(--color-link) 8%, transparent);
+      border-color: var(--color-link);
+    }
+    .formula-tpl:active { transform: scale(0.95); }
+
+    /* Symbol picker */
+    .symbol-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 5px;
+      max-height: min(52vh, 400px); overflow-y: auto; padding: 2px;
+    }
+    .symbol-btn {
+      aspect-ratio: 1; display: grid; place-items: center;
+      border: 1px solid var(--color-border); border-radius: 10px;
+      background: var(--color-bg); color: var(--color-text); cursor: pointer;
+      font-size: 1.15rem; transition: background 0.12s, border-color 0.12s, transform 0.08s;
+    }
+    .symbol-btn:hover {
+      background: color-mix(in srgb, var(--color-link) 8%, transparent);
+      border-color: var(--color-link);
+    }
+    .symbol-btn:active { transform: scale(0.9); }
+    .symbol-btn:focus-visible {
+      outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-link) 20%, transparent);
     }
 
     /* Section Media Attachments */
@@ -1342,197 +1634,281 @@
       border-color: var(--color-link);
     }
 
-    /* Flip Card */
+    /* ===================================================================
+       Flip Card — learner view
+       =================================================================== */
     .flip-card {
-      perspective: 1000px;
+      perspective: 1400px;
       width: 100%;
-      max-width: 400px;
-      height: 220px;
-      margin: 1rem auto;
+      max-width: 460px;
+      min-height: 236px;
+      margin: 1.75rem auto;
       cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
     }
-
     .flip-card-inner {
       position: relative;
       width: 100%;
-      height: 100%;
-      transition: transform 0.6s;
+      min-height: 236px;
+      transition: transform 0.55s cubic-bezier(.22, 1, .36, 1);
       transform-style: preserve-3d;
     }
-
-    .flip-card.flipped .flip-card-inner {
-      transform: rotateY(180deg);
+    .flip-card.flipped .flip-card-inner { transform: rotateY(180deg); }
+    .flip-card:focus-visible { outline: none; }
+    .flip-card:focus-visible .flip-card-inner {
+      box-shadow: 0 0 0 3px var(--color-link);
+      border-radius: 22px;
     }
 
     .flip-card-front,
     .flip-card-back {
       position: absolute;
       inset: 0;
+      -webkit-backface-visibility: hidden;
       backface-visibility: hidden;
-      border-radius: 10px;
+      border-radius: 22px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 1.5rem;
+      padding: 2rem 1.75rem;
       text-align: center;
-      font-size: 1rem;
-      line-height: 1.5;
-      border: 2px solid var(--color-border);
+      font-size: 1.05rem;
+      line-height: 1.55;
       overflow: hidden;
     }
-
     .flip-card-front {
-      background: var(--color-code-bg);
+      background: var(--color-bg);
       color: var(--color-heading);
       font-weight: 600;
+      border: 1px solid var(--color-border);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 18px 40px -22px rgba(0, 0, 0, 0.28);
     }
-
     .flip-card-back {
-      background: var(--color-link);
-      color: #fff;
       transform: rotateY(180deg);
+      background: linear-gradient(158deg, var(--color-link), color-mix(in srgb, var(--color-link) 60%, #000));
+      color: #fff;
+      font-weight: 400;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 20px 46px -20px color-mix(in srgb, var(--color-link) 55%, transparent);
     }
-
+    .flip-card-front img,
+    .flip-card-back img {
+      max-width: 100%;
+      max-height: 132px;
+      border-radius: 10px;
+      margin-bottom: 0.75rem;
+    }
     .flip-card-hint {
       position: absolute;
-      bottom: 8px;
-      right: 12px;
-      font-size: 0.7rem;
-      opacity: 0.6;
+      bottom: 12px;
+      right: 14px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 0.72rem;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      padding: 4px 9px 4px 7px;
+      border-radius: 999px;
+      background: color-mix(in srgb, currentColor 12%, transparent);
+      opacity: 0.7;
+      transition: opacity 0.15s;
     }
+    .flip-card-hint svg { width: 12px; height: 12px; }
+    .flip-card:hover .flip-card-hint { opacity: 1; }
 
-    /* Flip Card Deck (multi-card) */
-    .flip-card-deck {
-      position: relative;
-      max-width: 450px;
-      margin: 1.5rem auto;
+    /* Deck (multi-card) */
+    .flip-card-deck { position: relative; max-width: 460px; margin: 1.75rem auto; }
+    .flip-card-deck .flip-card { display: none; margin: 0; }
+    .flip-card-deck .flip-card.active { display: block; animation: fc-in 0.3s ease; }
+    @keyframes fc-in {
+      from { opacity: 0; transform: translateY(6px) scale(.985); }
+      to { opacity: 1; transform: none; }
     }
-
-    .flip-card-deck .flip-card {
-      display: none;
-    }
-
-    .flip-card-deck .flip-card.active {
-      display: block;
-    }
-
     .flip-card-nav {
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 1rem;
-      margin-top: 0.75rem;
+      gap: 14px;
+      margin-top: 1rem;
     }
-
     .flip-card-nav button {
-      padding: 0.4rem 0.8rem;
+      width: 34px;
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
       border: 1px solid var(--color-border);
-      border-radius: 6px;
+      border-radius: 50%;
       background: var(--color-bg);
-      cursor: pointer;
-      font-size: 0.9rem;
       color: var(--color-text);
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: background 0.12s, border-color 0.12s, color 0.12s;
     }
-
+    .flip-card-nav button svg { width: 16px; height: 16px; }
     .flip-card-nav button:hover {
       background: var(--color-code-bg);
       border-color: var(--color-link);
+      color: var(--color-link);
+    }
+    .flip-card-nav .card-counter {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--color-text-secondary);
+      font-variant-numeric: tabular-nums;
+      min-width: 46px;
+      text-align: center;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .flip-card-inner { transition: none; }
+      .flip-card-deck .flip-card.active { animation: none; }
     }
 
-    .flip-card-nav .card-counter {
-      font-size: 0.85rem;
+    /* ===================================================================
+       Flip Card — creator (editor modal)
+       =================================================================== */
+    .flip-card-row {
+      border: 1px solid var(--color-border);
+      border-radius: 14px;
+      background: var(--color-bg);
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+    .fc-row-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .fc-row-num {
+      font: 600 11px/1 var(--font-body);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
       color: var(--color-text-secondary);
     }
-
-    /* Flip Card Modal Rows */
-    .flip-card-row {
-      display: flex;
-      gap: 0.5rem;
-      align-items: start;
-      margin-bottom: 0.5rem;
-      padding: 0.5rem;
-      border: 1px solid var(--color-border);
-      border-radius: 6px;
-      background: var(--color-code-bg);
+    .flip-card-row .remove-row {
+      width: 28px;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--color-text-secondary);
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
     }
-
-    .flip-card-row input {
-      flex: 1;
-      padding: 0.5rem;
-      border: 1px solid var(--color-border);
-      border-radius: 4px;
-      font-size: 0.85rem;
-      background: var(--color-bg);
-      color: var(--color-text);
+    .flip-card-row .remove-row svg { width: 15px; height: 15px; }
+    .flip-card-row .remove-row:hover {
+      background: color-mix(in srgb, #e5484d 13%, transparent);
+      color: #e5484d;
     }
-
-    .flip-card-row input:focus {
-      outline: 2px solid var(--color-link);
-      border-color: transparent;
+    .fc-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .fc-side { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .fc-side-label {
+      font: 600 11px/1 var(--font-body);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--color-text-secondary);
     }
-
-    .fc-rich-field {
-      flex: 1;
-      min-width: 120px;
-      display: flex;
-      flex-direction: column;
-    }
-
+    .fc-side-label span { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: 0.75; }
     .fc-mini-toolbar {
       display: flex;
       gap: 2px;
-      padding: 2px;
+      padding: 3px;
       border: 1px solid var(--color-border);
-      border-bottom: none;
-      border-radius: 4px 4px 0 0;
+      border-bottom: 0;
+      border-radius: 9px 9px 0 0;
       background: var(--color-code-bg);
     }
-
     .fc-mini-toolbar button {
-      padding: 2px 6px;
-      border: none;
-      background: none;
-      cursor: pointer;
-      font-size: 0.75rem;
+      min-width: 26px;
+      height: 26px;
+      padding: 0 5px;
+      border: 0;
+      background: transparent;
+      border-radius: 6px;
       color: var(--color-text-secondary);
-      border-radius: 2px;
+      cursor: pointer;
+      font: 600 12px/1 var(--font-body);
     }
-
-    .fc-mini-toolbar button:hover {
-      background: var(--color-border);
-      color: var(--color-text);
-    }
-
+    .fc-mini-toolbar button:hover { background: var(--color-bg); color: var(--color-text); }
     .fc-editable {
-      min-height: 36px;
-      padding: 0.4rem 0.5rem;
+      min-height: 62px;
+      padding: 9px 10px;
       border: 1px solid var(--color-border);
-      border-radius: 0 0 4px 4px;
-      font-size: 0.85rem;
+      border-radius: 0 0 9px 9px;
+      font: 500 13px/1.5 var(--font-body);
       background: var(--color-bg);
       color: var(--color-text);
       outline: none;
     }
-
+    .fc-editable:empty::before {
+      content: attr(data-placeholder);
+      color: var(--color-text-secondary);
+      opacity: 0.6;
+    }
     .fc-editable:focus {
       border-color: var(--color-link);
-      box-shadow: 0 0 0 2px rgba(50, 130, 184, 0.15);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-link) 16%, transparent);
     }
-
-    .flip-card-row .remove-row {
-      padding: 0.4rem;
-      border: none;
-      background: none;
+    .fc-imgtoggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      padding: 6px 10px;
+      border: 1px dashed var(--color-border);
+      border-radius: 9px;
+      background: transparent;
+      color: var(--color-text-secondary);
       cursor: pointer;
-      color: #ef4444;
-      font-size: 1.1rem;
-      line-height: 1;
+      font: 500 12px/1 var(--font-body);
     }
-
-    .flip-card-row .remove-row:hover {
-      background: rgba(239,68,68,0.1);
-      border-radius: 4px;
+    .fc-imgtoggle svg { width: 13px; height: 13px; }
+    .fc-imgtoggle:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); color: var(--color-text); }
+    .fc-imgwrap { display: none; gap: 8px; margin-top: 8px; }
+    .fc-imgwrap.open { display: grid; grid-template-columns: 1fr 1fr; }
+    .fc-imgwrap input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--color-border);
+      border-radius: 9px;
+      background: var(--color-bg);
+      color: var(--color-text);
+      font: 500 12.5px/1 var(--font-body);
+    }
+    .fc-imgwrap input:focus {
+      outline: none;
+      border-color: var(--color-link);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-link) 16%, transparent);
+    }
+    #flipCardAddRow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      width: 100%;
+      margin: 4px 0 2px;
+      padding: 11px;
+      border: 1px dashed var(--color-border);
+      border-radius: 12px;
+      background: transparent;
+      color: var(--color-link);
+      cursor: pointer;
+      font: 600 13px/1 var(--font-body);
+    }
+    #flipCardAddRow svg { width: 15px; height: 15px; }
+    #flipCardAddRow:hover {
+      background: color-mix(in srgb, var(--color-link) 7%, transparent);
+      border-color: var(--color-link);
+    }
+    @media (max-width: 560px) {
+      .fc-pair, .fc-imgwrap.open { grid-template-columns: 1fr; }
     }
 
     /* Content Box */
@@ -1799,6 +2175,10 @@
     .shape-divider--slow .shape-divider-inner { animation-duration: 14s; }
     .shape-divider--fast .shape-divider-inner { animation-duration: 4s; }
 
+    /* Static (no motion) — the default */
+    .shape-divider--static .shape-divider-inner { animation: none; width: 100%; }
+    .shape-divider--static .shape-divider-inner svg:nth-child(2) { display: none; }
+
     /* Height variants */
     .shape-divider--sm { max-height: 40px; }
     .shape-divider--md { max-height: 70px; }
@@ -1825,6 +2205,77 @@
       .shape-divider--lg { max-height: 60px; }
       .shape-divider--md { max-height: 45px; }
     }
+
+    /* ===== Shape / section divider dialog ===== */
+    .sd-preview {
+      border: 1px solid var(--color-border);
+      border-radius: 12px;
+      background: var(--color-code-bg);
+      overflow: hidden;
+      margin-bottom: 18px;
+      min-height: 88px;
+      display: flex;
+      align-items: center;
+    }
+    .sd-preview .shape-divider { margin: 0; }
+
+    .sd-shapes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .sd-shape-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 7px;
+      padding: 12px 8px 9px;
+      border: 1px solid var(--color-border); border-radius: 12px;
+      background: var(--color-bg); color: var(--color-text-secondary);
+      cursor: pointer; font: 600 11.5px/1 var(--font-body);
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .sd-shape-btn svg { width: 100%; height: 26px; display: block; }
+    .sd-shape-btn:hover { background: color-mix(in srgb, var(--color-text) 5%, transparent); }
+    .sd-shape-btn.active {
+      border-color: var(--color-link);
+      background: color-mix(in srgb, var(--color-link) 10%, transparent);
+      color: var(--color-link);
+    }
+    .sd-shape-btn.active svg path { fill: var(--color-link); }
+    .sd-shape-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-link) 20%, transparent); }
+
+    .sd-swatches { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .sd-swatch {
+      width: 26px; height: 26px; flex: none; padding: 0;
+      border: 1px solid color-mix(in srgb, var(--color-text) 18%, transparent);
+      border-radius: 8px; cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.12s;
+    }
+    .sd-swatch:hover { transform: scale(1.1); }
+    .sd-swatch.active { box-shadow: 0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-link); }
+    .sd-swatch-custom {
+      position: relative; width: 26px; height: 26px; flex: none;
+      border: 1px dashed color-mix(in srgb, var(--color-text) 26%, transparent);
+      border-radius: 8px; overflow: hidden; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      color: var(--color-text-secondary);
+    }
+    .sd-swatch-custom svg { width: 13px; height: 13px; }
+    .sd-swatch-custom input[type="color"] {
+      position: absolute; inset: -4px; width: calc(100% + 8px); height: calc(100% + 8px);
+      border: 0; padding: 0; cursor: pointer; background: transparent; opacity: 0;
+    }
+
+    .sd-seg {
+      display: flex; padding: 2px; gap: 2px;
+      background: color-mix(in srgb, var(--color-text) 8%, transparent);
+      border-radius: 10px;
+    }
+    .sd-seg button {
+      flex: 1; padding: 7px 6px; border: 0; border-radius: 8px;
+      background: transparent; color: var(--color-text-secondary); cursor: pointer;
+      font: 600 12.5px/1 var(--font-body); letter-spacing: -0.01em;
+      transition: color 0.12s;
+    }
+    .sd-seg button.active {
+      background: var(--color-bg); color: var(--color-text);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+    }
+    .sd-seg button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--color-link); }
 
     /* Accordion */
     .accordion {
@@ -2701,9 +3152,18 @@
   <div id="ariaStatus" aria-live="polite" aria-atomic="true" class="anim-heading-sr"></div>
 
   <div class="top-actions">
-    <button class="edit-toggle publish-btn" id="publishToggle" aria-label="Publish for learners">Publish</button>
-    <button class="edit-toggle" id="exportToggle" aria-label="Export to CMS">Export</button>
-    <button class="edit-toggle" id="editToggle" aria-label="Toggle edit mode">Edit</button>
+    <button class="edit-toggle" id="editToggle" aria-label="Edit this document">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2 2 0 0 0 0-3l-1-1a2 2 0 0 0-3 0L4 16z"/><path d="M14 6l4 4"/></svg>
+      <span class="ta-label">Edit</span>
+    </button>
+    <button class="edit-toggle" id="exportToggle" aria-label="Export to a CMS">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M15 3h6v6"/><path d="M11 13 21 3"/></svg>
+      <span class="ta-label">Export</span>
+    </button>
+    <button class="edit-toggle publish-btn" id="publishToggle" aria-label="Publish for learners">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V4"/><path d="M8.5 7.5 12 4l3.5 3.5"/><path d="M5 14a4 4 0 0 0 4 4h6.5a3.5 3.5 0 0 0 .5-6.96A5.5 5.5 0 0 0 5.5 10 4 4 0 0 0 5 14z"/></svg>
+      <span class="ta-label">Publish</span>
+    </button>
   </div>
 
   <div class="edit-toolbar" id="editToolbar" role="toolbar" aria-label="Formatting toolbar">
@@ -2848,6 +3308,10 @@
 
     <span class="rail-sep"></span>
 
+    <button type="button" class="rail-ctl" id="railSplitBtn" title="Split view: compare with original pages" aria-label="Split view" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg></button>
+
+    <span class="rail-sep"></span>
+
     <span class="save-status" id="saveStatus" aria-live="polite"></span>
 
     <!-- Overflow -->
@@ -2873,7 +3337,7 @@
   <!-- Formula Input Dialog -->
   <div class="modal-overlay" id="formulaModal" role="dialog" aria-modal="true" aria-labelledby="formulaModalTitle">
     <div class="modal-dialog">
-      <h3 id="formulaModalTitle">Insert LaTeX Formula</h3>
+      <h3 id="formulaModalTitle">Insert a formula</h3>
       <div class="formula-tabs">
         <button type="button" class="formula-tab active" data-tab="custom">Custom</button>
         <button type="button" class="formula-tab" data-tab="templates">Templates</button>
@@ -2921,7 +3385,7 @@
   <!-- Symbol Picker Dialog -->
   <div class="modal-overlay" id="symbolModal" role="dialog" aria-modal="true" aria-labelledby="symbolModalTitle">
     <div class="modal-dialog">
-      <h3 id="symbolModalTitle">Insert Symbol</h3>
+      <h3 id="symbolModalTitle">Insert a symbol</h3>
       <div class="symbol-grid" id="symbolGrid"></div>
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="symbolCancel">Close</button>
@@ -2989,16 +3453,50 @@
     </div>
   </div>
 
+  <!-- Image Insert Modal -->
+  <div class="modal-overlay" id="imageInsertModal" role="dialog" aria-modal="true" aria-labelledby="imageInsertTitle">
+    <div class="modal-dialog" style="max-width:480px">
+      <h3 id="imageInsertTitle">Insert image</h3>
+      <div class="media-input-section">
+        <label class="media-input-label" for="imageUrlInput">Paste a link</label>
+        <input type="url" id="imageUrlInput" class="media-url-field" placeholder="https://&hellip; image URL" />
+      </div>
+      <div class="media-input-divider"><span>or</span></div>
+      <div class="media-input-section">
+        <label class="media-input-label">Upload from your device</label>
+        <div class="file-upload-area">
+          <input type="file" id="imageFileInput" class="file-input-hidden" accept=".png,.jpg,.jpeg" />
+          <label for="imageFileInput" class="file-upload-btn" id="imageFileLabel">Choose an image&hellip;</label>
+        </div>
+      </div>
+      <div class="img-dlg-preview" id="imagePreview"><img id="imagePreviewImg" alt="" /></div>
+      <div class="media-input-status" id="imageInsertStatus"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="imageInsertCancel">Cancel</button>
+        <button type="button" class="btn-save" id="imageInsertSubmit">Insert</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Flip Card Creator Modal -->
   <div class="modal-overlay" id="flipCardModal" role="dialog" aria-modal="true" aria-labelledby="flipCardModalTitle">
-    <div class="modal-dialog" style="max-width:560px">
-      <h3 id="flipCardModalTitle">Create Flip Cards</h3>
-      <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Add one or more cards with a front (question/term) and back (answer/definition).</p>
-      <div id="flipCardRows"></div>
-      <button type="button" id="flipCardAddRow" style="margin:0.75rem 0;padding:0.4rem 0.8rem;border:1px dashed var(--color-border);border-radius:6px;background:none;color:var(--color-link);cursor:pointer;font-size:0.85rem;width:100%;">+ Add another card</button>
-      <div class="modal-actions">
-        <button type="button" class="btn-cancel" id="flipCardCancel">Cancel</button>
-        <button type="button" class="btn-save" id="flipCardInsert">Insert Cards</button>
+    <div class="modal-dialog cb-dialog" style="max-width:600px;padding:0;border-radius:18px;overflow:hidden;">
+      <div class="cb-head">
+        <h3 id="flipCardModalTitle">Flip cards</h3>
+        <p>Each card shows a term or question on the front; tapping it reveals the answer. Add as many as you need.</p>
+      </div>
+      <div class="cb-scroll">
+        <div id="flipCardRows"></div>
+        <button type="button" id="flipCardAddRow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          Add a card
+        </button>
+      </div>
+      <div class="cb-foot">
+        <span class="cb-foot-hint">Learners tap a card to flip it.</span>
+        <span class="cb-foot-spacer"></span>
+        <button type="button" class="cb-btn cb-btn-quiet" id="flipCardCancel">Cancel</button>
+        <button type="button" class="cb-btn cb-btn-primary" id="flipCardInsert">Insert cards</button>
       </div>
     </div>
   </div>
@@ -3021,10 +3519,25 @@
   <!-- Two-field Glossary Modal (replaces the pipe-delimited native prompt()) -->
   <div class="modal-overlay" id="glossaryModal" role="dialog" aria-modal="true" aria-labelledby="glossaryModalTitle">
     <div class="modal-dialog" style="max-width:540px">
-      <h3 id="glossaryModalTitle">Glossary Entries</h3>
-      <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Add multiple glossary terms and definitions for this section. Terms will be highlighted in the document.</p>
+      <h3 id="glossaryModalTitle">Glossary</h3>
+      <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Terms you add here are highlighted through the chapter; learners tap one to see its definition.</p>
       <div id="glossaryRows" style="max-height:300px;overflow-y:auto;"></div>
-      <button type="button" id="glossaryAddRow" style="margin:0.75rem 0;padding:0.4rem 0.8rem;border:1px dashed var(--color-border);border-radius:6px;background:none;color:var(--color-link);cursor:pointer;font-size:0.85rem;width:100%;">+ Add term</button>
+      <button type="button" id="glossaryAddRow"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add term</button>
+
+      <!-- Bulk CSV import -->
+      <div class="gloss-csv-bar">
+        <button type="button" id="glossaryCsvImport" class="gloss-csv-btn" title="Upload a CSV file of glossary terms">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+          Bulk upload CSV
+        </button>
+        <button type="button" id="glossaryCsvTemplate" class="gloss-csv-link" title="Download a sample CSV template">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v12m0 0 4-4m-4 4-4-4M4 20h16"/></svg>
+          Download template
+        </button>
+        <input type="file" id="glossaryCsvFile" accept=".csv,text/csv" style="display:none" />
+      </div>
+      <div id="glossaryCsvSummary" class="gloss-csv-summary" role="status" aria-live="polite" hidden></div>
+
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="glossaryModalCancel">Cancel</button>
         <button type="button" class="btn-save" id="glossaryModalSubmit">Save All</button>
@@ -3171,39 +3684,58 @@
 
   <!-- Shape Divider Modal -->
   <div class="modal-overlay" id="shapeDividerModal" role="dialog" aria-modal="true" aria-labelledby="shapeDividerModalTitle">
-    <div class="modal-dialog" style="max-width:460px">
-      <h3 id="shapeDividerModalTitle">Insert Shape Divider</h3>
-      <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Add a decorative animated wave separator between sections.</p>
+    <div class="modal-dialog" style="max-width:440px">
+      <h3 id="shapeDividerModalTitle">Section divider</h3>
+      <p>A shaped band that marks a break between sections. Static by default; you can give it a gentle drift.</p>
+
+      <div class="sd-preview" id="sdPreview"></div>
 
       <div class="media-input-section">
-        <label class="media-input-label">Wave Shape</label>
-        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.5rem;">
-          <button type="button" class="btn-cancel sd-shape-btn active" data-shape="wave" style="flex:1;min-width:80px;padding:0.5rem;">Wave</button>
-          <button type="button" class="btn-cancel sd-shape-btn" data-shape="zigzag" style="flex:1;min-width:80px;padding:0.5rem;">Zigzag</button>
-          <button type="button" class="btn-cancel sd-shape-btn" data-shape="curve" style="flex:1;min-width:80px;padding:0.5rem;">Curve</button>
+        <label class="media-input-label">Shape</label>
+        <div class="sd-shapes">
+          <button type="button" class="sd-shape-btn active" data-shape="wave" aria-label="Wave">
+            <svg viewBox="0 0 60 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0,12 C10,20 20,4 30,12 C40,20 50,4 60,12 L60,20 L0,20 Z" fill="currentColor"/></svg>Wave
+          </button>
+          <button type="button" class="sd-shape-btn" data-shape="zigzag" aria-label="Zigzag">
+            <svg viewBox="0 0 60 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0,16 L10,6 L20,16 L30,6 L40,16 L50,6 L60,16 L60,20 L0,20 Z" fill="currentColor"/></svg>Zigzag
+          </button>
+          <button type="button" class="sd-shape-btn" data-shape="curve" aria-label="Curve">
+            <svg viewBox="0 0 60 20" preserveAspectRatio="none" aria-hidden="true"><path d="M0,16 Q30,0 60,16 L60,20 L0,20 Z" fill="currentColor"/></svg>Curve
+          </button>
         </div>
       </div>
 
       <div class="media-input-section">
-        <label class="media-input-label" for="sdColor">Fill Color</label>
-        <input type="color" id="sdColor" value="#3282b8" style="width:48px;height:36px;border:1px solid var(--color-border);border-radius:4px;padding:0;cursor:pointer;" />
+        <label class="media-input-label">Colour</label>
+        <div class="sd-swatches" id="sdSwatches">
+          <button type="button" class="sd-swatch" data-color="accent" style="background:var(--color-link)" aria-label="Match text accent" title="Match text accent"></button>
+          <button type="button" class="sd-swatch" data-color="#3282b8" style="background:#3282b8" aria-label="Blue"></button>
+          <button type="button" class="sd-swatch" data-color="#1d9a52" style="background:#1d9a52" aria-label="Green"></button>
+          <button type="button" class="sd-swatch" data-color="#b25000" style="background:#b25000" aria-label="Amber"></button>
+          <button type="button" class="sd-swatch" data-color="#8438a8" style="background:#8438a8" aria-label="Purple"></button>
+          <button type="button" class="sd-swatch" data-color="#c2185b" style="background:#c2185b" aria-label="Pink"></button>
+          <label class="sd-swatch-custom" title="Custom colour">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+            <input type="color" id="sdColor" value="#3282b8" />
+          </label>
+        </div>
       </div>
 
-      <div class="media-input-section" style="margin-top:0.75rem;">
+      <div class="media-input-section">
         <label class="media-input-label">Height</label>
-        <div style="display:flex;gap:0.4rem;">
-          <button type="button" class="btn-cancel sd-height-btn" data-height="sm" style="flex:1;padding:0.4rem;">Small</button>
-          <button type="button" class="btn-cancel sd-height-btn active" data-height="md" style="flex:1;padding:0.4rem;">Medium</button>
-          <button type="button" class="btn-cancel sd-height-btn" data-height="lg" style="flex:1;padding:0.4rem;">Large</button>
+        <div class="sd-seg" role="group" aria-label="Height">
+          <button type="button" class="sd-height-btn" data-height="sm">Small</button>
+          <button type="button" class="sd-height-btn active" data-height="md">Medium</button>
+          <button type="button" class="sd-height-btn" data-height="lg">Large</button>
         </div>
       </div>
 
-      <div class="media-input-section" style="margin-top:0.75rem;">
-        <label class="media-input-label">Animation Speed</label>
-        <div style="display:flex;gap:0.4rem;">
-          <button type="button" class="btn-cancel sd-speed-btn" data-speed="slow" style="flex:1;padding:0.4rem;">Slow</button>
-          <button type="button" class="btn-cancel sd-speed-btn active" data-speed="normal" style="flex:1;padding:0.4rem;">Normal</button>
-          <button type="button" class="btn-cancel sd-speed-btn" data-speed="fast" style="flex:1;padding:0.4rem;">Fast</button>
+      <div class="media-input-section">
+        <label class="media-input-label">Motion</label>
+        <div class="sd-seg" role="group" aria-label="Motion">
+          <button type="button" class="sd-speed-btn active" data-speed="static">Off</button>
+          <button type="button" class="sd-speed-btn" data-speed="slow">Gentle</button>
+          <button type="button" class="sd-speed-btn" data-speed="normal">Playful</button>
         </div>
       </div>
 
@@ -3220,7 +3752,7 @@
       <h3 id="accordionModalTitle">Insert Accordion</h3>
       <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Add collapsible panels. Each panel has a title and content that expands on click.</p>
       <div id="accordionRows" style="max-height:320px;overflow-y:auto;"></div>
-      <button type="button" id="accordionAddRow" style="margin:0.75rem 0;padding:0.4rem 0.8rem;border:1px dashed var(--color-border);border-radius:6px;background:none;color:var(--color-link);cursor:pointer;font-size:0.85rem;width:100%;">+ Add panel</button>
+      <button type="button" id="accordionAddRow"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add panel</button>
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="accordionCancel">Cancel</button>
         <button type="button" class="btn-save" id="accordionInsert">Insert</button>
@@ -3242,7 +3774,7 @@
       <div class="media-input-section" style="margin-top:0.75rem;">
         <label class="media-input-label">Animated words (will rotate in sequence)</label>
         <div id="animWordRows" style="max-height:200px;overflow-y:auto;"></div>
-        <button type="button" id="animAddWord" style="margin:0.5rem 0;padding:0.4rem 0.8rem;border:1px dashed var(--color-border);border-radius:6px;background:none;color:var(--color-link);cursor:pointer;font-size:0.85rem;width:100%;">+ Add word</button>
+        <button type="button" id="animAddWord"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add word</button>
       </div>
 
       <div class="modal-actions">
@@ -3255,10 +3787,10 @@
   <!-- Horizontal Tabs Modal -->
   <div class="modal-overlay" id="htabsModal" role="dialog" aria-modal="true" aria-labelledby="htabsModalTitle">
     <div class="modal-dialog" style="max-width:600px">
-      <h3 id="htabsModalTitle">Insert Horizontal Tabs</h3>
-      <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Add tabs displayed in a row across the top with content panels below.</p>
+      <h3 id="htabsModalTitle">Horizontal tabs</h3>
+      <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Labels sit in a row across the top; the matching panel shows below when a learner picks one.</p>
       <div id="htabsRows" style="max-height:320px;overflow-y:auto;"></div>
-      <button type="button" id="htabsAddRow" style="margin:0.75rem 0;padding:0.4rem 0.8rem;border:1px dashed var(--color-border);border-radius:6px;background:none;color:var(--color-link);cursor:pointer;font-size:0.85rem;width:100%;">+ Add another tab</button>
+      <button type="button" id="htabsAddRow"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add a tab</button>
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="htabsCancel">Cancel</button>
         <button type="button" class="btn-save" id="htabsInsert">Insert</button>
@@ -3269,10 +3801,10 @@
   <!-- Vertical Tabs Modal -->
   <div class="modal-overlay" id="vtabsModal" role="dialog" aria-modal="true" aria-labelledby="vtabsModalTitle">
     <div class="modal-dialog" style="max-width:600px">
-      <h3 id="vtabsModalTitle">Insert Vertical Tabs</h3>
-      <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Add tabs with labels and content. Each tab shows its content panel when clicked.</p>
+      <h3 id="vtabsModalTitle">Vertical tabs</h3>
+      <p style="font-size:0.85rem;color:var(--color-text-secondary);margin-bottom:1rem;">Labels stack down the side; the matching panel shows alongside when a learner picks one.</p>
       <div id="vtabsRows" style="max-height:320px;overflow-y:auto;"></div>
-      <button type="button" id="vtabsAddRow" style="margin:0.75rem 0;padding:0.4rem 0.8rem;border:1px dashed var(--color-border);border-radius:6px;background:none;color:var(--color-link);cursor:pointer;font-size:0.85rem;width:100%;">+ Add another tab</button>
+      <button type="button" id="vtabsAddRow"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg> Add a tab</button>
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="vtabsCancel">Cancel</button>
         <button type="button" class="btn-save" id="vtabsInsert">Insert</button>
@@ -3282,44 +3814,62 @@
 
   <!-- Publish for Learners Modal -->
   <div class="modal-overlay" id="publishModal" role="dialog" aria-modal="true" aria-labelledby="publishModalTitle">
-    <div class="modal-dialog" style="max-width:440px">
-      <!-- Idle / Confirm state -->
+    <div class="modal-dialog" style="max-width:460px;border-radius:18px;">
+
+      <!-- Idle / confirm -->
       <div id="publishStateIdle">
-        <h3 id="publishModalTitle">Publish for Learners</h3>
-        <p style="margin:1rem 0;color:var(--color-text-light);">This will publish the document and all media to S3. Learners will be able to access it via a public URL.</p>
-        <div class="modal-actions">
-          <button type="button" class="btn-cancel" id="publishCancel">Cancel</button>
-          <button type="button" class="btn-save" id="publishConfirm" style="background:#059669;border-color:#059669;">Publish</button>
+        <div class="pub-icon pub-icon--brand" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V4"/><path d="M8.5 7.5 12 4l3.5 3.5"/><path d="M5 14a4 4 0 0 0 4 4h6.5a3.5 3.5 0 0 0 .5-6.96A5.5 5.5 0 0 0 5.5 10 4 4 0 0 0 5 14z"/></svg>
+        </div>
+        <h3 class="pub-h" id="publishModalTitle">Publish for learners</h3>
+        <p class="pub-sub">Uploads this chapter and its media, and gives you a public link learners can open on any device. You can re&#8209;publish any time to push updates.</p>
+        <div class="pub-actions">
+          <button type="button" class="pub-btn pub-btn--quiet" id="publishCancel">Cancel</button>
+          <button type="button" class="pub-btn pub-btn--green" id="publishConfirm">Publish now</button>
         </div>
       </div>
-      <!-- Publishing state -->
+
+      <!-- Publishing -->
       <div id="publishStateProgress" style="display:none;">
-        <h3>Publishing...</h3>
-        <div style="display:flex;align-items:center;gap:0.75rem;margin:1.5rem 0;">
-          <svg class="publish-spinner" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"/><path d="M12 2a10 10 0 019.75 7.75"/></svg>
-          <span id="publishProgressText" style="color:var(--color-text-light);">Uploading files...</span>
-        </div>
+        <div class="pub-icon pub-icon--brand" aria-hidden="true"><span class="pub-ring"></span></div>
+        <h3 class="pub-h">Publishing&hellip;</h3>
+        <p class="pub-sub" id="publishProgressText">Uploading files&hellip;</p>
       </div>
-      <!-- Success state -->
+
+      <!-- Success -->
       <div id="publishStateSuccess" style="display:none;">
-        <h3 style="color:#059669;">Published Successfully</h3>
-        <p style="margin:0.75rem 0 0.5rem;font-size:0.85rem;color:var(--color-text-light);">Learner URL:</p>
-        <div style="display:flex;gap:0.5rem;align-items:center;">
-          <input type="text" id="publishUrlField" class="media-url-field" readonly style="flex:1;font-size:0.8rem;" />
-          <button type="button" class="btn-save" id="publishCopyUrl" style="background:#059669;border-color:#059669;white-space:nowrap;">Copy URL</button>
+        <div class="pub-icon pub-icon--ok" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.1 14.3-3.8-3.8 1.5-1.5 2.3 2.3 5-5.3 1.6 1.5z"/></svg>
         </div>
-        <p id="publishStats" style="margin:0.75rem 0 0;font-size:0.8rem;color:var(--color-text-light);"></p>
-        <div class="modal-actions" style="margin-top:1rem;">
-          <button type="button" class="btn-cancel" id="publishClose">Close</button>
+        <h3 class="pub-h">Published</h3>
+        <p class="pub-sub">Learners can open this at the link below.</p>
+        <div class="pub-urlrow">
+          <input type="text" id="publishUrlField" class="pub-url" readonly aria-label="Learner URL" />
+          <button type="button" class="pub-btn pub-btn--quiet" id="publishCopyUrl">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M6 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1"/></svg>
+            <span class="pcu-label">Copy</span>
+          </button>
+        </div>
+        <p class="pub-stats" id="publishStats"></p>
+        <div class="pub-actions">
+          <button type="button" class="pub-btn pub-btn--quiet" id="publishClose">Done</button>
+          <a class="pub-btn pub-btn--green" id="publishOpen" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6"/><path d="M20 4l-8.5 8.5"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></svg>
+            Open
+          </a>
         </div>
       </div>
-      <!-- Error state -->
+
+      <!-- Error -->
       <div id="publishStateError" style="display:none;">
-        <h3 style="color:#ef4444;">Publish Failed</h3>
-        <p id="publishErrorMsg" style="margin:1rem 0;color:#ef4444;"></p>
-        <div class="modal-actions">
-          <button type="button" class="btn-cancel" id="publishErrorClose">Close</button>
-          <button type="button" class="btn-save" id="publishRetry" style="background:#059669;border-color:#059669;">Retry</button>
+        <div class="pub-icon pub-icon--err" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21 20H3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r=".7" fill="currentColor"/></svg>
+        </div>
+        <h3 class="pub-h">Publish failed</h3>
+        <p class="pub-sub" id="publishErrorMsg" style="color:var(--color-text);"></p>
+        <div class="pub-actions">
+          <button type="button" class="pub-btn pub-btn--quiet" id="publishErrorClose">Close</button>
+          <button type="button" class="pub-btn pub-btn--green" id="publishRetry">Retry</button>
         </div>
       </div>
     </div>
@@ -3461,8 +4011,8 @@
         docBody.setAttribute('contenteditable', 'true');
         docBody.focus();
         editToolbar.classList.add('visible');
-        editToggle.textContent = 'Editing...';
-        editToggle.style.borderColor = 'var(--color-link)';
+        var _el = editToggle.querySelector('.ta-label'); if (_el) _el.textContent = 'Editing…';
+        editToggle.classList.add('is-active');
         saveStatus.textContent = '';
         // Push content down to avoid toolbar overlap. requestAnimationFrame
         // ensures the toolbar has finished laying out (and wrapping, if the
@@ -3477,8 +4027,8 @@
         }
         docBody.removeAttribute('contenteditable');
         editToolbar.classList.remove('visible');
-        editToggle.textContent = 'Edit';
-        editToggle.style.borderColor = '';
+        var _el2 = editToggle.querySelector('.ta-label'); if (_el2) _el2.textContent = 'Edit';
+        editToggle.classList.remove('is-active');
         document.querySelector('.document-wrapper').style.marginTop = '';
       }
 
@@ -3527,6 +4077,21 @@
         return clone.textContent.trim();
       }
 
+      // Builds a clean, URL-safe slug from a heading's visible text.
+      function slugifyHeading(text) {
+        return String(text).toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-+|-+$/g, '');
+      }
+
+      // Escapes text so it can be safely placed inside TOC anchor markup.
+      function escapeHtml(s) {
+        return String(s)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;');
+      }
+
       function refreshTOC() {
         var tocList = document.querySelector('.toc-list');
         if (!tocList) return;
@@ -3534,6 +4099,9 @@
         // Rebuild TOC from current headings in the document body
         var headings = docBody.querySelectorAll('h1, h2, h3');
         var items = [];
+        // Track slugs used this pass so duplicate headings get unique,
+        // stable ids (e.g. "intro", "intro-2") instead of colliding.
+        var usedSlugs = {};
 
         headings.forEach(function(h) {
           var level = parseInt(h.tagName.charAt(1), 10);
@@ -3542,15 +4110,25 @@
           var text = getHeadingText(h);
           if (!text) return;
 
-          // Ensure heading has an ID for linking
-          if (!h.id) {
-            h.id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+          // Always regenerate the id from the CURRENT clean text. Reusing a
+          // pre-existing id let earlier truncated/duplicated slugs (from the
+          // media-bar data-section) accumulate across edits, corrupting both
+          // the heading id and the TOC href. Regenerating every pass makes
+          // any prior corruption self-heal.
+          var base = slugifyHeading(text) || 'section';
+          var slug = base;
+          var n = 2;
+          while (usedSlugs[slug]) {
+            slug = base + '-' + n;
+            n++;
           }
+          usedSlugs[slug] = true;
+          h.id = slug;
 
           var indent = (level - 1) * 12;
           items.push(
             '<li class="toc-item toc-level-' + level + '" style="padding-left:' + indent + 'px">' +
-            '<a href="#' + h.id + '">' + text + '</a></li>'
+            '<a href="#' + slug + '">' + escapeHtml(text) + '</a></li>'
           );
         });
 
@@ -3575,6 +4153,35 @@
         if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
           e.preventDefault();
           customRedo();
+        }
+      });
+
+      // Live-update the TOC / content bar as the editor types in a section
+      // heading. Debounced so rapid keystrokes trigger at most one rebuild.
+      // Only fires when the edit is inside (or is) an h1/h2/h3, so editing
+      // ordinary paragraphs never pays the cost of rebuilding the sidebar.
+      var tocRefreshTimer = null;
+      function scheduleTocRefresh() {
+        if (tocRefreshTimer) clearTimeout(tocRefreshTimer);
+        tocRefreshTimer = setTimeout(function() {
+          tocRefreshTimer = null;
+          try { refreshTOC(); } catch (e) {}
+        }, 250);
+      }
+      docBody.addEventListener('input', function(e) {
+        if (!isEditing) return;
+        var node = e.target;
+        // e.target is the contenteditable root; use the current selection
+        // to find whether the caret sits within a heading.
+        var el = null;
+        var sel = window.getSelection();
+        if (sel && sel.anchorNode) {
+          el = sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement;
+        } else if (node && node.nodeType === 1) {
+          el = node;
+        }
+        if (el && el.closest && el.closest('h1, h2, h3')) {
+          scheduleTocRefresh();
         }
       });
 
@@ -3655,13 +4262,13 @@
 
           function addRow(term, def) {
             var row = document.createElement('div');
-            row.style.cssText = 'display:flex;gap:0.5rem;align-items:start;margin-bottom:0.5rem;padding:0.5rem;border:1px solid var(--color-border);border-radius:6px;background:var(--color-code-bg);';
+            row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;padding:10px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-bg);';
             row.innerHTML =
               '<div style="flex:1;display:flex;flex-direction:column;gap:0.3rem;">' +
                 '<input type="text" class="gloss-term media-url-field" placeholder="Term (e.g. Photosynthesis)" value="' + (term || '').replace(/"/g, '&quot;') + '" style="font-size:0.85rem;" />' +
                 '<textarea class="gloss-def media-url-field" rows="2" placeholder="Definition..." style="font-size:0.85rem;resize:vertical;">' + (def || '').replace(/</g, '&lt;') + '</textarea>' +
               '</div>' +
-              '<button type="button" class="gloss-remove" title="Remove" style="padding:0.3rem;border:none;background:none;cursor:pointer;color:#ef4444;font-size:1.1rem;line-height:1;">&times;</button>';
+              '<button type="button" class="gloss-remove ah-remove" title="Remove term" aria-label="Remove term"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-12"/></svg></button>';
             row.querySelector('.gloss-remove').addEventListener('click', function() {
               if (rowsContainer.children.length > 1) row.remove();
             });
@@ -3693,12 +4300,172 @@
             row.querySelector('.gloss-term').focus();
           };
 
+          // --- Bulk CSV import ---------------------------------------------
+          var csvBtn = document.getElementById('glossaryCsvImport');
+          var csvFile = document.getElementById('glossaryCsvFile');
+          var csvTemplateBtn = document.getElementById('glossaryCsvTemplate');
+          var csvSummary = document.getElementById('glossaryCsvSummary');
+
+          // Parse CSV text into rows of fields. Handles quoted fields,
+          // embedded commas/newlines, and doubled "" escapes. Vanilla, no deps.
+          function parseCsv(text) {
+            var rows = [], field = '', row = [], inQuotes = false;
+            text = text.replace(/^\uFEFF/, ''); // strip BOM
+            for (var i = 0; i < text.length; i++) {
+              var c = text[i];
+              if (inQuotes) {
+                if (c === '"') {
+                  if (text[i + 1] === '"') { field += '"'; i++; }
+                  else { inQuotes = false; }
+                } else { field += c; }
+              } else if (c === '"') {
+                inQuotes = true;
+              } else if (c === ',') {
+                row.push(field); field = '';
+              } else if (c === '\n' || c === '\r') {
+                if (c === '\r' && text[i + 1] === '\n') i++;
+                row.push(field); field = '';
+                rows.push(row); row = [];
+              } else {
+                field += c;
+              }
+            }
+            if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+            return rows;
+          }
+
+          // Word-boundary, case-insensitive existence test against the chapter
+          // text — mirrors the server highlighter's \b(term)\b + IGNORECASE.
+          function termExistsInDocument(term, docText) {
+            var esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            try {
+              return new RegExp('\\b' + esc + '\\b', 'i').test(docText);
+            } catch (e) {
+              return docText.toLowerCase().indexOf(term.toLowerCase()) !== -1;
+            }
+          }
+
+          function esc(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+          }
+
+          function handleCsv(text) {
+            var parsed = parseCsv(text);
+            // Read the chapter body text once (exclude the hidden glossary data node).
+            var docBody = document.querySelector('.document-body');
+            var docText = docBody ? docBody.textContent : '';
+
+            // Detect + skip a header row (term,definition / word,meaning ...).
+            if (parsed.length && parsed[0].length >= 2) {
+              var h0 = (parsed[0][0] || '').trim().toLowerCase();
+              var h1 = (parsed[0][1] || '').trim().toLowerCase();
+              if ((h0 === 'term' || h0 === 'word' || h0 === 'keyword') &&
+                  (h1 === 'definition' || h1 === 'meaning' || h1 === 'description')) {
+                parsed = parsed.slice(1);
+              }
+            }
+
+            // Collect terms already present as rows to avoid duplicates.
+            var existing = {};
+            rowsContainer.querySelectorAll('.gloss-term').forEach(function(inp) {
+              var t = inp.value.trim().toLowerCase();
+              if (t) existing[t] = true;
+            });
+
+            var added = 0, notFound = [], invalid = [], duplicates = [];
+
+            parsed.forEach(function(cols) {
+              if (!cols || cols.length === 0) return;
+              var term = (cols[0] || '').trim();
+              var def = (cols[1] || '').trim();
+              if (!term && !def) return; // blank line
+              // Mirror server validation: definition required, term length >= 2.
+              if (term.length < 2 || !def) { invalid.push(term || '(empty)'); return; }
+              if (existing[term.toLowerCase()]) { duplicates.push(term); return; }
+              // Only accept terms that actually appear in the chapter text.
+              if (!termExistsInDocument(term, docText)) { notFound.push(term); return; }
+
+              // Clear the seeded empty row on first successful add.
+              if (added === 0) {
+                var firstTerm = rowsContainer.querySelector('.gloss-term');
+                if (firstTerm && !firstTerm.value.trim()) {
+                  var seededRow = firstTerm.parentElement.parentElement; // input -> col div -> row div
+                  if (seededRow && seededRow.parentElement === rowsContainer) {
+                    seededRow.remove();
+                  }
+                }
+              }
+              addRow(term, def);
+              existing[term.toLowerCase()] = true;
+              added++;
+            });
+
+            // Build the summary / flag report for the editor.
+            var html = '';
+            if (added > 0) {
+              html += '<span class="csv-ok">\u2713 Added ' + added + ' term' + (added === 1 ? '' : 's') + ' from CSV.</span>';
+            } else {
+              html += '<span class="csv-warn">No terms were added.</span>';
+            }
+            if (notFound.length) {
+              html += '<div style="margin-top:8px;"><span class="csv-warn">\u26A0 Skipped ' + notFound.length +
+                ' term' + (notFound.length === 1 ? '' : 's') + ' not found in this chapter:</span><ul>' +
+                notFound.map(function(t) { return '<li><code>' + esc(t) + '</code></li>'; }).join('') + '</ul></div>';
+            }
+            if (duplicates.length) {
+              html += '<div style="margin-top:6px;">Skipped ' + duplicates.length + ' duplicate' +
+                (duplicates.length === 1 ? '' : 's') + ': ' +
+                duplicates.map(function(t) { return '<code>' + esc(t) + '</code>'; }).join(', ') + '</div>';
+            }
+            if (invalid.length) {
+              html += '<div style="margin-top:6px;">Skipped ' + invalid.length + ' invalid row' +
+                (invalid.length === 1 ? '' : 's') + ' (term needs 2+ characters and a definition).</div>';
+            }
+            csvSummary.innerHTML = html;
+            csvSummary.hidden = false;
+          }
+
+          csvBtn.onclick = function() { csvFile.value = ''; csvFile.click(); };
+          csvFile.onchange = function() {
+            var f = csvFile.files && csvFile.files[0];
+            if (!f) return;
+            var reader = new FileReader();
+            reader.onload = function() {
+              try { handleCsv(String(reader.result || '')); }
+              catch (e) {
+                csvSummary.innerHTML = '<span class="csv-warn">Could not read that CSV file.</span>';
+                csvSummary.hidden = false;
+              }
+            };
+            reader.readAsText(f);
+          };
+
+          csvTemplateBtn.onclick = function() {
+            var sample =
+              'term,definition\n' +
+              '"Photosynthesis","The process by which green plants use sunlight to make food from carbon dioxide and water."\n' +
+              '"Chlorophyll","The green pigment in plants that absorbs light for photosynthesis."\n' +
+              '"Respiration","The process of releasing energy from food in living cells."\n';
+            var blob = new Blob([sample], { type: 'text/csv;charset=utf-8;' });
+            var url = URL.createObjectURL(blob);
+            var a = document.createElement('a');
+            a.href = url; a.download = 'glossary-template.csv';
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+          };
+
           function cleanup() {
             modal.classList.remove('visible');
             submitBtn.removeEventListener('click', onSubmit);
             cancelBtn.removeEventListener('click', onCancel);
             modal.removeEventListener('click', onBackdrop);
             addBtn.onclick = null;
+            csvBtn.onclick = null;
+            csvFile.onchange = null;
+            csvTemplateBtn.onclick = null;
+            csvSummary.hidden = true;
+            csvSummary.innerHTML = '';
           }
           function onSubmit() {
             var terms = rowsContainer.querySelectorAll('.gloss-term');
@@ -3896,18 +4663,90 @@
         docBody.focus();
       });
 
-      // --- Insert Image ---
+      // --- Insert Image (link or upload) ---
       document.getElementById('btnInsertImage').addEventListener('click', function() {
         var savedRange = saveDocBodySelection();
-        showPromptModal({
-          title: 'Insert Image',
-          label: 'Image URL',
-          placeholder: 'https://...'
-        }).then(function(url) {
-          if (!url) return;
-          restoreDocBodySelection(savedRange);
-          document.execCommand('insertImage', false, url);
-        });
+        var modal = document.getElementById('imageInsertModal');
+        var urlInput = document.getElementById('imageUrlInput');
+        var fileInput = document.getElementById('imageFileInput');
+        var fileLabel = document.getElementById('imageFileLabel');
+        var preview = document.getElementById('imagePreview');
+        var previewImg = document.getElementById('imagePreviewImg');
+        var statusEl = document.getElementById('imageInsertStatus');
+        var submitBtn = document.getElementById('imageInsertSubmit');
+        var cancelBtn = document.getElementById('imageInsertCancel');
+        var pendingFile = null;
+
+        urlInput.value = '';
+        fileInput.value = '';
+        fileLabel.textContent = 'Choose an image…';
+        preview.classList.remove('show');
+        previewImg.removeAttribute('src');
+        statusEl.textContent = '';
+        statusEl.style.color = '';
+        submitBtn.textContent = 'Insert';
+        submitBtn.disabled = false;
+        modal.classList.add('visible');
+        setTimeout(function() { urlInput.focus(); }, 30);
+
+        function cleanup() {
+          submitBtn.onclick = null; cancelBtn.onclick = null;
+          modal.onclick = null; fileInput.onchange = null; urlInput.oninput = null;
+        }
+        function close() { modal.classList.remove('visible'); cleanup(); }
+
+        fileInput.onchange = function() {
+          var f = fileInput.files[0];
+          if (!f) return;
+          pendingFile = f;
+          urlInput.value = '';
+          fileLabel.textContent = f.name;
+          var reader = new FileReader();
+          reader.onload = function(e) { previewImg.src = e.target.result; preview.classList.add('show'); };
+          reader.readAsDataURL(f);
+        };
+        urlInput.oninput = function() {
+          var v = urlInput.value.trim();
+          if (v) {
+            pendingFile = null; fileInput.value = ''; fileLabel.textContent = 'Choose an image…';
+            previewImg.onerror = function() { preview.classList.remove('show'); };
+            previewImg.src = v; preview.classList.add('show');
+          } else {
+            preview.classList.remove('show');
+          }
+        };
+
+        cancelBtn.onclick = close;
+        modal.onclick = function(e) { if (e.target === modal) close(); };
+
+        submitBtn.onclick = function() {
+          var url = urlInput.value.trim();
+          if (pendingFile) {
+            submitBtn.textContent = 'Uploading…';
+            submitBtn.disabled = true;
+            statusEl.style.color = 'var(--color-text-secondary)';
+            statusEl.textContent = 'Uploading ' + pendingFile.name + '…';
+            uploadMediaFile(pendingFile, 'image').then(function(data) {
+              var src = data && (data.url || data.src || data.path);
+              if (!src) throw new Error('Upload succeeded but no URL was returned.');
+              restoreDocBodySelection(savedRange);
+              document.execCommand('insertImage', false, src);
+              close();
+            }).catch(function(err) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Insert';
+              statusEl.style.color = '#e5484d';
+              statusEl.textContent = err.message || 'Upload failed.';
+            });
+          } else if (url) {
+            restoreDocBodySelection(savedRange);
+            document.execCommand('insertImage', false, url);
+            close();
+          } else {
+            statusEl.style.color = '#e5484d';
+            statusEl.textContent = 'Add a link or choose an image first.';
+          }
+        };
       });
 
       // --- Insert Video ---
@@ -4039,9 +4878,9 @@
       document.getElementById('btnInsertH5P').addEventListener('click', function() {
         var savedRange = saveDocBodySelection();
         showPromptModal({
-          title: 'Insert H5P Content',
-          label: 'H5P content URL',
-          placeholder: 'Folder path or embed URL'
+          title: 'Insert H5P activity',
+          label: 'H5P package URL or folder path',
+          placeholder: 'e.g. /media/my-activity  or  https://…'
         }).then(function(src) {
           if (!src) return;
           restoreDocBodySelection(savedRange);
@@ -4069,6 +4908,12 @@
       }
 
       // --- Insert Flip Card ---
+      var FC_ROTATE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11.5A8 8 0 1 0 18 17"/><path d="M20 5v6h-6"/></svg>';
+      var FC_CHEV_L = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
+      var FC_CHEV_R = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
+      var FC_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-12"/></svg>';
+      var FC_IMG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.6"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg>';
+
       document.getElementById('btnFlipCard').addEventListener('click', function() {
         var modal = document.getElementById('flipCardModal');
         var rowsContainer = document.getElementById('flipCardRows');
@@ -4083,48 +4928,61 @@
           savedRange = sel.getRangeAt(0).cloneRange();
         }
 
-        // Reset
         rowsContainer.innerHTML = '';
         addFlipCardRow();
         addFlipCardRow();
+        renumber();
         modal.classList.add('visible');
+
+        function renumber() {
+          rowsContainer.querySelectorAll('.fc-row-num').forEach(function(el, i) {
+            el.textContent = 'Card ' + (i + 1);
+          });
+        }
+
+        function fmtBar() {
+          return '<div class="fc-mini-toolbar">' +
+            '<button type="button" data-fc-cmd="bold" title="Bold"><b>B</b></button>' +
+            '<button type="button" data-fc-cmd="italic" title="Italic"><i>I</i></button>' +
+            '<button type="button" data-fc-cmd="underline" title="Underline"><u>U</u></button>' +
+            '<button type="button" data-fc-cmd="formula" title="Insert formula">&#8721;</button>' +
+          '</div>';
+        }
 
         function addFlipCardRow() {
           var row = document.createElement('div');
           row.className = 'flip-card-row';
-          row.style.flexWrap = 'wrap';
           row.innerHTML =
-            '<div class="fc-rich-field">' +
-              '<div class="fc-mini-toolbar">' +
-                '<button type="button" data-fc-cmd="bold" title="Bold"><b>B</b></button>' +
-                '<button type="button" data-fc-cmd="italic" title="Italic"><i>I</i></button>' +
-                '<button type="button" data-fc-cmd="underline" title="Underline"><u>U</u></button>' +
-                '<button type="button" data-fc-cmd="formula" title="Insert LaTeX">∑</button>' +
-              '</div>' +
-              '<div class="fc-editable fc-front" contenteditable="true" data-placeholder="Front (term/question)"></div>' +
+            '<div class="fc-row-head">' +
+              '<span class="fc-row-num">Card</span>' +
+              '<button type="button" class="remove-row" title="Remove card" aria-label="Remove card">' + FC_TRASH + '</button>' +
             '</div>' +
-            '<div class="fc-rich-field">' +
-              '<div class="fc-mini-toolbar">' +
-                '<button type="button" data-fc-cmd="bold" title="Bold"><b>B</b></button>' +
-                '<button type="button" data-fc-cmd="italic" title="Italic"><i>I</i></button>' +
-                '<button type="button" data-fc-cmd="underline" title="Underline"><u>U</u></button>' +
-                '<button type="button" data-fc-cmd="formula" title="Insert LaTeX">∑</button>' +
+            '<div class="fc-pair">' +
+              '<div class="fc-side">' +
+                '<span class="fc-side-label">Front <span>&middot; term or question</span></span>' +
+                fmtBar() +
+                '<div class="fc-editable fc-front" contenteditable="true" data-placeholder="e.g. Tyndall effect"></div>' +
               '</div>' +
-              '<div class="fc-editable fc-back" contenteditable="true" data-placeholder="Back (answer/definition)"></div>' +
+              '<div class="fc-side">' +
+                '<span class="fc-side-label">Back <span>&middot; answer or definition</span></span>' +
+                fmtBar() +
+                '<div class="fc-editable fc-back" contenteditable="true" data-placeholder="e.g. Scattering of light by colloidal particles"></div>' +
+              '</div>' +
             '</div>' +
-            '<button type="button" class="remove-row" title="Remove">&times;</button>' +
-            '<input type="url" placeholder="Front image URL (optional)" class="fc-front-img" style="flex:1 1 100%;margin-top:0.3rem;font-size:0.8rem;" />' +
-            '<input type="url" placeholder="Back image URL (optional)" class="fc-back-img" style="flex:1 1 100%;margin-top:0.3rem;font-size:0.8rem;" />';
+            '<button type="button" class="fc-imgtoggle" aria-expanded="false">' + FC_IMG + ' Add images</button>' +
+            '<div class="fc-imgwrap">' +
+              '<input type="url" class="fc-front-img" placeholder="Front image URL" />' +
+              '<input type="url" class="fc-back-img" placeholder="Back image URL" />' +
+            '</div>';
 
-          // Wire mini toolbar buttons
           row.querySelectorAll('[data-fc-cmd]').forEach(function(btn) {
             btn.addEventListener('mousedown', function(e) {
-              e.preventDefault(); // Don't steal focus from editable
+              e.preventDefault(); // don't steal focus from the editable
               var cmd = btn.getAttribute('data-fc-cmd');
-              var editable = btn.closest('.fc-rich-field').querySelector('.fc-editable');
+              var editable = btn.closest('.fc-side').querySelector('.fc-editable');
               editable.focus();
               if (cmd === 'formula') {
-                var latex = prompt('LaTeX formula:');
+                var latex = prompt('Formula (LaTeX):');
                 if (latex && latex.trim()) {
                   document.execCommand('insertHTML', false, '\\(' + latex.trim() + '\\)');
                 }
@@ -4135,13 +4993,22 @@
           });
 
           row.querySelector('.remove-row').addEventListener('click', function() {
-            if (rowsContainer.children.length > 1) row.remove();
+            if (rowsContainer.children.length > 1) { row.remove(); renumber(); }
           });
+
+          var imgToggle = row.querySelector('.fc-imgtoggle');
+          var imgWrap = row.querySelector('.fc-imgwrap');
+          imgToggle.addEventListener('click', function() {
+            var open = imgWrap.classList.toggle('open');
+            imgToggle.setAttribute('aria-expanded', String(open));
+          });
+
           rowsContainer.appendChild(row);
+          renumber();
           row.querySelector('.fc-front').focus();
         }
 
-        addRowBtn.onclick = addFlipCardRow;
+        addRowBtn.onclick = function() { addFlipCardRow(); };
 
         cancelBtn.onclick = function() { modal.classList.remove('visible'); };
         modal.onclick = function(e) { if (e.target === modal) modal.classList.remove('visible'); };
@@ -4154,7 +5021,6 @@
             var back = r.querySelector('.fc-back').innerHTML.trim();
             var frontImg = r.querySelector('.fc-front-img').value.trim();
             var backImg = r.querySelector('.fc-back-img').value.trim();
-            // Strip empty placeholder artifacts
             if (front === '<br>' || front === '<div><br></div>') front = '';
             if (back === '<br>' || back === '<div><br></div>') back = '';
             if (front || back || frontImg || backImg) {
@@ -4167,32 +5033,31 @@
           var html = '<div class="flip-card-deck" id="' + deckId + '">';
           cards.forEach(function(c, i) {
             var frontContent = '';
-            if (c.frontImg) frontContent += '<img src="' + c.frontImg + '" style="max-width:100%;max-height:120px;border-radius:4px;margin-bottom:0.5rem;" />';
+            if (c.frontImg) frontContent += '<img src="' + c.frontImg + '" alt="" />';
             if (c.front) frontContent += '<span>' + c.front + '</span>';
             if (!frontContent) frontContent = '<span>(empty)</span>';
 
             var backContent = '';
-            if (c.backImg) backContent += '<img src="' + c.backImg + '" style="max-width:100%;max-height:120px;border-radius:4px;margin-bottom:0.5rem;" />';
+            if (c.backImg) backContent += '<img src="' + c.backImg + '" alt="" />';
             if (c.back) backContent += '<span>' + c.back + '</span>';
             if (!backContent) backContent = '<span>(empty)</span>';
 
-            html += '<div class="flip-card' + (i === 0 ? ' active' : '') + '" onclick="this.classList.toggle(\'flipped\')">' +
+            html += '<div class="flip-card' + (i === 0 ? ' active' : '') + '" tabindex="0" role="button" aria-label="Flip card ' + (i + 1) + '" onclick="this.classList.toggle(\'flipped\')">' +
               '<div class="flip-card-inner">' +
-              '<div class="flip-card-front">' + frontContent + '<span class="flip-card-hint">Click to flip</span></div>' +
-              '<div class="flip-card-back">' + backContent + '<span class="flip-card-hint">Click to flip back</span></div>' +
+              '<div class="flip-card-front">' + frontContent + '<span class="flip-card-hint">' + FC_ROTATE + ' Flip</span></div>' +
+              '<div class="flip-card-back">' + backContent + '<span class="flip-card-hint">' + FC_ROTATE + ' Flip back</span></div>' +
               '</div></div>';
           });
           if (cards.length > 1) {
             html += '<div class="flip-card-nav">' +
-              '<button type="button" onclick="flipDeckNav(\'' + deckId + '\',-1)">&#9664; Prev</button>' +
+              '<button type="button" aria-label="Previous card" onclick="flipDeckNav(\'' + deckId + '\',-1)">' + FC_CHEV_L + '</button>' +
               '<span class="card-counter">1 / ' + cards.length + '</span>' +
-              '<button type="button" onclick="flipDeckNav(\'' + deckId + '\',1)">Next &#9654;</button>' +
+              '<button type="button" aria-label="Next card" onclick="flipDeckNav(\'' + deckId + '\',1)">' + FC_CHEV_R + '</button>' +
               '</div>';
           }
           html += '</div>';
 
           docBody.focus();
-          // Restore cursor position so card inserts where the editor clicked
           if (savedRange) {
             var sel2 = window.getSelection();
             sel2.removeAllRanges();
@@ -4200,11 +5065,17 @@
           }
           document.execCommand('insertHTML', false, html);
           modal.classList.remove('visible');
-          // Render any LaTeX formulas in the newly inserted cards
           if (window.MathJax && MathJax.typesetPromise) {
             MathJax.typesetPromise([docBody]);
           }
         };
+      });
+
+      // Keyboard: flip the focused card with Enter / Space (edit + read mode).
+      document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        var card = e.target && e.target.closest && e.target.closest('.flip-card');
+        if (card) { e.preventDefault(); card.classList.toggle('flipped'); }
       });
 
       // --- Shape Divider ---
@@ -4217,10 +5088,36 @@
         var shapeBtns = modal.querySelectorAll('.sd-shape-btn');
         var heightBtns = modal.querySelectorAll('.sd-height-btn');
         var speedBtns = modal.querySelectorAll('.sd-speed-btn');
+        var swatches = modal.querySelectorAll('.sd-swatch');
+        var previewEl = document.getElementById('sdPreview');
         var selectedShape = 'wave';
         var selectedHeight = 'md';
-        var selectedSpeed = 'normal';
+        var selectedSpeed = 'static';
         var editingEl = null;
+
+        function cssColorToHex(c) {
+          var d = document.createElement('div');
+          d.style.color = c;
+          document.body.appendChild(d);
+          var rgb = getComputedStyle(d).color;
+          document.body.removeChild(d);
+          var m = rgb.match(/\d+/g);
+          if (!m) return '#3282b8';
+          return '#' + m.slice(0, 3).map(function(x) {
+            return ('0' + parseInt(x, 10).toString(16)).slice(-2);
+          }).join('');
+        }
+        function syncSwatches() {
+          var v = (colorInput.value || '').toLowerCase();
+          swatches.forEach(function(b) {
+            var c = b.getAttribute('data-color');
+            var hex = c === 'accent' ? cssColorToHex('var(--color-link)').toLowerCase() : c.toLowerCase();
+            b.classList.toggle('active', hex === v);
+          });
+        }
+        function renderSdPreview() {
+          if (previewEl) previewEl.innerHTML = buildHtml(selectedShape, colorInput.value, selectedHeight, selectedSpeed);
+        }
 
         function wireToggleGroup(btns, setter) {
           btns.forEach(function(btn) {
@@ -4228,12 +5125,23 @@
               btns.forEach(function(b) { b.classList.remove('active'); });
               btn.classList.add('active');
               setter(btn);
+              renderSdPreview();
             });
           });
         }
         wireToggleGroup(shapeBtns, function(btn) { selectedShape = btn.getAttribute('data-shape'); });
         wireToggleGroup(heightBtns, function(btn) { selectedHeight = btn.getAttribute('data-height'); });
         wireToggleGroup(speedBtns, function(btn) { selectedSpeed = btn.getAttribute('data-speed'); });
+
+        swatches.forEach(function(b) {
+          b.addEventListener('click', function() {
+            var c = b.getAttribute('data-color');
+            colorInput.value = c === 'accent' ? cssColorToHex('var(--color-link)') : c;
+            syncSwatches();
+            renderSdPreview();
+          });
+        });
+        colorInput.addEventListener('input', function() { syncSwatches(); renderSdPreview(); });
 
         var SVG_PATHS = {
           wave: 'M0,40 C80,80 160,0 240,40 C320,80 400,0 480,40 L480,80 L0,80 Z',
@@ -4263,15 +5171,16 @@
 
           if (editingEl) {
             selectedShape = editingEl.getAttribute('data-sd-shape') || 'wave';
-            colorInput.value = editingEl.getAttribute('data-sd-color') || '#3282b8';
+            colorInput.value = editingEl.getAttribute('data-sd-color') || cssColorToHex('var(--color-link)');
             selectedHeight = editingEl.getAttribute('data-sd-height') || 'md';
-            selectedSpeed = editingEl.getAttribute('data-sd-speed') || 'normal';
+            selectedSpeed = editingEl.getAttribute('data-sd-speed') || 'static';
+            if (selectedSpeed === 'fast') selectedSpeed = 'normal';
             insertBtn.textContent = 'Update';
           } else {
             selectedShape = 'wave';
-            colorInput.value = '#3282b8';
+            colorInput.value = cssColorToHex('var(--color-link)');
             selectedHeight = 'md';
-            selectedSpeed = 'normal';
+            selectedSpeed = 'static';
             insertBtn.textContent = 'Insert';
           }
 
@@ -4279,8 +5188,10 @@
           shapeBtns.forEach(function(b) { b.classList.toggle('active', b.getAttribute('data-shape') === selectedShape); });
           heightBtns.forEach(function(b) { b.classList.toggle('active', b.getAttribute('data-height') === selectedHeight); });
           speedBtns.forEach(function(b) { b.classList.toggle('active', b.getAttribute('data-speed') === selectedSpeed); });
+          syncSwatches();
 
           modal.classList.add('visible');
+          renderSdPreview();
         }
 
         function closeModal() {
@@ -4408,13 +5319,13 @@
 
         function addPanelRow(title, content) {
           var row = document.createElement('div');
-          row.style.cssText = 'display:flex;gap:0.5rem;align-items:start;margin-bottom:0.5rem;padding:0.5rem;border:1px solid var(--color-border);border-radius:6px;background:var(--color-code-bg);';
+          row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;padding:10px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-bg);';
           row.innerHTML =
-            '<div style="flex:1;display:flex;flex-direction:column;gap:0.4rem;">' +
-              '<input type="text" class="acc-title-input media-url-field" placeholder="Panel title (e.g. What is photosynthesis?)" value="' + (title || '').replace(/"/g, '&quot;') + '" style="font-size:0.85rem;" />' +
-              '<div class="acc-content-input media-url-field" contenteditable="true" style="min-height:50px;max-height:120px;overflow-y:auto;line-height:1.5;padding:0.5rem;font-size:0.85rem;" data-placeholder="Panel content...">' + (content || '') + '</div>' +
+            '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;">' +
+              '<input type="text" class="acc-title-input media-url-field" placeholder="Panel title — e.g. What is photosynthesis?" value="' + (title || '').replace(/"/g, '&quot;') + '" />' +
+              '<div class="acc-content-input media-url-field" contenteditable="true" style="min-height:56px;max-height:130px;overflow-y:auto;" data-placeholder="What the panel reveals when expanded…">' + (content || '') + '</div>' +
             '</div>' +
-            '<button type="button" class="acc-remove" title="Remove panel" style="padding:0.4rem;border:none;background:none;cursor:pointer;color:#ef4444;font-size:1.1rem;line-height:1;">&times;</button>';
+            '<button type="button" class="acc-remove ah-remove" title="Remove panel" aria-label="Remove panel"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-12"/></svg></button>';
           row.querySelector('.acc-remove').addEventListener('click', function() {
             if (rowsContainer.children.length > 2) row.remove();
           });
@@ -4596,11 +5507,13 @@
 
         function addWordRow(text, color) {
           var row = document.createElement('div');
-          row.style.cssText = 'display:flex;gap:0.5rem;align-items:center;margin-bottom:0.4rem;padding:0.4rem;border:1px solid var(--color-border);border-radius:6px;background:var(--color-code-bg);';
+          row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px;padding:8px 10px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-bg);';
           row.innerHTML =
-            '<input type="text" class="anim-word-input media-url-field" placeholder="e.g. innovation" value="' + (text || '').replace(/"/g, '&quot;') + '" style="flex:1;font-size:0.85rem;" />' +
-            '<input type="color" class="anim-word-color" value="' + (color || '#3282b8') + '" title="Word color" style="width:32px;height:32px;border:1px solid var(--color-border);border-radius:4px;padding:0;cursor:pointer;" />' +
-            '<button type="button" class="anim-word-remove" title="Remove" style="padding:0.3rem;border:none;background:none;cursor:pointer;color:#ef4444;font-size:1.1rem;line-height:1;">&times;</button>';
+            '<input type="text" class="anim-word-input media-url-field" placeholder="e.g. innovation" value="' + (text || '').replace(/"/g, '&quot;') + '" style="flex:1;min-width:0;" />' +
+            '<label style="position:relative;width:30px;height:30px;flex:none;border-radius:8px;overflow:hidden;border:1px solid var(--color-border);cursor:pointer;" title="Word colour">' +
+              '<input type="color" class="anim-word-color" value="' + (color || '#3282b8') + '" style="position:absolute;inset:-4px;width:calc(100% + 8px);height:calc(100% + 8px);border:0;padding:0;cursor:pointer;background:transparent;" />' +
+            '</label>' +
+            '<button type="button" class="anim-word-remove ah-remove" title="Remove" aria-label="Remove word"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-12"/></svg></button>';
           row.querySelector('.anim-word-remove').addEventListener('click', function() {
             if (rowsContainer.children.length > 1) row.remove();
           });
@@ -5065,13 +5978,13 @@
 
         function addTabRow(label, content) {
           var row = document.createElement('div');
-          row.style.cssText = 'display:flex;gap:0.5rem;align-items:start;margin-bottom:0.5rem;padding:0.5rem;border:1px solid var(--color-border);border-radius:6px;background:var(--color-code-bg);';
+          row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;padding:10px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-bg);';
           row.innerHTML =
             '<div style="flex:1;display:flex;flex-direction:column;gap:0.4rem;">' +
               '<input type="text" class="htab-label media-url-field" placeholder="Tab label (e.g. Step 1)" value="' + (label || '').replace(/"/g, '&quot;') + '" style="font-size:0.85rem;" />' +
               '<div class="htab-content media-url-field" contenteditable="true" style="min-height:50px;max-height:120px;overflow-y:auto;line-height:1.5;padding:0.5rem;font-size:0.85rem;" data-placeholder="Tab content...">' + (content || '') + '</div>' +
             '</div>' +
-            '<button type="button" class="htab-remove" title="Remove tab" style="padding:0.4rem;border:none;background:none;cursor:pointer;color:#ef4444;font-size:1.1rem;line-height:1;">&times;</button>';
+            '<button type="button" class="htab-remove ah-remove" title="Remove tab" aria-label="Remove tab"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-12"/></svg></button>';
 
           row.querySelector('.htab-remove').addEventListener('click', function() {
             if (rowsContainer.children.length > 2) row.remove();
@@ -5275,13 +6188,13 @@
 
         function addTabRow(label, content) {
           var row = document.createElement('div');
-          row.style.cssText = 'display:flex;gap:0.5rem;align-items:start;margin-bottom:0.5rem;padding:0.5rem;border:1px solid var(--color-border);border-radius:6px;background:var(--color-code-bg);';
+          row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;padding:10px;border:1px solid var(--color-border);border-radius:12px;background:var(--color-bg);';
           row.innerHTML =
             '<div style="flex:1;display:flex;flex-direction:column;gap:0.4rem;">' +
               '<input type="text" class="vtab-label media-url-field" placeholder="Tab label (e.g. Overview)" value="' + (label || '').replace(/"/g, '&quot;') + '" style="font-size:0.85rem;" />' +
               '<div class="vtab-content media-url-field" contenteditable="true" style="min-height:50px;max-height:120px;overflow-y:auto;line-height:1.5;padding:0.5rem;font-size:0.85rem;" data-placeholder="Tab content...">' + (content || '') + '</div>' +
             '</div>' +
-            '<button type="button" class="vtab-remove" title="Remove tab" style="padding:0.4rem;border:none;background:none;cursor:pointer;color:#ef4444;font-size:1.1rem;line-height:1;">&times;</button>';
+            '<button type="button" class="vtab-remove ah-remove" title="Remove tab" aria-label="Remove tab"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M7 7l1 12a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-12"/></svg></button>';
 
           row.querySelector('.vtab-remove').addEventListener('click', function() {
             if (rowsContainer.children.length > 2) row.remove();
@@ -6726,6 +7639,8 @@
           if (data.success) {
             showState('success');
             publishUrlField.value = data.url;
+            var _open = document.getElementById('publishOpen');
+            if (_open) _open.href = data.url;
             var stats = [];
             if (data.media_count) stats.push(data.media_count + ' media file' + (data.media_count > 1 ? 's' : ''));
             if (data.video_count) stats.push(data.video_count + ' video' + (data.video_count > 1 ? 's' : ''));
@@ -6750,16 +7665,17 @@
 
       publishCopyUrl.addEventListener('click', function() {
         var url = publishUrlField.value;
+        var lbl = publishCopyUrl.querySelector('.pcu-label') || publishCopyUrl;
+        function flash() {
+          lbl.textContent = 'Copied';
+          setTimeout(function() { lbl.textContent = 'Copy'; }, 2000);
+        }
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(url).then(function() {
-            publishCopyUrl.textContent = 'Copied!';
-            setTimeout(function() { publishCopyUrl.textContent = 'Copy URL'; }, 2000);
-          });
+          navigator.clipboard.writeText(url).then(flash);
         } else {
           publishUrlField.select();
           document.execCommand('copy');
-          publishCopyUrl.textContent = 'Copied!';
-          setTimeout(function() { publishCopyUrl.textContent = 'Copy URL'; }, 2000);
+          flash();
         }
       });
 
@@ -6784,6 +7700,7 @@
         mediaPopup: 'mediaPopupClose',
         mediaInputModal: 'mediaInputCancel',
         videoInsertModal: 'videoInsertCancel',
+        imageInsertModal: 'imageInsertCancel',
         flipCardModal: 'flipCardCancel',
         exportModal: 'exportCancel',
         publishModal: 'publishCancel',
@@ -7244,6 +8161,164 @@
         wasVisible = false;
       }
     }).observe(modal, { attributes: true, attributeFilter: ['class'] });
+  })();
+
+  // ===================================================================
+  // Editor-only Split View — converted HTML beside the original pages,
+  // with the content panel collapsed and synchronized scrolling.
+  // This whole block lives after the Formula Input Dialog comment, so
+  // _strip_editor_ui() removes it from the published learner page.
+  // ===================================================================
+  (function () {
+    var btn = document.getElementById('railSplitBtn');
+    if (!btn) return;
+
+    var wrapper = document.querySelector('.document-wrapper');
+    var content = document.querySelector('.content');
+    var docBody = document.querySelector('.document-body');
+    if (!wrapper || !content || !docBody) return;
+
+    var sourcePane = null;   // right-hand pane element (lazily built)
+    var built = false;
+    var syncing = false;     // reentrancy guard for synced scrolling
+
+    // Derive the job directory (== the image filename stem) from the URL.
+    // Edit URLs look like /output/<job_dir>/<file>.html — the job_dir is the
+    // second-to-last path segment and also prefixes the page PNG filenames
+    // (images/<job_dir>-page-<N>.png), per tools/extract_pdf.py.
+    function getJobDir() {
+      var parts = window.location.pathname.split('/').filter(Boolean);
+      // .../output/<job_dir>/<filename>
+      if (parts.length >= 2) return decodeURIComponent(parts[parts.length - 2]);
+      return '';
+    }
+
+    // Page count is echoed into .document-meta as "N pages".
+    function getPageCount() {
+      var meta = document.querySelector('.document-meta');
+      if (meta) {
+        var m = meta.textContent.match(/(\d+)\s*page/i);
+        if (m) return parseInt(m[1], 10) || 0;
+      }
+      return 0;
+    }
+
+    function buildSourcePane() {
+      sourcePane = document.createElement('aside');
+      sourcePane.className = 'split-source';
+      sourcePane.setAttribute('aria-label', 'Original document pages');
+
+      var head = document.createElement('div');
+      head.className = 'split-source-head';
+      head.innerHTML =
+        '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/></svg>' +
+        '<span>Original</span>';
+      sourcePane.appendChild(head);
+
+      var pages = document.createElement('div');
+      pages.className = 'split-source-pages';
+
+      var jobDir = getJobDir();
+      var count = getPageCount();
+
+      if (!jobDir || count < 1) {
+        var empty = document.createElement('p');
+        empty.className = 'split-source-empty';
+        empty.textContent = 'Original page images are not available for this document.';
+        pages.appendChild(empty);
+      } else {
+        for (var i = 1; i <= count; i++) {
+          var img = document.createElement('img');
+          img.className = 'split-source-page';
+          img.loading = 'lazy';
+          img.alt = 'Original page ' + i;
+          // Same relative base the converted HTML uses for its own images.
+          img.src = 'images/' + encodeURIComponent(jobDir) + '-page-' + i + '.png';
+          var num = document.createElement('p');
+          num.className = 'split-source-num';
+          num.textContent = 'Page ' + i;
+          // Hide any page image (and its label) that fails to load — some
+          // documents don't have per-page PNGs.
+          img.onerror = (function (im, label) {
+            return function () { im.style.display = 'none'; if (label) label.style.display = 'none'; };
+          })(img, num);
+          pages.appendChild(img);
+          pages.appendChild(num);
+        }
+      }
+      sourcePane.appendChild(pages);
+      wrapper.appendChild(sourcePane);
+      built = true;
+    }
+
+    // --- Synchronized scrolling (proportional, bidirectional) ---------
+    function linkScroll(a, b) {
+      function ratioSync(from, to) {
+        if (syncing) return;
+        syncing = true;
+        var maxFrom = from.scrollHeight - from.clientHeight;
+        var maxTo = to.scrollHeight - to.clientHeight;
+        if (maxFrom > 0) {
+          to.scrollTop = (from.scrollTop / maxFrom) * maxTo;
+        }
+        // Release on the next frame so the programmatic scroll we just did
+        // doesn't bounce back through the other listener.
+        requestAnimationFrame(function () { syncing = false; });
+      }
+      a._sync = function () { ratioSync(a, b); };
+      b._sync = function () { ratioSync(b, a); };
+      a.addEventListener('scroll', a._sync, { passive: true });
+      b.addEventListener('scroll', b._sync, { passive: true });
+    }
+    function unlinkScroll(a, b) {
+      if (a && a._sync) a.removeEventListener('scroll', a._sync);
+      if (b && b._sync) b.removeEventListener('scroll', b._sync);
+    }
+
+    function setRailOffset() {
+      var rail = document.getElementById('editToolbar');
+      var h = (rail && rail.classList.contains('visible')) ? rail.offsetHeight : 0;
+      document.body.style.setProperty('--rail-offset', h + 'px');
+    }
+
+    function enableSplit() {
+      if (!built) buildSourcePane();
+      document.body.classList.add('split-view');
+      btn.setAttribute('aria-pressed', 'true');
+      setRailOffset();
+      // In split view each pane scrolls internally, so reset the page scroll
+      // and the rail's marginTop push-down (panes handle the offset via height).
+      window.scrollTo(0, 0);
+      wrapper.style.marginTop = '';
+      linkScroll(content, sourcePane);
+    }
+
+    function disableSplit() {
+      document.body.classList.remove('split-view');
+      btn.setAttribute('aria-pressed', 'false');
+      unlinkScroll(content, sourcePane);
+      // Restore the normal rail offset if we're still editing.
+      if (typeof updateToolbarOffset === 'function') updateToolbarOffset();
+    }
+
+    function isOn() { return document.body.classList.contains('split-view'); }
+
+    btn.addEventListener('click', function () {
+      if (isOn()) disableSplit(); else enableSplit();
+    });
+
+    window.addEventListener('resize', function () {
+      if (isOn()) setRailOffset();
+    });
+
+    // Split view is an editing aid — when edit mode ends, leave split view.
+    // A MutationObserver on body.class is the reliable hook (enter/exit are
+    // wrapped several times elsewhere).
+    new MutationObserver(function () {
+      if (isOn() && !document.body.classList.contains('edit-mode')) {
+        disableSplit();
+      }
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   })();
   </script>
 </body>
