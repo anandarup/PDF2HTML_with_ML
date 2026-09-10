@@ -45,10 +45,21 @@ def _get_oci_client():
 
 
 def _get_public_url(namespace, bucket, object_name):
-    """Construct the public OCI Object Storage URL."""
+    """Construct the public OCI Object Storage URL.
+
+    The object name is stored verbatim (it can contain spaces, em-dashes, and
+    other characters from the job-dir/filename), but those characters are NOT
+    valid in a URL path and must be percent-encoded — otherwise the browser
+    can't fetch the object and media fails to load ("media could not be
+    loaded / format not supported"). We encode each path segment while keeping
+    the "/" separators intact.
+    """
+    from urllib.parse import quote
+
+    encoded_object = quote(object_name, safe="/")
     return (
         f"https://objectstorage.{REGION}.oraclecloud.com"
-        f"/n/{namespace}/b/{bucket}/o/{object_name}"
+        f"/n/{namespace}/b/{bucket}/o/{encoded_object}"
     )
 
 
@@ -835,6 +846,17 @@ body{background:var(--rd-bg);color:var(--rd-ink);font-family:var(--rd-font);-web
 .document-body th{background:var(--rd-surface-2);font-weight:600;}
 .content-box{border-radius:14px;box-shadow:none;}
 
+/* flip cards — inherit the reader palette + a touch of extra polish */
+.flip-card-front{background:var(--rd-surface);border-color:var(--rd-hairline);box-shadow:var(--rd-shadow-card);}
+.flip-card-back{
+  background:linear-gradient(158deg,var(--rd-accent),color-mix(in srgb,var(--rd-accent) 58%,#000));
+  box-shadow:var(--rd-shadow-card);
+}
+.flip-card-hint{background:color-mix(in srgb,currentColor 14%,transparent);}
+.flip-card-nav button{background:var(--rd-surface);border-color:var(--rd-hairline-2);color:var(--rd-ink);}
+.flip-card-nav button:hover{background:var(--rd-tint);border-color:var(--rd-accent);color:var(--rd-accent);}
+.flip-card-nav .card-counter{color:var(--rd-ink-2);}
+
 /* ===== reader toolbar ===== */
 .rd-toolbar{
   position:fixed;top:0;left:0;right:0;height:52px;z-index:900;
@@ -1191,6 +1213,13 @@ READER_SHELL_SCRIPT = r'''<script>
     nBtn.setAttribute('aria-pressed',String(!off));
   });
 
+  /* ---- flip cards: keyboard flip ---- */
+  document.addEventListener('keydown',function(e){
+    if(e.key!=='Enter'&&e.key!==' ')return;
+    var c=e.target&&e.target.closest?e.target.closest('.flip-card'):null;
+    if(c){e.preventDefault();c.classList.toggle('flipped');}
+  });
+
   /* ---- bookmark (proxy the runtime's hidden save button) ---- */
   var bmBtn=$('rdBookmarkBtn');
   if(bmBtn)bmBtn.addEventListener('click',function(){
@@ -1242,8 +1271,16 @@ def publish_document(job_dir, filename):
             object_name = f"{base_key}/{relative}"
 
             if _is_video_file(full_path):
+                # Videos must be publicly readable so the learner's browser can
+                # load them. VIDEO_BUCKET (poc-interactivetxt-media-dst-bucket)
+                # is private (NoPublicAccess), so a plain object URL to it 404s
+                # for learners ("media could not be loaded"). Publish videos to
+                # the public media bucket (ObjectRead), matching images, so the
+                # embedded URL actually resolves. We still upload a copy to the
+                # video bucket for any downstream streaming/transcode pipeline.
                 _upload_file(client, namespace, VIDEO_BUCKET, full_path, object_name)
-                video_map[relative] = _get_public_url(namespace, VIDEO_BUCKET, object_name)
+                _upload_file(client, namespace, MEDIA_BUCKET, full_path, object_name)
+                video_map[relative] = _get_public_url(namespace, MEDIA_BUCKET, object_name)
             else:
                 _upload_file(client, namespace, MEDIA_BUCKET, full_path, object_name)
                 media_map[relative] = _get_public_url(namespace, MEDIA_BUCKET, object_name)
