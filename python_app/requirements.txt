@@ -12,3 +12,4 @@ tinydb>=4.8.0
 faster-whisper>=1.0.0
 paddleocr>=3.0.0
 paddlepaddle>=3.0.0
+redis>=5.0,<6.0

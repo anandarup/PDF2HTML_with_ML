@@ -28,25 +28,22 @@ from flask import (
 )
 
 from convert import convert_pdf_to_html
+import config
+from state.job_store import build_job_store
 
 app = Flask(__name__, static_folder="static", template_folder="web_templates")
 
-# Configuration
-UPLOAD_DIR = Path("uploads")
-OUTPUT_DIR = Path("../output")
+# Configuration — sourced from config.py (env-driven, with defaults that
+# preserve the current single-VM behavior). Kept as module-level names below
+# so the rest of app.py is unchanged.
+UPLOAD_DIR = config.UPLOAD_DIR
+OUTPUT_DIR = config.OUTPUT_DIR
 
 # Global max set to the largest allowed type (video: 1.2 GB)
-MAX_CONTENT_LENGTH = 1200 * 1024 * 1024
+MAX_CONTENT_LENGTH = config.MAX_CONTENT_LENGTH
 
 # Per-type upload limits (bytes)
-UPLOAD_LIMITS: dict = {
-    "video": 1200 * 1024 * 1024,  # 1.2 GB
-    "audio": 50 * 1024 * 1024,    # 50 MB
-    "pptx": 30 * 1024 * 1024,     # 30 MB
-    "h5p": 400 * 1024 * 1024,     # 400 MB
-    "pdf": 100 * 1024 * 1024,     # 100 MB
-    "image": 1 * 1024 * 1024,     # 1 MB
-}
+UPLOAD_LIMITS: dict = config.UPLOAD_LIMITS
 
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
@@ -54,39 +51,82 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# File-based job state persistence — survives gunicorn worker recycling.
-# Each job is stored as a JSON file in JOBS_DIR/<job_id>.json.
-JOBS_DIR = Path("jobs")
+# Job state — accessed through the JobStore abstraction (Phase 1). The default
+# FileJobStore reproduces the original jobs/*.json behavior exactly and adds a
+# ref_id index; STATE_BACKEND selects the implementation (Phase 2 adds Redis+DB).
+JOBS_DIR = config.JOBS_DIR
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
-CONVERSION_JOBS_LOCK = threading.Lock()
+CONVERSION_JOBS_LOCK = threading.Lock()  # retained for compatibility (unused by store)
+
+job_store = build_job_store(config)
 
 
 def _job_path(job_id: str) -> Path:
-    """Return the filesystem path for a job's state file."""
+    """Return the filesystem path for a job's state file (compat shim)."""
     return JOBS_DIR / f"{job_id}.json"
 
 
 def _read_job(job_id: str) -> dict | None:
-    """Read job state from disk. Returns None if job doesn't exist."""
-    path = _job_path(job_id)
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
+    """Compat shim → job_store.get_job. Kept so existing callers/tests work."""
+    return job_store.get_job(job_id)
 
 
 def _write_job(job_id: str, data: dict) -> None:
-    """Write job state to disk atomically."""
-    path = _job_path(job_id)
-    tmp_path = path.with_suffix(".tmp")
-    tmp_path.write_text(json.dumps(data), encoding="utf-8")
-    tmp_path.replace(path)  # atomic on POSIX
+    """Compat shim → job_store.update_job. Kept so existing callers/tests work."""
+    job_store.update_job(job_id, data)
 
 
 @app.route("/")
 def index():
     """Serve the main drag-and-drop upload page."""
     return render_template("index.html")
+
+
+@app.route("/healthz")
+def healthz():
+    """Liveness probe: the process is up and serving. No dependency checks."""
+    return jsonify({"status": "ok"}), 200
+
+
+@app.route("/readyz")
+def readyz():
+    """
+    Readiness probe: the app is configured correctly and its active backends
+    are reachable. With the default (file/local/thread) backends this only
+    validates configuration and local paths. When the state/queue backends are
+    switched on (later phases), this checks their reachability too, so an
+    orchestrator won't route traffic to a replica that can't reach its store.
+    """
+    checks: dict = {}
+    ok = True
+
+    # Configuration validity (always checked).
+    cfg_problems = config.validate()
+    checks["config"] = "ok" if not cfg_problems else cfg_problems
+    if cfg_problems:
+        ok = False
+
+    # Local paths used by the default backends.
+    if config.STATE_BACKEND == "file":
+        writable = os.access(str(JOBS_DIR), os.W_OK)
+        checks["job_store"] = "ok" if writable else "jobs dir not writable"
+        ok = ok and writable
+    else:
+        # Phase 2: probe the state service (Redis/JSON DB). Not yet wired, so
+        # we report "not_configured" rather than falsely claiming healthy.
+        checks["job_store"] = "service backend not yet implemented"
+
+    if config.OUTPUT_BACKEND == "local":
+        writable = os.access(str(OUTPUT_DIR), os.W_OK)
+        checks["output_store"] = "ok" if writable else "output dir not writable"
+        ok = ok and writable
+    else:
+        checks["output_store"] = "oci backend selected"
+
+    checks["queue_backend"] = config.QUEUE_BACKEND
+    checks["config_summary"] = config.summary()
+
+    return jsonify({"status": "ok" if ok else "not_ready", "checks": checks}), (200 if ok else 503)
 
 
 @app.route("/convert", methods=["POST"])
@@ -123,26 +163,23 @@ def convert_pdf():
     upload_path = UPLOAD_DIR / f"{job_id}_{file.filename}"
     file.save(str(upload_path))
 
-    with CONVERSION_JOBS_LOCK:
-        _write_job(job_id, {
-            "status": "processing",
-            "stage": "queued",
-            "detail": "Upload complete, starting conversion...",
-            "result": None,
-            "error": None,
-            "ref_id": ref_id,
-            "edit_url": None,
-            "render_url": None,
-        })
+    job_store.create_job(job_id, {
+        "status": "processing",
+        "stage": "queued",
+        "detail": "Upload complete, starting conversion...",
+        "progress": {"stage": "queued"},
+        "result": None,
+        "error": None,
+        "ref_id": ref_id,
+        "edit_url": None,
+        "render_url": None,
+    })
 
     def run_conversion() -> None:
-        def on_progress(stage: str, detail: str) -> None:
-            with CONVERSION_JOBS_LOCK:
-                job = _read_job(job_id)
-                if job is not None:
-                    job["stage"] = stage
-                    job["detail"] = detail
-                    _write_job(job_id, job)
+        def on_progress(stage: str, detail: str, extra: dict | None = None) -> None:
+            # Merge a live progress update (stage/detail + structured counters)
+            # into the job record. Safe no-op if the job no longer exists.
+            job_store.set_progress(job_id, stage, detail, extra)
 
         try:
             output_dir = str(OUTPUT_DIR.resolve() / f"{job_id}_{pdf_stem}")
@@ -167,37 +204,35 @@ def convert_pdf():
                 quote(relative_output, safe=""), quote(html_filename, safe="")
             )
 
-            with CONVERSION_JOBS_LOCK:
-                _write_job(job_id, {
-                    "status": "done",
-                    "stage": "done",
-                    "detail": "Conversion complete.",
-                    "error": None,
-                    "ref_id": ref_id,
-                    "edit_url": html_url,
-                    "render_url": None,
-                    "result": {
-                        "success": True,
-                        "title": result.get("chapter_title", pdf_stem),
-                        "html_url": html_url,
-                        "page_count": result["page_count"],
-                        "image_count": result["image_count"],
-                        "file_size": result["html_file_size"],
-                    },
-                })
+            job_store.update_job(job_id, {
+                "status": "done",
+                "stage": "done",
+                "detail": "Conversion complete.",
+                "error": None,
+                "ref_id": ref_id,
+                "edit_url": html_url,
+                "render_url": None,
+                "result": {
+                    "success": True,
+                    "title": result.get("chapter_title", pdf_stem),
+                    "html_url": html_url,
+                    "page_count": result["page_count"],
+                    "image_count": result["image_count"],
+                    "file_size": result["html_file_size"],
+                },
+            })
 
         except Exception as e:
-            with CONVERSION_JOBS_LOCK:
-                _write_job(job_id, {
-                    "status": "error",
-                    "stage": "error",
-                    "detail": str(e),
-                    "result": None,
-                    "error": str(e),
-                    "ref_id": ref_id,
-                    "edit_url": None,
-                    "render_url": None,
-                })
+            job_store.update_job(job_id, {
+                "status": "error",
+                "stage": "error",
+                "detail": str(e),
+                "result": None,
+                "error": str(e),
+                "ref_id": ref_id,
+                "edit_url": None,
+                "render_url": None,
+            })
 
         finally:
             if upload_path.exists():
@@ -211,8 +246,7 @@ def convert_pdf():
 @app.route("/convert-status/<job_id>")
 def convert_status(job_id: str):
     """Poll the status/progress of a background conversion job."""
-    with CONVERSION_JOBS_LOCK:
-        job = _read_job(job_id)
+    job = job_store.get_job(job_id)
 
     if job is None:
         return jsonify({"error": "Unknown job_id"}), 404
@@ -238,13 +272,8 @@ def lookup_by_ref_id(ref_id: str):
     if not ref_id or not _re.match(r'^[a-zA-Z0-9\-]{8,64}$', ref_id):
         return jsonify({"error": "Invalid refId format"}), 400
 
-    # Scan job files for matching ref_id
-    matched_job = None
-    for job_file in JOBS_DIR.glob("*.json"):
-        job = _read_job(job_file.stem)
-        if job and job.get("ref_id") == ref_id:
-            matched_job = job
-            break
+    # Indexed lookup by ref_id (O(1) via the job store's ref_id index).
+    matched_job = job_store.find_by_ref_id(ref_id)
 
     if matched_job is None:
         return jsonify({"error": "Unknown refId"}), 404
@@ -295,15 +324,8 @@ def get_sections_by_ref_id(ref_id: str):
     if not ref_id or not _re.match(r'^[a-zA-Z0-9\-]{8,64}$', ref_id):
         return jsonify({"error": "Invalid refId format"}), 400
 
-    # Find job by ref_id
-    matched_job = None
-    matched_job_id = None
-    for job_file in JOBS_DIR.glob("*.json"):
-        job = _read_job(job_file.stem)
-        if job and job.get("ref_id") == ref_id:
-            matched_job = job
-            matched_job_id = job_file.stem
-            break
+    # Find job by ref_id (indexed lookup via the job store).
+    matched_job = job_store.find_by_ref_id(ref_id)
 
     if matched_job is None:
         return jsonify({"error": "Unknown refId"}), 404
