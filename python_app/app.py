@@ -27,9 +27,13 @@ from flask import (
     send_from_directory,
 )
 
-from convert import convert_pdf_to_html
+from flask import redirect
+
 import config
 from state.job_store import build_job_store
+from storage.output_store import build_output_store
+from queue_backend.job_queue import build_job_queue
+from conversion_job import run_conversion_job
 
 app = Flask(__name__, static_folder="static", template_folder="web_templates")
 
@@ -59,6 +63,12 @@ JOBS_DIR.mkdir(parents=True, exist_ok=True)
 CONVERSION_JOBS_LOCK = threading.Lock()  # retained for compatibility (unused by store)
 
 job_store = build_job_store(config)
+output_store = build_output_store(config)
+
+# Conversion is dispatched through a queue seam. The default ThreadQueue runs
+# the job in a daemon thread in-process (identical to the original behavior);
+# QUEUE_BACKEND=queue publishes to OCI Queue and a standalone worker.py consumes.
+job_queue = build_job_queue(config, lambda msg: run_conversion_job(msg, job_store))
 
 
 def _job_path(job_id: str) -> Path:
@@ -159,9 +169,9 @@ def convert_pdf():
     # Accept optional external reference ID (for iframe integration)
     ref_id = request.form.get("ref_id", "").strip() or None
 
-    # Save uploaded file
-    upload_path = UPLOAD_DIR / f"{job_id}_{file.filename}"
-    file.save(str(upload_path))
+    # Save uploaded file via the output store (local disk today; an uploads/
+    # prefix under OUTPUT_BACKEND=oci). Returns a reference the worker reads.
+    upload_path = Path(output_store.put_upload(f"{job_id}_{file.filename}", file))
 
     job_store.create_job(job_id, {
         "status": "processing",
@@ -175,70 +185,17 @@ def convert_pdf():
         "render_url": None,
     })
 
-    def run_conversion() -> None:
-        def on_progress(stage: str, detail: str, extra: dict | None = None) -> None:
-            # Merge a live progress update (stage/detail + structured counters)
-            # into the job record. Safe no-op if the job no longer exists.
-            job_store.set_progress(job_id, stage, detail, extra)
-
-        try:
-            output_dir = str(OUTPUT_DIR.resolve() / f"{job_id}_{pdf_stem}")
-
-            result = convert_pdf_to_html(
-                pdf_path=str(upload_path),
-                output_dir=output_dir,
-                progress_callback=on_progress,
-            )
-
-            html_path = Path(result["html_path"])
-            relative_output = html_path.parent.name
-            html_filename = html_path.name
-
-            # Built by hand rather than via url_for(): url_for needs an
-            # active request or a configured SERVER_NAME to build URLs
-            # outside of a request, neither of which this background
-            # thread has. The /output/<job_dir>/<filename> route is a
-            # fixed, simple pattern, so quoting the segments ourselves is
-            # both correct and avoids that pitfall entirely.
-            html_url = "/output/{}/{}".format(
-                quote(relative_output, safe=""), quote(html_filename, safe="")
-            )
-
-            job_store.update_job(job_id, {
-                "status": "done",
-                "stage": "done",
-                "detail": "Conversion complete.",
-                "error": None,
-                "ref_id": ref_id,
-                "edit_url": html_url,
-                "render_url": None,
-                "result": {
-                    "success": True,
-                    "title": result.get("chapter_title", pdf_stem),
-                    "html_url": html_url,
-                    "page_count": result["page_count"],
-                    "image_count": result["image_count"],
-                    "file_size": result["html_file_size"],
-                },
-            })
-
-        except Exception as e:
-            job_store.update_job(job_id, {
-                "status": "error",
-                "stage": "error",
-                "detail": str(e),
-                "result": None,
-                "error": str(e),
-                "ref_id": ref_id,
-                "edit_url": None,
-                "render_url": None,
-            })
-
-        finally:
-            if upload_path.exists():
-                upload_path.unlink()
-
-    threading.Thread(target=run_conversion, daemon=True).start()
+    # Dispatch the conversion through the queue seam. The default ThreadQueue
+    # runs run_conversion_job() in a daemon thread now (identical to before);
+    # under QUEUE_BACKEND=queue this publishes a message and a separate
+    # worker.py consumes it — off the request path entirely.
+    job_queue.enqueue({
+        "job_id": job_id,
+        "upload_ref": str(upload_path),
+        "ref_id": ref_id,
+        "pdf_stem": pdf_stem,
+        "attempt": 0,
+    })
 
     return jsonify({"job_id": job_id}), 202
 
@@ -643,9 +600,17 @@ def upload_media(job_dir: str):
 
 @app.route("/output/<path:job_dir>/<path:filename>")
 def serve_output(job_dir: str, filename: str):
-    """Serve converted HTML and associated assets (images)."""
-    directory = OUTPUT_DIR.resolve() / job_dir
-    return send_from_directory(str(directory), filename)
+    """Serve converted HTML and associated assets (images).
+
+    Routed through the output store: local disk (send_from_directory) or, under
+    OUTPUT_BACKEND=oci, a 302 redirect to the bucket/CDN URL.
+    """
+    action = output_store.serve(job_dir, filename)
+    if action.kind == "redirect":
+        return redirect(action.url, code=302)
+    if action.kind == "missing":
+        return jsonify({"error": "Not found"}), 404
+    return send_from_directory(action.directory, action.filename)
 
 
 @app.route("/output/<path:job_dir>/<path:filename>", methods=["PUT"])
@@ -663,19 +628,16 @@ def save_output(job_dir: str, filename: str):
     if not data or "body_html" not in data:
         return jsonify({"error": "Missing body_html in request"}), 400
 
-    file_path = OUTPUT_DIR.resolve() / job_dir / filename
-    if not file_path.exists():
-        return jsonify({"error": "File not found"}), 404
-
-    # Security: ensure the resolved path is within OUTPUT_DIR
-    try:
-        file_path.resolve().relative_to(OUTPUT_DIR.resolve())
-    except ValueError:
+    # Read current HTML via the output store (local disk or OCI mirror/bucket).
+    # A path-traversal / missing-file returns None.
+    if ".." in job_dir or ".." in filename:
         return jsonify({"error": "Invalid path"}), 403
 
-    try:
-        html_content = file_path.read_text(encoding="utf-8")
+    html_content = output_store.read_html(job_dir, filename)
+    if html_content is None:
+        return jsonify({"error": "File not found"}), 404
 
+    try:
         # Replace the article body content between the markers
         import re
         new_body = data["body_html"]
@@ -694,11 +656,12 @@ def save_output(job_dir: str, filename: str):
         # Rebuild the TOC from the new headings
         updated_html = _rebuild_toc_in_html(updated_html, new_body)
 
-        file_path.write_text(updated_html, encoding="utf-8")
+        # Persist via the output store (local disk, or write-back to the bucket).
+        output_store.write_html(job_dir, filename, updated_html)
 
         return jsonify({"success": True, "message": "Content saved"}), 200
 
-    except OSError as e:
+    except (OSError, ValueError) as e:
         return jsonify({"error": f"File write failed: {e}"}), 500
 
 
