@@ -8180,7 +8180,6 @@
 
     var sourcePane = null;   // right-hand pane element (lazily built)
     var built = false;
-    var syncing = false;     // reentrancy guard for synced scrolling
 
     // Derive the job directory (== the image filename stem) from the URL.
     // Edit URLs look like /output/<job_dir>/<file>.html — the job_dir is the
@@ -8251,29 +8250,8 @@
       built = true;
     }
 
-    // --- Synchronized scrolling (proportional, bidirectional) ---------
-    function linkScroll(a, b) {
-      function ratioSync(from, to) {
-        if (syncing) return;
-        syncing = true;
-        var maxFrom = from.scrollHeight - from.clientHeight;
-        var maxTo = to.scrollHeight - to.clientHeight;
-        if (maxFrom > 0) {
-          to.scrollTop = (from.scrollTop / maxFrom) * maxTo;
-        }
-        // Release on the next frame so the programmatic scroll we just did
-        // doesn't bounce back through the other listener.
-        requestAnimationFrame(function () { syncing = false; });
-      }
-      a._sync = function () { ratioSync(a, b); };
-      b._sync = function () { ratioSync(b, a); };
-      a.addEventListener('scroll', a._sync, { passive: true });
-      b.addEventListener('scroll', b._sync, { passive: true });
-    }
-    function unlinkScroll(a, b) {
-      if (a && a._sync) a.removeEventListener('scroll', a._sync);
-      if (b && b._sync) b.removeEventListener('scroll', b._sync);
-    }
+    // Each pane scrolls independently (via its own overflow-y:auto). No
+    // scroll synchronization between the HTML side and the original pages.
 
     function setRailOffset() {
       var rail = document.getElementById('editToolbar');
@@ -8286,17 +8264,16 @@
       document.body.classList.add('split-view');
       btn.setAttribute('aria-pressed', 'true');
       setRailOffset();
-      // In split view each pane scrolls internally, so reset the page scroll
-      // and the rail's marginTop push-down (panes handle the offset via height).
+      // In split view each pane scrolls internally and independently, so
+      // reset the page scroll and the rail's marginTop push-down (panes
+      // handle the offset via height).
       window.scrollTo(0, 0);
       wrapper.style.marginTop = '';
-      linkScroll(content, sourcePane);
     }
 
     function disableSplit() {
       document.body.classList.remove('split-view');
       btn.setAttribute('aria-pressed', 'false');
-      unlinkScroll(content, sourcePane);
       // Restore the normal rail offset if we're still editing.
       if (typeof updateToolbarOffset === 'function') updateToolbarOffset();
     }
