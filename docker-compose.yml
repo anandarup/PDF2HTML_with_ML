@@ -1,0 +1,70 @@
+# Local development composition of the split (API + worker + Redis + MinIO).
+#
+# This runs the FULL scaled shape on a laptop: the lean API image, the heavy
+# worker image, a Redis for the state service + queue-ish coordination, and
+# MinIO as an S3/OCI-compatible object store stand-in.
+#
+# NOTE: QUEUE_BACKEND=queue here targets OCI Queue in production. For a pure
+# local run without OCI Queue, set QUEUE_BACKEND=thread on the api service (then
+# the worker is idle and the API converts in-process). This compose file shows
+# the intended split; wire QUEUE_ENDPOINT/QUEUE_OCID for a real queue.
+#
+#   docker compose up --build
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8501:8501"
+    environment:
+      STATE_BACKEND: service
+      OUTPUT_BACKEND: local        # use MinIO/oci in a fuller setup
+      QUEUE_BACKEND: thread        # flip to 'queue' once a queue is wired
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://localhost:8501/healthz')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      STATE_BACKEND: service
+      OUTPUT_BACKEND: local
+      QUEUE_BACKEND: queue         # worker only does work when a real queue is set
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - redis
+    deploy:
+      replicas: 1
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  # S3/OCI-compatible object storage stand-in for local dev.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+
+volumes:
+  redis-data:
+  minio-data:

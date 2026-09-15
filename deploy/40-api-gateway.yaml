@@ -1,0 +1,78 @@
+# OCI API Gateway deployment spec (declarative form of the gateway routes).
+#
+# This is the single public ingress: TLS termination, JWT auth for editor
+# routes, service-token/mTLS for the server-to-server lookup, per-route
+# throttling, and a large-body allowance only on upload routes. Apply via the
+# OCI API Gateway API/Terraform (this file documents the intended routing).
+#
+# gatewayId: ocid1.apigateway.oc1..<...>
+# compartmentId: ocid1.compartment.oc1..<...>
+# certificateId (TLS): ocid1.certificate.oc1..<...>   # poc-interactivetxtbk.diksha.gov.in
+
+specification:
+  requestPolicies:
+    cors:
+      allowedOrigins: ["https://poc-interactivetxtbk.diksha.gov.in"]
+      allowedMethods: ["GET", "POST", "PUT", "OPTIONS"]
+    # Default per-caller throttle; tightened per-route below.
+    rateLimiting:
+      rateInRequestsPerSecond: 50
+      rateKey: CLIENT_IP
+
+  routes:
+    # --- Editor upload: JWT-authenticated, large body allowed, tight rate ---
+    - path: /convert
+      methods: ["POST"]
+      requestPolicies:
+        authorization: { type: ANY_OF, allowedScope: ["editor"] }
+        bodyLimiting: { maxSizeInMiB: 120 }         # PDF limit
+        rateLimiting: { rateInRequestsPerSecond: 1 } # ~10/min/user via usage plan
+      backend:
+        type: HTTP_BACKEND
+        url: http://<oke-lb>/convert
+
+    - path: /upload-media/{job_dir}
+      methods: ["POST"]
+      requestPolicies:
+        authorization: { type: ANY_OF, allowedScope: ["editor"] }
+        bodyLimiting: { maxSizeInMiB: 1200 }        # video limit
+      backend: { type: HTTP_BACKEND, url: "http://<oke-lb>/upload-media/${request.path[job_dir]}" }
+
+    # --- Editor status/lookup/sections/save/publish/export (JWT) ---
+    - path: /convert-status/{job_id}
+      methods: ["GET"]
+      requestPolicies: { authorization: { type: ANY_OF, allowedScope: ["editor"] } }
+      backend: { type: HTTP_BACKEND, url: "http://<oke-lb>/convert-status/${request.path[job_id]}" }
+
+    - path: /publish
+      methods: ["POST"]
+      requestPolicies: { authorization: { type: ANY_OF, allowedScope: ["editor"] } }
+      backend: { type: HTTP_BACKEND, url: "http://<oke-lb>/publish" }
+
+    - path: /export-cms
+      methods: ["POST"]
+      requestPolicies: { authorization: { type: ANY_OF, allowedScope: ["editor"] } }
+      backend: { type: HTTP_BACKEND, url: "http://<oke-lb>/export-cms" }
+
+    - path: /output/{job_dir}/{filename}
+      methods: ["GET", "PUT"]
+      requestPolicies: { authorization: { type: ANY_OF, allowedScope: ["editor"] } }
+      backend: { type: HTTP_BACKEND, url: "http://<oke-lb>/output/${request.path[job_dir]}/${request.path[filename]}" }
+
+    # --- Server-to-server lookup: restricted (mTLS / service token), NOT editor JWT ---
+    - path: /api/lookup/{refId}
+      methods: ["GET"]
+      requestPolicies:
+        # Restrict to the CMS backend caller (service token / source-IP allowlist).
+        authorization: { type: ANY_OF, allowedScope: ["service"] }
+        rateLimiting: { rateInRequestsPerSecond: 20 }
+      backend: { type: HTTP_BACKEND, url: "http://<oke-lb>/api/lookup/${request.path[refId]}" }
+
+    - path: /api/sections/{refId}
+      methods: ["GET"]
+      requestPolicies: { authorization: { type: ANY_OF, allowedScope: ["service", "editor"] } }
+      backend: { type: HTTP_BACKEND, url: "http://<oke-lb>/api/sections/${request.path[refId]}" }
+
+  # NOTE: Public learner documents are served directly from the Object Storage
+  # bucket via CDN (the /output GET redirect points there under OUTPUT_BACKEND=oci),
+  # so learner traffic does not transit the gateway/app tier.

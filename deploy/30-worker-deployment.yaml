@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pdf2html-worker
+  namespace: pdf2html
+  labels: { app: pdf2html-worker }
+spec:
+  replicas: 2                      # KEDA scales this between min/max below
+  selector:
+    matchLabels: { app: pdf2html-worker }
+  template:
+    metadata:
+      labels: { app: pdf2html-worker }
+    spec:
+      serviceAccountName: pdf2html-workload
+      nodeSelector: { pool: worker-pool }   # bigger RAM/CPU nodes for ML
+      terminationGracePeriodSeconds: 660     # let an in-flight conversion finish
+      containers:
+        - name: worker
+          image: <region>.ocir.io/<tenancy-namespace>/pdf2html/worker:<git-sha>
+          envFrom:
+            - configMapRef: { name: pdf2html-config }
+            - secretRef: { name: pdf2html-secrets }
+          resources:
+            requests: { cpu: "1500m", memory: "4Gi" }
+            limits:   { cpu: "3",     memory: "6Gi" }
+---
+# KEDA scales workers on queue depth. Idle -> minReplicaCount; a burst of
+# conversions grows toward maxReplicaCount, then drains back down.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: pdf2html-worker
+  namespace: pdf2html
+spec:
+  scaleTargetRef:
+    name: pdf2html-worker
+  minReplicaCount: 2
+  maxReplicaCount: 40
+  cooldownPeriod: 300
+  triggers:
+    # OCI Queue trigger (via a metrics adapter/OCI monitoring scaler). If using
+    # Redis Streams instead of OCI Queue, swap this for a `redis`/`redis-streams`
+    # trigger keyed on the pending list length.
+    - type: metrics-api
+      metadata:
+        # Points at an endpoint exposing the queue's visible message count.
+        # (In production this is OCI Monitoring for the queue's
+        # "VisibleMessages" metric, surfaced via a metrics-api shim.)
+        url: "http://pdf2html-api.pdf2html.svc.cluster.local/metrics/queue-depth"
+        valueLocation: "queue_depth"
+        targetValue: "3"          # ~1 worker per 3 queued jobs

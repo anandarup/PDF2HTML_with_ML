@@ -1,0 +1,47 @@
+# =============================================================================
+# Worker tier image (heavy — full ML stack).
+#
+# Consumes conversion jobs from the queue and runs the Docling/OCR/Whisper
+# pipeline. Models are pre-fetched at build time so pods start warm (no
+# first-request download). Scaled independently on queue depth (KEDA).
+#
+# Build (from repo root):
+#   docker build -f Dockerfile.worker -t <region>.ocir.io/<ns>/pdf2html/worker:<sha> .
+# =============================================================================
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    QUEUE_BACKEND=queue \
+    STATE_BACKEND=service \
+    OUTPUT_BACKEND=oci \
+    # Point model caches at a baked-in location.
+    HF_HOME=/models/hf \
+    PADDLE_HOME=/models/paddle \
+    PADDLEX_HOME=/models/paddlex \
+    XDG_CACHE_HOME=/models/cache
+
+# System libs Docling / OpenCV / video handling need.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libgl1 \
+        libglib2.0-0 \
+        poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Full (worker) dependency set.
+COPY python_app/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Pre-fetch the ML models into the image so worker pods start warm.
+COPY scripts/prefetch_models.py /app/scripts/prefetch_models.py
+RUN mkdir -p /models && python /app/scripts/prefetch_models.py || \
+    echo "WARN: model prefetch incomplete; workers will fetch on first use"
+
+# App code.
+COPY python_app/ /app/
+
+# The worker is a plain consumer loop; it exits cleanly if QUEUE_BACKEND!=queue.
+CMD ["python", "worker.py"]

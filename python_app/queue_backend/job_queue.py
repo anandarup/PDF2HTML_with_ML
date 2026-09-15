@@ -35,6 +35,11 @@ class JobQueue(abc.ABC):
         """
         raise NotImplementedError
 
+    def depth(self) -> int:
+        """Return the number of pending messages (for autoscaling). Backends
+        that run work inline return 0."""
+        return 0
+
 
 class ThreadQueue(JobQueue):
     """
@@ -65,6 +70,10 @@ class ThreadQueue(JobQueue):
     def consume(self, handler: Callable[[dict], None]) -> None:
         # Nothing to consume — work already ran at enqueue time.
         return
+
+    def depth(self) -> int:
+        # In-process: no backlog to report (work runs at enqueue time).
+        return 0
 
 
 class OciQueue(JobQueue):
@@ -110,6 +119,19 @@ class OciQueue(JobQueue):
                 )]
             ),
         )
+
+    def depth(self) -> int:
+        """Visible + in-flight message count, for the worker autoscaler."""
+        try:
+            client = self._get_client()
+            stats = client.get_stats(self._queue_id).data
+            # get_stats returns channel/queue stats incl. visible + in-flight.
+            q = getattr(stats, "queue", stats)
+            visible = getattr(q, "visible_messages", 0) or 0
+            in_flight = getattr(q, "in_flight_messages", 0) or 0
+            return int(visible) + int(in_flight)
+        except Exception:
+            return 0
 
     def consume(self, handler: Callable[[dict], None]) -> None:
         import oci
