@@ -65,6 +65,7 @@ class ExtractionResult:
 def extract_pdf_content(
     pdf_file_path: str,
     image_output_dir: str,
+    progress_callback=None,
 ) -> ExtractionResult:
     """
     Extract structured Markdown and embedded images from a PDF file.
@@ -79,6 +80,11 @@ def extract_pdf_content(
     Args:
         pdf_file_path: Absolute or relative path to the PDF file.
         image_output_dir: Directory to save extracted images.
+        progress_callback: Optional callable invoked as
+            progress_callback(stage: str, detail: str, extra: dict) at each
+            real step of extraction, so callers can surface live progress
+            (e.g. an image counter). `extra` carries structured fields like
+            {"image_count": N, "page_count": N}. Ignored if None.
 
     Returns:
         ExtractionResult with markdown content, image paths, and metadata.
@@ -88,6 +94,16 @@ def extract_pdf_content(
         ValueError: If the PDF file is empty or invalid.
         RuntimeError: If extraction fails.
     """
+    def _report(stage: str, detail: str, **extra) -> None:
+        if progress_callback:
+            try:
+                progress_callback(stage, detail, extra)
+            except TypeError:
+                # Back-compat: callback that only accepts (stage, detail).
+                progress_callback(stage, detail)
+            except Exception:
+                pass  # progress reporting must never break conversion
+
     resolved_path = Path(pdf_file_path).resolve()
     image_dir = Path(image_output_dir).resolve()
 
@@ -125,12 +141,24 @@ def extract_pdf_content(
         }
     )
 
-    # Convert the document
+    # Convert the document (Docling: layout analysis, OCR, table recognition).
+    _report(
+        "analyzing",
+        "Analyzing document layout, reading order and tables"
+        + (" (running OCR on scanned pages)" if is_scanned else "")
+        + "…",
+    )
     conv_result = doc_converter.convert(resolved_path)
     document = conv_result.document
 
     # Get page count
     page_count = len(document.pages)
+    _report(
+        "extracting_images",
+        f"Layout analyzed across {page_count} page"
+        f"{'s' if page_count != 1 else ''}. Extracting figures and tables…",
+        page_count=page_count,
+    )
 
     # Save figure and table images
     image_paths: List[str] = []
@@ -148,6 +176,18 @@ def extract_pdf_content(
             if img is not None:
                 img.save(str(filepath), format="PNG")
                 image_paths.append(str(filepath.resolve()))
+            _report(
+                "extracting_images",
+                f"Extracting images… {picture_counter} figure"
+                f"{'s' if picture_counter != 1 else ''}"
+                + (f", {table_counter} table{'s' if table_counter != 1 else ''}"
+                   if table_counter else "")
+                + " found",
+                page_count=page_count,
+                figure_count=picture_counter,
+                table_count=table_counter,
+                image_count=picture_counter + table_counter,
+            )
 
         elif isinstance(element, TableItem):
             table_counter += 1
@@ -157,13 +197,37 @@ def extract_pdf_content(
             if img is not None:
                 img.save(str(filepath), format="PNG")
                 image_paths.append(str(filepath.resolve()))
+            _report(
+                "extracting_images",
+                f"Extracting images… {picture_counter} figure"
+                f"{'s' if picture_counter != 1 else ''}, "
+                f"{table_counter} table{'s' if table_counter != 1 else ''} found",
+                page_count=page_count,
+                figure_count=picture_counter,
+                table_count=table_counter,
+                image_count=picture_counter + table_counter,
+            )
 
     # Export Markdown with referenced images
+    _report(
+        "extracting_text",
+        f"Found {picture_counter + table_counter} image"
+        f"{'s' if (picture_counter + table_counter) != 1 else ''}. "
+        "Extracting and structuring text…",
+        page_count=page_count,
+        image_count=picture_counter + table_counter,
+    )
     md_filename = image_dir / f"{doc_stem}.md"
     document.save_as_markdown(md_filename, image_mode=ImageRefMode.REFERENCED)
     markdown_content = md_filename.read_text(encoding="utf-8")
 
     # Also save page images for completeness
+    _report(
+        "saving_pages",
+        f"Saving {page_count} page image{'s' if page_count != 1 else ''}…",
+        page_count=page_count,
+        image_count=picture_counter + table_counter,
+    )
     for page_no, page in document.pages.items():
         if page.image and page.image.pil_image:
             page_filename = f"{doc_stem}-page-{page_no}.png"
@@ -261,3 +325,91 @@ def _is_scanned_pdf(pdf_path: str) -> bool:
     except Exception as exc:
         _log.warning(f"Could not detect PDF type: {exc}")
         return False
+
+
+class PDFSuitabilityError(Exception):
+    """
+    Raised when a PDF cannot be converted into clean, editable HTML.
+
+    Currently this covers scanned / image-only PDFs that have no extractable
+    text layer — running OCR on them yields a noisy, misordered dump rather
+    than clean HTML. The message is written to be shown directly to the editor.
+
+    Note: watermark-based rejection was intentionally NOT enabled. In this
+    deployment essentially all source material carries a publisher watermark
+    (e.g. NCERT "not to be republished"), so blocking on watermarks would stop
+    all legitimate conversions.
+    """
+
+
+# Below this average extractable text per page the PDF has effectively no real
+# text layer (scanned / image-only).
+_SUITABILITY_MIN_AVG_CHARS_PER_PAGE = 25
+# A page with fewer than this many characters is treated as "text-empty".
+_SUITABILITY_EMPTY_PAGE_CHARS = 10
+# If at least this fraction of sampled pages are text-empty, the document is
+# predominantly image-based even if a few pages carry text.
+_SUITABILITY_MAX_EMPTY_PAGE_RATIO = 0.6
+
+
+def check_pdf_suitability(pdf_path: str) -> None:
+    """
+    Validate that a PDF is suitable for clean HTML conversion.
+
+    Rejects (via PDFSuitabilityError) scanned / image-only PDFs that have no
+    real extractable text layer, because OCR of those produces a dirty,
+    unusable HTML document rather than clean, editable content.
+
+    Fast, pre-conversion gate using PyMuPDF only (no Docling/OCR). It errs
+    toward letting borderline documents through — a genuinely text-based PDF is
+    never rejected.
+
+    Raises:
+        PDFSuitabilityError: If the PDF is unsuitable. Message is editor-safe.
+    """
+    import pymupdf
+
+    try:
+        doc = pymupdf.open(pdf_path)
+    except Exception as exc:
+        raise PDFSuitabilityError(
+            "This file could not be opened as a valid PDF. Please re-export "
+            "the document and upload it again."
+        ) from exc
+
+    try:
+        page_count = doc.page_count
+        if page_count == 0:
+            raise PDFSuitabilityError(
+                "This PDF has no pages. Please upload a valid document."
+            )
+
+        sample_limit = min(page_count, 30)
+        if page_count <= sample_limit:
+            sample_indices = list(range(page_count))
+        else:
+            step = page_count / float(sample_limit)
+            sample_indices = sorted({int(i * step) for i in range(sample_limit)})
+
+        total_chars = 0
+        empty_pages = 0
+        for idx in sample_indices:
+            text = (doc[idx].get_text() or "").strip()
+            total_chars += len(text)
+            if len(text) < _SUITABILITY_EMPTY_PAGE_CHARS:
+                empty_pages += 1
+
+        sampled = len(sample_indices)
+        avg_chars = total_chars / max(sampled, 1)
+        empty_ratio = empty_pages / max(sampled, 1)
+
+        if (avg_chars < _SUITABILITY_MIN_AVG_CHARS_PER_PAGE
+                or empty_ratio >= _SUITABILITY_MAX_EMPTY_PAGE_RATIO):
+            raise PDFSuitabilityError(
+                "This PDF appears to be scanned or image-only — it has no "
+                "selectable text layer, so it can't be converted into clean, "
+                "editable HTML. Please upload a text-based PDF (one where you "
+                "can select and copy the text)."
+            )
+    finally:
+        doc.close()

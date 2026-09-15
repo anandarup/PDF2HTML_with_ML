@@ -142,6 +142,8 @@
     @keyframes slide{0%{margin-left:0;}50%{margin-left:58%;}100%{margin-left:0;}}
 
     .panel-status{font-size:.9rem;color:var(--ink-2);line-height:1.5;}
+    .panel-count{margin:.3rem 0 0;font-size:.8rem;font-weight:600;color:var(--ink-2);letter-spacing:.01em;opacity:.85;}
+    .panel-count[hidden]{display:none;}
 
     .result-badge,.error-badge{display:inline-flex;align-items:center;gap:.42rem;font-weight:600;font-size:.9rem;}
     .result-badge{color:var(--good);}
@@ -237,6 +239,7 @@
         </div>
         <div class="bar"><div class="bar-fill" id="progressBar"></div></div>
         <p class="panel-status" id="progressStatus">Uploading&hellip;</p>
+        <p class="panel-count" id="progressCount" hidden></p>
         <button type="button" class="btn btn-quiet" id="cancelUpload">Cancel</button>
       </div>
 
@@ -294,6 +297,7 @@
     const progressSection = document.getElementById('progressSection');
     const progressBar = document.getElementById('progressBar');
     const progressStatus = document.getElementById('progressStatus');
+    const progressCount = document.getElementById('progressCount');
     const resultSection = document.getElementById('resultSection');
     const resultTitle = document.getElementById('resultTitle');
     const resultMeta = document.getElementById('resultMeta');
@@ -379,7 +383,12 @@
         if (!e.lengthComputable) return;
         const pct = Math.round((e.loaded / e.total) * 90);
         progressBar.style.width = pct + '%';
-        progressStatus.textContent = 'Uploading ' + file.name + '… ' + Math.round((e.loaded / e.total) * 100) + '%';
+        // Show uploaded / total size plus percentage, e.g. "3.2 MB of 8.1 MB (40%)".
+        const pctFull = Math.round((e.loaded / e.total) * 100);
+        progressStatus.textContent =
+          'Uploading ' + file.name + '… ' +
+          formatBytes(e.loaded) + ' of ' + formatBytes(e.total) +
+          ' (' + pctFull + '%)';
       });
 
       // Upload finished; the server accepts it and starts the actual
@@ -444,6 +453,17 @@
         })
         .then((job) => {
           if (job.detail) progressStatus.textContent = job.detail;
+          // Live counter line: pages / images discovered so far.
+          const prog = job.progress || {};
+          const bits = [];
+          if (prog.page_count != null) bits.push(plural(prog.page_count, 'page'));
+          if (prog.image_count != null) bits.push(plural(prog.image_count, 'image'));
+          if (bits.length && job.status !== 'done') {
+            progressCount.textContent = bits.join(' · ');
+            progressCount.hidden = false;
+          } else {
+            progressCount.hidden = true;
+          }
           if (job.status === 'done') {
             progressBar.classList.remove('indeterminate');
             progressBar.style.width = '100%';
@@ -495,6 +515,8 @@
       fileInput.value = '';
       progressBar.classList.remove('indeterminate');
       progressBar.style.width = '0%';
+      progressCount.hidden = true;
+      progressCount.textContent = '';
     }
 
     function hideAll() {

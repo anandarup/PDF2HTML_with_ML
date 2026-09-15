@@ -18,7 +18,11 @@ import re
 from pathlib import Path
 from typing import Callable, Optional
 
-from tools.extract_pdf import extract_pdf_content
+from tools.extract_pdf import (
+    extract_pdf_content,
+    check_pdf_suitability,
+    PDFSuitabilityError,
+)
 from tools.build_html import build_interactive_html
 
 # Called as progress_callback(stage, detail) at each real stage transition —
@@ -59,9 +63,21 @@ def convert_pdf_to_html(
         ValueError: If the PDF is empty or invalid.
         RuntimeError: If extraction or generation fails.
     """
-    def report(stage: str, detail: str) -> None:
-        if progress_callback:
+    def report(stage: str, detail: str, **extra) -> None:
+        if not progress_callback:
+            return
+        try:
+            progress_callback(stage, detail, extra)
+        except TypeError:
+            # Back-compat with a callback that only accepts (stage, detail).
             progress_callback(stage, detail)
+        except Exception:
+            pass  # progress reporting must never break conversion
+
+    # A progress sink shaped like extract_pdf_content's callback:
+    # (stage, detail, extra) — forwards straight through to `report`.
+    def _extract_progress(stage: str, detail: str, extra=None) -> None:
+        report(stage, detail, **(extra or {}))
 
     resolved_pdf = Path(pdf_path).resolve()
     pdf_stem = resolved_pdf.stem
@@ -79,6 +95,19 @@ def convert_pdf_to_html(
     print(f"[pdf2webview] Starting conversion: {resolved_pdf}")
     print(f"[pdf2webview] Output directory: {resolved_output}")
 
+    # --- Step 0: Suitability gate ---
+    # Reject PDFs that cannot produce clean, editable HTML BEFORE spending time
+    # on Docling/OCR: scanned / image-only files with no text layer.
+    # check_pdf_suitability raises PDFSuitabilityError with an editor-facing
+    # message, which propagates to /convert and is surfaced to the user as the
+    # job's error (conversion is stopped, no HTML is produced).
+    print("[pdf2webview] Step 0/2: Checking PDF suitability...")
+    report(
+        "checking",
+        "Checking that this PDF can be converted cleanly...",
+    )
+    check_pdf_suitability(str(resolved_pdf))
+
     # --- Step 1: Extract PDF content ---
     print("[pdf2webview] Step 1/2: Extracting PDF content...")
     report(
@@ -91,6 +120,7 @@ def convert_pdf_to_html(
     extraction = extract_pdf_content(
         pdf_file_path=str(resolved_pdf),
         image_output_dir=image_dir,
+        progress_callback=_extract_progress,
     )
 
     elapsed_extract = time.time() - start
@@ -113,11 +143,14 @@ def convert_pdf_to_html(
 
     # --- Step 2: Build interactive HTML ---
     print("[pdf2webview] Step 2/2: Building interactive HTML...")
+    _img_n = len(extraction.image_paths)
     report(
         "building",
-        f"Found {extraction.page_count} page"
-        f"{'s' if extraction.page_count != 1 else ''} — now creating "
-        "your interactive document...",
+        f"Building your interactive document from {extraction.page_count} page"
+        f"{'s' if extraction.page_count != 1 else ''} and {_img_n} image"
+        f"{'s' if _img_n != 1 else ''}…",
+        page_count=extraction.page_count,
+        image_count=_img_n,
     )
     start = time.time()
 
@@ -142,8 +175,6 @@ def convert_pdf_to_html(
     elapsed_html = time.time() - start
     print(f"[pdf2webview]   - HTML file: {html_result.html_path}")
     print(f"[pdf2webview]   - File size: {_format_bytes(html_result.file_size)} ({elapsed_html:.1f}s)")
-    print("[pdf2webview] ✓ Conversion complete.")
-    report("done", "Conversion complete.")
 
     # Upload images to OCI Object Storage and rewrite HTML paths
     try:
@@ -155,6 +186,14 @@ def convert_pdf_to_html(
         job_prefix = output_dir.name + "/"
 
         if images_dir.exists():
+            _n_files = sum(1 for _f in images_dir.rglob("*") if _f.is_file())
+            report(
+                "uploading",
+                f"Uploading {_n_files} media file"
+                f"{'s' if _n_files != 1 else ''} to storage…",
+                page_count=extraction.page_count,
+                image_count=len(extraction.image_paths),
+            )
             url_map = upload_directory(images_dir, job_prefix)
 
             # Rewrite image paths in the HTML file to use bucket URLs
@@ -182,6 +221,14 @@ def convert_pdf_to_html(
         pass
     except Exception as e:
         print(f"[pdf2webview]   - HTML bucket upload warning: {e}")
+
+    print("[pdf2webview] ✓ Conversion complete.")
+    report(
+        "done",
+        "Conversion complete.",
+        page_count=extraction.page_count,
+        image_count=len(extraction.image_paths),
+    )
 
     return {
         "html_path": html_result.html_path,
