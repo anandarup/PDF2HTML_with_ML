@@ -1,0 +1,21 @@
+# Non-secret configuration shared by the API and worker tiers.
+# Secrets (REDIS_URL with creds, JSONDB_URL, queue OCIDs, CMS tokens) come from
+# a Secret sourced from OCI Vault (see 11-secrets.example.yaml) — NOT here.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pdf2html-config
+  namespace: pdf2html
+data:
+  STATE_BACKEND: "service"
+  OUTPUT_BACKEND: "oci"
+  QUEUE_BACKEND: "queue"
+  OCI_REGION: "ap-hyderabad-1"
+  BUCKET_HTML: "poc-interactivetxtbk1"
+  BUCKET_MEDIA: "poc-interactivetxt-media-src-bucket"
+  BUCKET_VIDEO: "poc-interactivetxt-media-dst-bucket"
+  QUEUE_NAME: "pdf-convert"
+  STATE_HOT_TTL_SECONDS: "3600"
+  QUEUE_VISIBILITY_TIMEOUT: "900"
+  QUEUE_MAX_ATTEMPTS: "3"
+  RETENTION_TTL_DAYS: "30"

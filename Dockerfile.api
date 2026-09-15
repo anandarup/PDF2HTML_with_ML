@@ -1,0 +1,43 @@
+# =============================================================================
+# API tier image (lean — NO ML stack).
+#
+# Serves the HTTP contract: accept upload -> enqueue, status/lookup/sections,
+# publish trigger, save edits, serve/redirect output. Conversion runs in the
+# separate worker image (Dockerfile.worker). Because app.py imports the ML
+# chain lazily, this image does not need docling/paddle/whisper/opencv.
+#
+# Build (from repo root):
+#   docker build -f Dockerfile.api -t <region>.ocir.io/<ns>/pdf2html/api:<sha> .
+# =============================================================================
+FROM python:3.11-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    QUEUE_BACKEND=queue \
+    STATE_BACKEND=service \
+    OUTPUT_BACKEND=oci
+
+WORKDIR /app
+
+# Only the lean API dependencies.
+COPY python_app/requirements-api.txt .
+RUN pip install --no-cache-dir -r requirements-api.txt
+
+# App code. (The ML modules are present in the tree but never imported by the
+# API path, so they add no runtime weight beyond source files.)
+COPY python_app/ /app/
+
+EXPOSE 8501
+
+# gevent workers for I/O-bound API traffic (status polling dominates); the long
+# ML timeout is gone from this tier since conversion is off the request path.
+# A readiness probe hits /readyz; liveness hits /healthz.
+CMD ["gunicorn", \
+     "--workers", "4", \
+     "--worker-class", "gevent", \
+     "--worker-connections", "200", \
+     "--timeout", "120", \
+     "--bind", "0.0.0.0:8501", \
+     "--access-logfile", "-", \
+     "--error-logfile", "-", \
+     "app:app"]

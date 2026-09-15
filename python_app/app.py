@@ -33,7 +33,12 @@ import config
 from state.job_store import build_job_store
 from storage.output_store import build_output_store
 from queue_backend.job_queue import build_job_queue
-from conversion_job import run_conversion_job
+# NOTE: `conversion_job` (which imports the heavy ML stack via convert.py) is
+# imported LAZILY inside the queue handler, not at module load. This lets the
+# API container ship WITHOUT the ML dependencies (docling/paddle/whisper): under
+# QUEUE_BACKEND=queue the API only enqueues, and a separate worker image runs
+# the conversion. Under the QUEUE_BACKEND=thread default (single-VM), the import
+# happens on the first enqueue — where the ML stack is present anyway.
 
 app = Flask(__name__, static_folder="static", template_folder="web_templates")
 
@@ -68,7 +73,13 @@ output_store = build_output_store(config)
 # Conversion is dispatched through a queue seam. The default ThreadQueue runs
 # the job in a daemon thread in-process (identical to the original behavior);
 # QUEUE_BACKEND=queue publishes to OCI Queue and a standalone worker.py consumes.
-job_queue = build_job_queue(config, lambda msg: run_conversion_job(msg, job_store))
+def _conversion_handler(msg):
+    # Lazy import so the API image doesn't require the ML stack at load time.
+    from conversion_job import run_conversion_job
+    run_conversion_job(msg, job_store)
+
+
+job_queue = build_job_queue(config, _conversion_handler)
 
 
 def _job_path(job_id: str) -> Path:
@@ -137,6 +148,37 @@ def readyz():
     checks["config_summary"] = config.summary()
 
     return jsonify({"status": "ok" if ok else "not_ready", "checks": checks}), (200 if ok else 503)
+
+
+@app.route("/metrics/queue-depth")
+def metrics_queue_depth():
+    """
+    Report the number of pending conversion jobs, for the worker autoscaler
+    (KEDA metrics-api trigger). Under QUEUE_BACKEND=queue this reflects the
+    queue's visible-message count; otherwise it derives a best-effort count of
+    jobs still in a non-terminal state from the state store. Always 200 so the
+    scaler treats an unreachable backend as "no load" rather than erroring.
+    """
+    depth = 0
+    try:
+        depth = job_queue.depth()
+    except Exception:
+        depth = 0
+    return jsonify({"queue_depth": depth}), 200
+
+
+@app.route("/metrics")
+def metrics():
+    """Lightweight operational metrics snapshot (JSON). A Prometheus exporter
+    can be layered later; this keeps the app dependency-free."""
+    try:
+        depth = job_queue.depth()
+    except Exception:
+        depth = None
+    return jsonify({
+        "queue_depth": depth,
+        "backends": config.summary(),
+    }), 200
 
 
 @app.route("/convert", methods=["POST"])

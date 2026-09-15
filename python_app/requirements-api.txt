@@ -1,0 +1,19 @@
+# Lean API-tier dependencies (no ML stack).
+#
+# The API container serves HTTP, manages job state, enqueues conversions, and
+# serves/redirects output. It does NOT run Docling/OCR/Whisper — that is the
+# worker image (see requirements.txt for the full/worker deps).
+#
+# Deliberately EXCLUDED here (worker-only): docling, docling-core, onnxruntime,
+# opencv-python, faster-whisper, paddleocr, paddlepaddle, Pillow, markdown, Jinja2's
+# doc-build usage. (Jinja2 comes transitively with Flask for template rendering.)
+
+flask>=3.0.0
+gunicorn>=21.0.0
+gevent>=23.0.0
+requests>=2.31.0
+boto3>=1.28.0
+oci>=2.120.0
+redis>=5.0,<6.0
+tinydb>=4.8.0
+beautifulsoup4>=4.12.0

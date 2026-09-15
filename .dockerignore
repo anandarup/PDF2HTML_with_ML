@@ -1,0 +1,25 @@
+# Keep build context small and free of local/runtime state.
+.git
+.gitignore
+**/__pycache__/
+**/*.pyc
+*.log
+
+# Local runtime state — must never be baked into an image.
+python_app/jobs/
+python_app/uploads/
+python_app/learner_progress.json
+output/
+../output/
+
+# Local venv / editor / docs
+venv/
+.venv/
+.vscode/
+.idea/
+docs/
+*.md
+!python_app/requirements*.txt
+
+# Test scratch
+python_app/tests/__pycache__/

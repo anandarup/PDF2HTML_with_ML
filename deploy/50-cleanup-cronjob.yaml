@@ -1,0 +1,30 @@
+# Nightly lifecycle cleanup. Uses the worker image (has the app code) but runs
+# cleanup_job.py instead of the consumer. Never deletes published content.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pdf2html-cleanup
+  namespace: pdf2html
+spec:
+  schedule: "17 2 * * *"          # 02:17 daily
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: pdf2html-workload
+          nodeSelector: { pool: worker-pool }
+          restartPolicy: Never
+          containers:
+            - name: cleanup
+              image: <region>.ocir.io/<tenancy-namespace>/pdf2html/worker:<git-sha>
+              command: ["python", "cleanup_job.py"]
+              envFrom:
+                - configMapRef: { name: pdf2html-config }
+                - secretRef: { name: pdf2html-secrets }
+              resources:
+                requests: { cpu: "250m", memory: "256Mi" }
+                limits:   { cpu: "1",    memory: "512Mi" }
