@@ -112,6 +112,33 @@ QUEUE_MAX_ATTEMPTS = _env_int("QUEUE_MAX_ATTEMPTS", 3)
 
 
 # ---------------------------------------------------------------------------
+# OCR engine selection.
+# Defaults to "rapidocr" — the current in-process Docling+RapidOCR path, so
+# behavior is unchanged until an operator opts in. "surya" routes OCR to the
+# hosted Datalab/Surya API (network call, best run via the job queue).
+#
+# NOTE ON DATA EGRESS: with OCR_ENGINE=surya, page content is sent to Datalab's
+# servers for processing (results are deleted there ~1h after completion).
+# DATALAB_PROCESSING_LOCATION pins the region ("us" by default here).
+# ---------------------------------------------------------------------------
+OCR_ENGINE = _env("OCR_ENGINE", "rapidocr").lower()          # rapidocr | surya
+VALID_OCR_ENGINES = {"rapidocr", "surya"}
+
+# Datalab/Surya API. DATALAB_API_KEY is a secret and is read from the
+# environment only — it is NEVER echoed by summary() or logged.
+DATALAB_API_KEY = _env("DATALAB_API_KEY", "")
+DATALAB_API_BASE_URL = _env("DATALAB_API_BASE_URL", "https://www.datalab.to")
+DATALAB_MODE = _env("DATALAB_MODE", "balanced").lower()      # fast|balanced|accurate
+DATALAB_PROCESSING_LOCATION = _env("DATALAB_PROCESSING_LOCATION", "us").lower()  # us|eu
+# End-to-end ceiling for a single conversion round-trip (submit + poll).
+DATALAB_TIMEOUT_SECONDS = _env_int("DATALAB_TIMEOUT_SECONDS", 600)
+DATALAB_POLL_INTERVAL_SECONDS = _env_int("DATALAB_POLL_INTERVAL_SECONDS", 2)
+
+VALID_DATALAB_MODES = {"fast", "balanced", "accurate"}
+VALID_DATALAB_LOCATIONS = {"us", "eu"}
+
+
+# ---------------------------------------------------------------------------
 # App / runtime
 # ---------------------------------------------------------------------------
 FLASK_ENV = _env("FLASK_ENV", "production")
@@ -136,6 +163,11 @@ def summary() -> dict:
         "jsondb_configured": bool(JSONDB_URL),
         "queue_name": QUEUE_NAME,
         "queue_configured": bool(QUEUE_ENDPOINT or QUEUE_OCID),
+        "ocr_engine": OCR_ENGINE,
+        # Report only whether a key is present, never the key itself.
+        "datalab_api_key_configured": bool(DATALAB_API_KEY),
+        "datalab_mode": DATALAB_MODE,
+        "datalab_processing_location": DATALAB_PROCESSING_LOCATION,
     }
 
 
@@ -158,4 +190,16 @@ def validate() -> list[str]:
         problems.append("STATE_BACKEND=service requires REDIS_URL and/or JSONDB_URL")
     if QUEUE_BACKEND == "queue" and not (QUEUE_ENDPOINT or QUEUE_OCID):
         problems.append("QUEUE_BACKEND=queue requires QUEUE_ENDPOINT or QUEUE_OCID")
+
+    if OCR_ENGINE not in VALID_OCR_ENGINES:
+        problems.append(f"OCR_ENGINE '{OCR_ENGINE}' not in {VALID_OCR_ENGINES}")
+    if OCR_ENGINE == "surya" and not DATALAB_API_KEY:
+        problems.append("OCR_ENGINE=surya requires DATALAB_API_KEY")
+    if OCR_ENGINE == "surya" and DATALAB_MODE not in VALID_DATALAB_MODES:
+        problems.append(f"DATALAB_MODE '{DATALAB_MODE}' not in {VALID_DATALAB_MODES}")
+    if OCR_ENGINE == "surya" and DATALAB_PROCESSING_LOCATION not in VALID_DATALAB_LOCATIONS:
+        problems.append(
+            f"DATALAB_PROCESSING_LOCATION '{DATALAB_PROCESSING_LOCATION}' "
+            f"not in {VALID_DATALAB_LOCATIONS}"
+        )
     return problems

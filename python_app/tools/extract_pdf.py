@@ -116,6 +116,23 @@ def extract_pdf_content(
     # Ensure image output directory exists
     image_dir.mkdir(parents=True, exist_ok=True)
 
+    # --- OCR engine selection ------------------------------------------------
+    # Default ("rapidocr") falls through to the in-process Docling pipeline
+    # below, unchanged. "surya" routes the whole conversion to the hosted
+    # Datalab/Surya API and adapts its response into the same ExtractionResult.
+    try:
+        import config as _config
+        _ocr_engine = _config.OCR_ENGINE
+    except Exception:
+        _ocr_engine = "rapidocr"
+
+    if _ocr_engine == "surya":
+        return _extract_via_surya(
+            resolved_path=resolved_path,
+            image_dir=image_dir,
+            report=_report,
+        )
+
     # Detect if PDF is predominantly scanned/image-based
     is_scanned = _is_scanned_pdf(str(resolved_path))
 
@@ -248,6 +265,121 @@ def extract_pdf_content(
 
     return ExtractionResult(
         markdown=markdown_content,
+        image_paths=image_paths,
+        image_directory=str(image_dir),
+        page_count=page_count,
+        source_path=str(resolved_path),
+        first_page_text=first_page_text,
+    )
+
+
+def _extract_via_surya(resolved_path: Path, image_dir: Path, report) -> ExtractionResult:
+    """Extract PDF content using the hosted Datalab/Surya API.
+
+    Produces the same ExtractionResult contract as the Docling path:
+    markdown, image_paths, image_directory, page_count, first_page_text.
+
+    Raises RuntimeError on failure so the caller/job surfaces a clear error
+    (the default RapidOCR path is unaffected).
+    """
+    import base64
+    import binascii
+
+    import config as _config
+    from tools.surya_ocr_client import convert_pdf, SuryaOcrError
+
+    report(
+        "analyzing",
+        "Reading your PDF and identifying text, images, and layout. "
+        "This may take a minute for longer documents…",
+    )
+
+    try:
+        result = convert_pdf(
+            str(resolved_path),
+            api_key=_config.DATALAB_API_KEY,
+            base_url=_config.DATALAB_API_BASE_URL,
+            mode=_config.DATALAB_MODE,
+            processing_location=_config.DATALAB_PROCESSING_LOCATION,
+            timeout_seconds=_config.DATALAB_TIMEOUT_SECONDS,
+            poll_interval=_config.DATALAB_POLL_INTERVAL_SECONDS,
+        )
+    except SuryaOcrError as exc:
+        # Editor-facing, key-free, brand-neutral message.
+        raise RuntimeError(f"Text extraction failed: {exc}") from exc
+
+    markdown = result.markdown or ""
+    doc_stem = resolved_path.stem
+
+    # Save returned images ({filename: base64}) into image_dir, and rewrite any
+    # references in the markdown to point at the saved files. Datalab returns
+    # its own filenames; we keep them so markdown links stay consistent.
+    report(
+        "extracting_images",
+        f"Saving {len(result.images)} extracted image"
+        f"{'s' if len(result.images) != 1 else ''}…",
+        page_count=result.page_count,
+    )
+    saved_names: List[str] = []
+    for fname, b64 in (result.images or {}).items():
+        safe_name = Path(fname).name  # never allow path traversal from API data
+        if not safe_name:
+            continue
+        try:
+            raw = base64.b64decode(b64, validate=False)
+        except (binascii.Error, ValueError):
+            _log.warning("Skipping undecodable image from Surya: %s", safe_name)
+            continue
+        out_path = image_dir / safe_name
+        try:
+            out_path.write_bytes(raw)
+            saved_names.append(safe_name)
+        except OSError as exc:
+            _log.warning("Could not write image %s: %s", safe_name, exc)
+
+    # If markdown references images as "![](name)" or "(name)", normalize the
+    # references so build_html can resolve them under the images/ directory.
+    # We only rewrite bare references to files we actually saved.
+    for name in saved_names:
+        markdown = markdown.replace(f"]({name})", f"](images/{name})")
+
+    report(
+        "extracting_text",
+        "Structuring extracted text…",
+        page_count=result.page_count,
+        image_count=len(saved_names),
+    )
+
+    # Persist the markdown next to images, mirroring the Docling path's on-disk
+    # artifact (some downstream tooling expects a .md alongside images).
+    try:
+        (image_dir / f"{doc_stem}.md").write_text(markdown, encoding="utf-8")
+    except OSError:
+        pass
+
+    image_paths = _collect_image_paths(image_dir)
+    first_page_text = _get_first_page_text(str(resolved_path))
+
+    # page_count from the API can be 0 for odd inputs; fall back to PyMuPDF.
+    page_count = result.page_count
+    if page_count <= 0:
+        try:
+            import pymupdf
+            doc = pymupdf.open(str(resolved_path))
+            page_count = doc.page_count
+            doc.close()
+        except Exception:
+            page_count = 0
+
+    report(
+        "saving_pages",
+        "Text extraction complete.",
+        page_count=page_count,
+        image_count=len(saved_names),
+    )
+
+    return ExtractionResult(
+        markdown=markdown,
         image_paths=image_paths,
         image_directory=str(image_dir),
         page_count=page_count,
