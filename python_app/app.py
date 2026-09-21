@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+import traceback
 import uuid
 from pathlib import Path
 from urllib.parse import quote
@@ -757,10 +758,27 @@ def publish_for_learners():
             "video_count": result["videos_uploaded"],
         }), 200
 
-    except FileNotFoundError as e:
-        return jsonify({"success": False, "error": str(e)}), 404
-    except Exception as e:
-        return jsonify({"success": False, "error": f"Publish failed: {str(e)}"}), 500
+    except FileNotFoundError:
+        # The exception text carries the absolute server path — keep that in
+        # the log, not in the editor's error dialog.
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": "This document could not be found on the server.",
+        }), 404
+    except Exception:
+        # Storage-layer failures name the backend and its buckets (e.g. an OCI
+        # /S3 "NoSuchBucket" or a credentials error). That is operator
+        # information, not something to put in front of an editor, so the
+        # detail goes to the server log and the UI gets a generic message.
+        traceback.print_exc()
+        return jsonify({
+            "success": False,
+            "error": (
+                "Couldn't generate the HTML for learners. "
+                "Please try again — the server log has the details."
+            ),
+        }), 500
 
 
 @app.route("/export-cms", methods=["POST"])

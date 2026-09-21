@@ -3160,9 +3160,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7"/><path d="M15 3h6v6"/><path d="M11 13 21 3"/></svg>
       <span class="ta-label">Export</span>
     </button>
-    <button class="edit-toggle publish-btn" id="publishToggle" aria-label="Publish for learners">
+    <button class="edit-toggle publish-btn" id="publishToggle" aria-label="Generate HTML for learners">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 14V4"/><path d="M8.5 7.5 12 4l3.5 3.5"/><path d="M5 14a4 4 0 0 0 4 4h6.5a3.5 3.5 0 0 0 .5-6.96A5.5 5.5 0 0 0 5.5 10 4 4 0 0 0 5 14z"/></svg>
-      <span class="ta-label">Publish</span>
+      <span class="ta-label">Generate HTML</span>
     </button>
   </div>
 
@@ -3821,18 +3821,18 @@
         <div class="pub-icon pub-icon--brand" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V4"/><path d="M8.5 7.5 12 4l3.5 3.5"/><path d="M5 14a4 4 0 0 0 4 4h6.5a3.5 3.5 0 0 0 .5-6.96A5.5 5.5 0 0 0 5.5 10 4 4 0 0 0 5 14z"/></svg>
         </div>
-        <h3 class="pub-h" id="publishModalTitle">Publish for learners</h3>
-        <p class="pub-sub">Uploads this chapter and its media, and gives you a public link learners can open on any device. You can re&#8209;publish any time to push updates.</p>
+        <h3 class="pub-h" id="publishModalTitle">Generate HTML for learners</h3>
+        <p class="pub-sub">Uploads this chapter and its media, and gives you a public link learners can open on any device. You can re&#8209;generate any time to push updates.</p>
         <div class="pub-actions">
           <button type="button" class="pub-btn pub-btn--quiet" id="publishCancel">Cancel</button>
-          <button type="button" class="pub-btn pub-btn--green" id="publishConfirm">Publish now</button>
+          <button type="button" class="pub-btn pub-btn--green" id="publishConfirm">Generate now</button>
         </div>
       </div>
 
       <!-- Publishing -->
       <div id="publishStateProgress" style="display:none;">
         <div class="pub-icon pub-icon--brand" aria-hidden="true"><span class="pub-ring"></span></div>
-        <h3 class="pub-h">Publishing&hellip;</h3>
+        <h3 class="pub-h">Generating&hellip;</h3>
         <p class="pub-sub" id="publishProgressText">Uploading files&hellip;</p>
       </div>
 
@@ -3841,7 +3841,7 @@
         <div class="pub-icon pub-icon--ok" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm-1.1 14.3-3.8-3.8 1.5-1.5 2.3 2.3 5-5.3 1.6 1.5z"/></svg>
         </div>
-        <h3 class="pub-h">Published</h3>
+        <h3 class="pub-h">HTML ready</h3>
         <p class="pub-sub">Learners can open this at the link below.</p>
         <div class="pub-urlrow">
           <input type="text" id="publishUrlField" class="pub-url" readonly aria-label="Learner URL" />
@@ -3865,7 +3865,7 @@
         <div class="pub-icon pub-icon--err" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 21 20H3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r=".7" fill="currentColor"/></svg>
         </div>
-        <h3 class="pub-h">Publish failed</h3>
+        <h3 class="pub-h">Couldn&rsquo;t generate HTML</h3>
         <p class="pub-sub" id="publishErrorMsg" style="color:var(--color-text);"></p>
         <div class="pub-actions">
           <button type="button" class="pub-btn pub-btn--quiet" id="publishErrorClose">Close</button>
@@ -7620,7 +7620,7 @@
 
       function doPublish() {
         showState('progress');
-        publishProgressText.textContent = 'Uploading files to S3...';
+        publishProgressText.textContent = 'Uploading files…';
 
         // Extract job_dir and filename from URL: /output/<job_dir>/<filename>
         var pathParts = window.location.pathname.split('/');
