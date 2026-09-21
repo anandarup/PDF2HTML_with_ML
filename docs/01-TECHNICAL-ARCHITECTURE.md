@@ -78,7 +78,7 @@ The flow when an editor uploads a PDF:
 1. **`POST /convert`** (`app.py`) receives the `pdf` file (and optional `ref_id`), saves it to `uploads/`, writes an initial job record, and starts a **background thread**. It returns `202 {job_id}` immediately.
 2. **`convert_pdf_to_html`** (`convert.py`) orchestrates two steps and reports progress via a callback (`extracting` → `building` → `done`).
 3. **`extract_pdf_content`** (`tools/extract_pdf.py`) runs the **Docling** pipeline: layout analysis, table recognition, OCR, image export, and Markdown export. It also detects whether the PDF is scanned (PyMuPDF sampling) to decide on full-page OCR.
-4. **`build_interactive_html`** (`tools/build_html.py`) converts the Markdown to HTML (Python `markdown` with `tables`, `fenced_code`, `toc`, `sane_lists`), cleans PDF artifacts, removes QR codes (OpenCV), wraps images as figures, builds a table of contents, and renders the `document.html` Jinja2 template.
+4. **`build_interactive_html`** (`tools/build_html.py`) converts the Markdown to HTML (Python `markdown` with `tables`, `fenced_code`, `toc`, `sane_lists`), cleans PDF artifacts, removes QR codes with their captions and code values (`tools/qr_filter.py`), wraps images as figures, builds a table of contents, and renders the `document.html` Jinja2 template.
 5. Back in `convert.py`, extracted **images are uploaded** to `poc-interactivetxt-media-src-bucket` and the local `images/...` references in the HTML are rewritten to bucket URLs. The **HTML file is uploaded** to `poc-interactivetxtbk1`.
 6. The job record is updated to `status="done"` with an `edit_url`.
 

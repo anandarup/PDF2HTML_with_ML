@@ -16,6 +16,8 @@ from typing import List
 import markdown
 from jinja2 import Environment, FileSystemLoader
 
+from tools.qr_filter import strip_qr_content, strip_qr_from_html
+
 
 # Resolve template directory relative to this file
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
@@ -84,8 +86,11 @@ def build_interactive_html(
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
     output_path = resolved_output_dir / output_filename
 
-    # Remove QR code images before path rewriting (paths are still absolute here)
-    processed_markdown = _remove_qr_code_images(markdown_content)
+    # Remove QR codes, their captions, and their printed code values before
+    # path rewriting (image paths still point at their on-disk location here)
+    processed_markdown = strip_qr_content(
+        markdown_content, base_dir=str(resolved_output_dir)
+    )
 
     # Rewrite absolute image paths in markdown to be relative to output HTML
     processed_markdown = _rewrite_image_paths(
@@ -118,6 +123,10 @@ def build_interactive_html(
     # Convert inline images to floating figures for textbook-style layout
     body_html = _wrap_images_as_figures(body_html)
 
+    # Safety net: drop any QR code leftovers (e.g. images inside tables, whose
+    # rows the Markdown pass leaves intact to avoid breaking the table)
+    body_html = strip_qr_from_html(body_html)
+
     # Extract TOC entries from headings in the rendered HTML
     toc_entries = _extract_toc(body_html)
 
@@ -145,101 +154,6 @@ def build_interactive_html(
         image_count=len(image_paths),
         file_size=file_size,
     )
-
-
-def _remove_qr_code_images(markdown_text: str) -> str:
-    """
-    Detect and remove QR code image references from Markdown.
-
-    Uses OpenCV's QRCodeDetector to check each referenced image file.
-    If a QR code is detected, the entire Markdown image line is removed.
-    This prevents QR codes (publisher links, digital resource codes)
-    from cluttering the converted HTML output.
-    """
-    import cv2
-    import numpy as np
-    from PIL import Image as PILImage
-
-    img_pattern = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
-    qr_detector = cv2.QRCodeDetector()
-
-    lines = markdown_text.split("\n")
-    cleaned: list = []
-
-    for line in lines:
-        match = img_pattern.search(line)
-        if match:
-            img_path = match.group(1)
-            if _is_qr_code(img_path, qr_detector):
-                continue
-        cleaned.append(line)
-
-    return "\n".join(cleaned)
-
-
-def _is_qr_code(image_path: str, detector: "cv2.QRCodeDetector") -> bool:
-    """
-    Check whether an image file contains a QR code or barcode.
-
-    Uses OpenCV QRCodeDetector for reliable detection. Also applies
-    heuristics: QR/barcodes in PDFs are typically small, roughly square images.
-
-    Args:
-        image_path: Path to the image file.
-        detector: Pre-initialized cv2.QRCodeDetector instance.
-
-    Returns:
-        True if the image contains a QR code or barcode.
-    """
-    import cv2
-
-    try:
-        if not os.path.isfile(image_path):
-            return False
-
-        img = cv2.imread(image_path)
-        if img is None:
-            return False
-
-        height, width = img.shape[:2]
-
-        # Skip very large images — unlikely to be just a QR code
-        if width > 1000 and height > 1000:
-            return False
-
-        # Attempt QR code detection and decode
-        data, points, _ = detector.detectAndDecode(img)
-        if data:
-            return True
-
-        # Try detection without decode (catches partially readable QR codes)
-        retval, points = detector.detect(img)
-        if retval and points is not None:
-            return True
-
-        # Additional heuristic for small square-ish images that might be
-        # barcodes/QR codes not detected by OpenCV: check if the image is
-        # predominantly black and white with high-frequency patterns
-        if width < 300 and height < 300:
-            aspect_ratio = min(width, height) / max(width, height)
-            if aspect_ratio > 0.5:
-                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-                # Threshold to binary
-                _, binary = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY)
-                # QR codes have roughly 50/50 black/white ratio
-                white_ratio = binary.mean() / 255.0
-                if 0.25 < white_ratio < 0.75:
-                    # Check for high-frequency edges (QR pattern)
-                    edges = cv2.Canny(gray, 50, 150)
-                    edge_density = edges.mean() / 255.0
-                    # QR codes have very high edge density (>0.15)
-                    if edge_density > 0.15:
-                        return True
-
-    except (OSError, cv2.error):
-        pass
-
-    return False
 
 
 def _wrap_images_as_figures(html: str) -> str:
