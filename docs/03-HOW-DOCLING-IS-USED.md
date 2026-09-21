@@ -142,12 +142,13 @@ Docling's Markdown is **not** shown as-is. `tools/build_html.py` post-processes 
 
 | Step | Function | Purpose |
 |---|---|---|
-| Remove QR codes | `_remove_qr_code_images` | OpenCV `QRCodeDetector` drops publisher/QR images |
+| Remove QR codes | `strip_qr_content` (`tools/qr_filter.py`) | Drops the QR image (decoded with OpenCV `QRCodeDetector`, or recognised from its alt text), its caption, and the code value printed beside it (e.g. `0531CH01`) |
 | Rewrite image paths | `_rewrite_image_paths` | Absolute → relative (`images/…`) for portability |
 | Clean artifacts | `_clean_pdf_artifacts` | Strip page numbers, running headers/footers (repeated 3+ times), PostScript glyph names |
 | Fix numbered lists | `_fix_numbered_lists` | Turn flat MCQ options `(a)(b)(c)` into nested list items |
 | Deduplicate headings | `_deduplicate_heading` | Fix Docling's occasional doubled heading text |
 | Wrap figures | `_wrap_images_as_figures` | `<p><img></p>` → `<figure><figcaption>` |
+| Sweep QR leftovers | `strip_qr_from_html` (`tools/qr_filter.py`) | Removes any QR figure/caption/image that survived in the rendered HTML (e.g. inside a table) |
 | Build TOC | `_extract_toc` / `_slugify` | Heading hierarchy for the sidebar |
 
 The cleaned Markdown is then converted to HTML with the Python `markdown` library (extensions: `tables`, `fenced_code`, `toc`, `sane_lists`) and rendered into the `document.html` Jinja2 template.

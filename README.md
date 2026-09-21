@@ -9,7 +9,7 @@ Built for Indian K-12 educational content — converts NCERT/DIKSHA textbook PDF
 ### PDF Conversion (AI-Powered)
 - **Docling Extraction** — IBM's DocLayNet model detects headings, paragraphs, tables, figures, lists
 - **RapidOCR** — Handles scanned/image-based PDFs with automatic detection
-- **QR Code Filtering** — Detects and removes QR codes using OpenCV
+- **QR Code Filtering** — Removes QR codes (OpenCV decode or alt text), their captions, and the code value printed next to them
 - **Smart Title Detection** — Extracts chapter title from first page
 - **PDF Artifact Cleanup** — Strips page numbers, running headers/footers, deduplicates headings
 - **MCQ Restructuring** — Nests multiple-choice options properly under parent questions

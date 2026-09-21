@@ -24,6 +24,7 @@ from tools.extract_pdf import (
     PDFSuitabilityError,
 )
 from tools.build_html import build_interactive_html
+from tools.qr_filter import is_qr_code_value, is_qr_related_text
 
 # Called as progress_callback(stage, detail) at each real stage transition —
 # "real" meaning it reflects an actual point the pipeline has reached, not a
@@ -270,6 +271,9 @@ def _extract_chapter_title(
         stripped = line.strip()
         if not stripped or stripped.startswith("!"):
             continue
+        # QR captions and their code values are not titles
+        if is_qr_related_text(stripped) or is_qr_code_value(stripped):
+            continue
         if stripped.startswith("#"):
             break
         if len(stripped) < 80:
@@ -307,6 +311,8 @@ def _extract_chapter_title(
 
         if len(title_text) < 4:
             continue
+        if is_qr_related_text(title_text):
+            continue
         if re.match(r"^\d+\.\d+", title_text):
             continue
         if re.match(r"^([A-Z] ){3,}", title_text):
@@ -341,6 +347,10 @@ def _title_from_first_page(text: str) -> str | None:
 
         # Skip "CHAPTER" labels (standalone, without a title)
         if re.match(r"^(CHAPTER|Chapter)\s*$", stripped, re.IGNORECASE):
+            continue
+
+        # Skip QR code captions and the code value printed beside them
+        if is_qr_related_text(stripped) or is_qr_code_value(stripped):
             continue
 
         # If line contains a bullet separator, it's likely "Chapter X • Title"
