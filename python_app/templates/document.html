@@ -6,7 +6,15 @@
   <title>{{ title }}</title>
   <script>
     MathJax = {
-      tex: { inlineMath: [['\\(','\\)'], ['$','$']], displayMath: [['\\[','\\]'], ['$$','$$']] },
+      // mhchem gives \ce{...} for chemical formulae and equations
+      // (\ce{H2SO4}, \ce{6CO2 + 6H2O ->[light] C6H12O6 + 6O2}). Without it the
+      // chemistry templates would render as literal text.
+      loader: { load: ['[tex]/mhchem'] },
+      tex: {
+        packages: { '[+]': ['mhchem'] },
+        inlineMath: [['\\(','\\)'], ['$','$']],
+        displayMath: [['\\[','\\]'], ['$$','$$']]
+      },
       options: { skipHtmlTags: ['script','noscript','style','textarea','code'] }
     };
   </script>
@@ -14,6 +22,21 @@
   <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
   <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
   <script src="https://unpkg.com/h5p-standalone@3.8.0/dist/main.bundle.js"></script>
+  <script>
+    /* H5P packages declare embedTypes:["iframe"], so the player renders the
+       activity inside an iframe. Relative asset URLs (content images, library
+       CSS) are then resolved against the iframe rather than this page, which
+       loads h5p.json but leaves images broken. Always hand the player an
+       absolute URL. Kept in <head> so every script below can use it, and so it
+       survives the editor-UI stripping done at publish time. */
+    window.h5pAbsSrc = function (src) {
+      try {
+        return new URL(src, document.baseURI).href;
+      } catch (e) {
+        return src;
+      }
+    };
+  </script>
   <script>
     /* Content-box icon library — single source of truth, shared by the
        insert dialog, its live preview, and buildBoxHtml(). Monoline, 24-grid,
@@ -428,6 +451,58 @@
       margin-top: 0.4em;
       font-style: italic;
       line-height: 1.4;
+    }
+
+    /* ---- Caption editing (edit mode only) ----
+       The caption is the single place the picture description lives, so it has
+       to be correctable. Double-click turns it into a field; learners never get
+       the affordance because it is scoped to body.edit-mode. */
+    body.edit-mode .document-body figcaption {
+      cursor: text;
+      border-radius: 4px;
+      transition: background 0.12s ease;
+    }
+
+    /* A picture with no description yet: invisible to learners, and an
+       invitation to the editor. Descriptions are only generated automatically
+       for English documents, so in other languages every caption starts here. */
+    .document-body figcaption:empty {
+      display: none;
+    }
+
+    body.edit-mode .document-body figcaption:empty {
+      display: block;
+      min-height: 1.4em;
+      opacity: 0.75;
+    }
+
+    body.edit-mode .document-body figcaption:empty::before {
+      content: 'Double-click the image to add a description';
+    }
+
+    body.edit-mode .document-body figcaption:hover {
+      background: var(--color-code-bg);
+      outline: 1px dashed var(--color-border);
+    }
+
+    /* Double-clicking a figure opens the description dialog, so the whole
+       picture reads as clickable while editing. */
+    body.edit-mode .document-body .figure-wrap:hover,
+    body.edit-mode .document-body .figure-full:hover {
+      outline: 1px dashed var(--color-border);
+      outline-offset: 3px;
+    }
+
+    .img-cap-preview {
+      text-align: center;
+      margin-bottom: 1rem;
+    }
+
+    .img-cap-preview img {
+      max-height: 170px;
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid var(--color-border);
     }
 
     /* Full-width images for very large/important diagrams */
@@ -1254,18 +1329,42 @@
       box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
     }
     .formula-panel.hidden { display: none; }
-    .formula-panel > label {
+    /* The palettes are long, so they scroll while the expression box below
+       stays put. */
+    .formula-panel {
+      max-height: min(38vh, 300px); overflow-y: auto; padding-right: 3px;
+    }
+    .formula-group + .formula-group { margin-top: 13px; }
+    .formula-group-label {
+      display: block; margin: 0 0 6px;
+      font: 700 0.68rem/1 var(--font-body); letter-spacing: 0.06em;
+      text-transform: uppercase; color: var(--color-text-secondary);
+    }
+    .formula-editor {
+      margin-top: 15px; padding-top: 14px;
+      border-top: 1px solid var(--color-border);
+    }
+    .formula-panel > label,
+    .formula-editor > label {
       display: block; margin-bottom: 7px;
       font: 600 0.78rem/1 var(--font-body); letter-spacing: 0.02em;
       color: var(--color-text-secondary);
     }
-    .formula-panel textarea {
+    .btn-clear {
+      margin-right: auto; padding: 8px 14px; border: 0; border-radius: 9px;
+      background: transparent; color: var(--color-text-secondary); cursor: pointer;
+      font: 600 12.5px/1 var(--font-body);
+    }
+    .btn-clear:hover { color: var(--color-text); text-decoration: underline; }
+    .formula-panel textarea,
+    .formula-editor textarea {
       width: 100%; font-family: var(--font-mono); font-size: 13px; line-height: 1.5;
       padding: 11px 12px; border: 1px solid var(--color-border); border-radius: 10px;
       background: var(--color-bg); color: var(--color-text); resize: vertical; min-height: 76px;
       transition: border-color 0.12s, box-shadow 0.12s;
     }
-    .formula-panel textarea:focus {
+    .formula-panel textarea:focus,
+    .formula-editor textarea:focus {
       outline: none; border-color: var(--color-link);
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-link) 16%, transparent);
     }
@@ -1295,13 +1394,31 @@
       content: "Preview appears here"; font-size: 0.8rem; color: var(--color-text-secondary); opacity: 0.6;
     }
     .formula-grid {
-      display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 5px;
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 5px;
+    }
+    /* Compounds and equations need room for words, not square glyph tiles. */
+    .formula-grid--wide {
+      grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    }
+    .formula-grid--rows {
+      grid-template-columns: 1fr;
     }
     .formula-tpl {
-      aspect-ratio: 1; display: grid; place-items: center;
+      min-height: 44px; display: grid; place-items: center; padding: 6px 8px;
       border: 1px solid var(--color-border); border-radius: 10px;
       background: var(--color-bg); color: var(--color-text); cursor: pointer;
-      font-size: 1.1rem; transition: background 0.12s, border-color 0.12s, transform 0.08s;
+      font-size: 1.05rem; line-height: 1.25; text-align: center;
+      transition: background 0.12s, border-color 0.12s, transform 0.08s;
+    }
+    .formula-grid:not(.formula-grid--wide):not(.formula-grid--rows) .formula-tpl {
+      aspect-ratio: 1;
+    }
+    .formula-grid--wide .formula-tpl,
+    .formula-grid--rows .formula-tpl {
+      font-size: 0.88rem; font-family: var(--font-mono);
+    }
+    .formula-grid--rows .formula-tpl {
+      justify-items: start; text-align: left; font-size: 0.82rem;
     }
     .formula-tpl:hover {
       background: color-mix(in srgb, var(--color-link) 8%, transparent);
@@ -3335,47 +3452,32 @@
   </div>
 
   <!-- Formula Input Dialog -->
+  <!-- The palettes are built in JS from FORMULA_PALETTE so the LaTeX lives in
+       one place and is not subject to HTML attribute escaping (the previous
+       hand-written data-latex="\\frac{a}{b}" put two backslashes into the
+       expression, which LaTeX reads as a line break followed by "frac"). -->
   <div class="modal-overlay" id="formulaModal" role="dialog" aria-modal="true" aria-labelledby="formulaModalTitle">
-    <div class="modal-dialog">
+    <div class="modal-dialog" style="max-width:660px">
       <h3 id="formulaModalTitle">Insert a formula</h3>
-      <div class="formula-tabs">
-        <button type="button" class="formula-tab active" data-tab="custom">Custom</button>
-        <button type="button" class="formula-tab" data-tab="templates">Templates</button>
+      <div class="formula-tabs" role="tablist">
+        <button type="button" class="formula-tab active" data-tab="math" role="tab" aria-selected="true">Mathematics</button>
+        <button type="button" class="formula-tab" data-tab="chem" role="tab" aria-selected="false">Chemistry</button>
       </div>
-      <div class="formula-panel" id="formulaCustom">
-        <label for="formulaInput">LaTeX expression:</label>
-        <textarea id="formulaInput" rows="3" placeholder="e.g. E = mc^2 or \frac{-b \pm \sqrt{b^2-4ac}}{2a}"></textarea>
+      <div class="formula-panel" id="formulaMath" role="tabpanel" aria-label="Mathematical formulae"></div>
+      <div class="formula-panel hidden" id="formulaChem" role="tabpanel" aria-label="Chemical formulae"></div>
+
+      <div class="formula-editor">
+        <label for="formulaInput">LaTeX expression</label>
+        <textarea id="formulaInput" rows="3" placeholder="Pick from the palette above, or type e.g. E = mc^2 or \ce{H2SO4}"></textarea>
         <div class="formula-options">
           <label><input type="radio" name="formulaType" value="inline" checked /> Inline \( ... \)</label>
           <label><input type="radio" name="formulaType" value="display" /> Display \[ ... \]</label>
         </div>
         <div class="formula-preview" id="formulaPreview"></div>
       </div>
-      <div class="formula-panel hidden" id="formulaTemplates">
-        <div class="formula-grid">
-          <button type="button" class="formula-tpl" data-latex="\\frac{a}{b}" title="Fraction" aria-label="Insert fraction">&#x00B9;&#8260;&#x2082;</button>
-          <button type="button" class="formula-tpl" data-latex="\\sqrt{x}" title="Square root" aria-label="Insert square root">&#8730;x</button>
-          <button type="button" class="formula-tpl" data-latex="\\sum_{i=1}^{n}" title="Summation" aria-label="Insert summation">&#8721;</button>
-          <button type="button" class="formula-tpl" data-latex="\\int_{a}^{b}" title="Integral" aria-label="Insert integral">&#8747;</button>
-          <button type="button" class="formula-tpl" data-latex="\\lim_{x \\to \\infty}" title="Limit" aria-label="Insert limit">lim</button>
-          <button type="button" class="formula-tpl" data-latex="\\vec{v}" title="Vector" aria-label="Insert vector">v&#8407;</button>
-          <button type="button" class="formula-tpl" data-latex="\\alpha" title="Alpha" aria-label="Insert alpha">&#945;</button>
-          <button type="button" class="formula-tpl" data-latex="\\beta" title="Beta" aria-label="Insert beta">&#946;</button>
-          <button type="button" class="formula-tpl" data-latex="\\gamma" title="Gamma" aria-label="Insert gamma">&#947;</button>
-          <button type="button" class="formula-tpl" data-latex="\\theta" title="Theta" aria-label="Insert theta">&#952;</button>
-          <button type="button" class="formula-tpl" data-latex="\\pi" title="Pi" aria-label="Insert pi">&#960;</button>
-          <button type="button" class="formula-tpl" data-latex="\\infty" title="Infinity" aria-label="Insert infinity">&#8734;</button>
-          <button type="button" class="formula-tpl" data-latex="\\neq" title="Not equal" aria-label="Insert not-equal sign">&#8800;</button>
-          <button type="button" class="formula-tpl" data-latex="\\leq" title="Less or equal" aria-label="Insert less-than-or-equal sign">&#8804;</button>
-          <button type="button" class="formula-tpl" data-latex="\\geq" title="Greater or equal" aria-label="Insert greater-than-or-equal sign">&#8805;</button>
-          <button type="button" class="formula-tpl" data-latex="\\pm" title="Plus minus" aria-label="Insert plus-minus sign">&#177;</button>
-          <button type="button" class="formula-tpl" data-latex="\\times" title="Times" aria-label="Insert multiplication sign">&#215;</button>
-          <button type="button" class="formula-tpl" data-latex="\\div" title="Division" aria-label="Insert division sign">&#247;</button>
-          <button type="button" class="formula-tpl" data-latex="\\rightarrow" title="Right arrow" aria-label="Insert right arrow">&#8594;</button>
-          <button type="button" class="formula-tpl" data-latex="\\Rightarrow" title="Implies" aria-label="Insert implies arrow">&#8658;</button>
-        </div>
-      </div>
+
       <div class="modal-actions">
+        <button type="button" class="btn-clear" id="formulaClear">Clear</button>
         <button type="button" class="btn-cancel" id="formulaCancel">Cancel</button>
         <button type="button" class="btn-save" id="formulaInsert">Insert</button>
       </div>
@@ -3474,6 +3576,51 @@
       <div class="modal-actions">
         <button type="button" class="btn-cancel" id="imageInsertCancel">Cancel</button>
         <button type="button" class="btn-save" id="imageInsertSubmit">Insert</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Image description dialog (opened by double-clicking a figure) -->
+  <div class="modal-overlay" id="imageCaptionModal" role="dialog" aria-modal="true" aria-labelledby="imageCaptionTitle">
+    <div class="modal-dialog" style="max-width:520px">
+      <h3 id="imageCaptionTitle">Image description</h3>
+      <p style="font-size:0.85rem;color:var(--color-text-secondary);margin:-0.4rem 0 1rem;">
+        Appears under the image in a smaller font, and is read out by screen readers.
+        Write it in the language of the chapter.
+      </p>
+      <div class="img-cap-preview" id="imageCaptionPreview"><img id="imageCaptionThumb" alt="" /></div>
+      <div class="media-input-section">
+        <label class="media-input-label" for="imageCaptionInput">Description</label>
+        <textarea id="imageCaptionInput" rows="4" placeholder="Describe what this image shows&hellip;"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="imageCaptionCancel">Cancel</button>
+        <button type="button" class="btn-save" id="imageCaptionSave">Save description</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- H5P Insert Modal (upload a package, or point at one that is already hosted) -->
+  <div class="modal-overlay" id="h5pInsertModal" role="dialog" aria-modal="true" aria-labelledby="h5pInsertTitle">
+    <div class="modal-dialog" style="max-width:480px">
+      <h3 id="h5pInsertTitle">Insert H5P activity</h3>
+      <div class="media-input-section">
+        <label class="media-input-label">Upload an H5P package</label>
+        <div class="file-upload-area">
+          <input type="file" id="h5pFileInput" class="file-input-hidden" accept=".h5p,.zip" />
+          <label for="h5pFileInput" class="file-upload-btn" id="h5pFileLabel">Choose a .h5p file&hellip;</label>
+        </div>
+        <p style="margin-top:0.5rem;font-size:0.8rem;color:var(--color-text-secondary);">The package is unpacked on the server so the activity plays inline. Up to 400&nbsp;MB.</p>
+      </div>
+      <div class="media-input-divider"><span>or</span></div>
+      <div class="media-input-section">
+        <label class="media-input-label" for="h5pUrlInput">Use a package that is already hosted</label>
+        <input type="text" id="h5pUrlInput" class="media-url-field" placeholder="e.g. media/my-activity  or  https://&hellip;" />
+      </div>
+      <div class="media-input-status" id="h5pInsertStatus"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="h5pInsertCancel">Cancel</button>
+        <button type="button" class="btn-save" id="h5pInsertSubmit">Insert</button>
       </div>
     </div>
   </div>
@@ -4488,15 +4635,221 @@
       }
 
       // --- Formula Modal ---
+      // The palette, grouped by subject. `x` is the LaTeX inserted into the
+      // expression, `l` the button label, `t` its tooltip. Chemistry uses
+      // mhchem's \ce{...}, enabled in the MathJax config at the top of the
+      // document. Backslashes are escaped here once, in JS, rather than in HTML
+      // attributes where they were being doubled.
+      var FORMULA_PALETTE = {
+        math: [
+          { group: 'Basics', items: [
+            { l: 'a\u2044b', x: '\\frac{a}{b}', t: 'Fraction' },
+            { l: 'a\u207F', x: 'a^{n}', t: 'Power' },
+            { l: 'a\u2099', x: 'a_{n}', t: 'Subscript' },
+            { l: '\u221Ax', x: '\\sqrt{x}', t: 'Square root' },
+            { l: '\u207F\u221Ax', x: '\\sqrt[n]{x}', t: 'nth root' },
+            { l: '|x|', x: '\\left| x \\right|', t: 'Absolute value' },
+            { l: '\u00B1', x: '\\pm', t: 'Plus-minus' },
+            { l: '\u00D7', x: '\\times', t: 'Multiplication' },
+            { l: '\u00F7', x: '\\div', t: 'Division' },
+            { l: '\u22C5', x: '\\cdot', t: 'Dot product' },
+            { l: '\u2260', x: '\\neq', t: 'Not equal' },
+            { l: '\u2248', x: '\\approx', t: 'Approximately equal' },
+            { l: '\u2264', x: '\\leq', t: 'Less than or equal' },
+            { l: '\u2265', x: '\\geq', t: 'Greater than or equal' },
+            { l: '\u221D', x: '\\propto', t: 'Proportional to' },
+            { l: '\u221E', x: '\\infty', t: 'Infinity' }
+          ]},
+          { group: 'Algebra', wide: true, items: [
+            { l: 'quadratic', x: '\\frac{-b \\pm \\sqrt{b^{2} - 4ac}}{2a}', t: 'Quadratic formula' },
+            { l: '(a+b)\u00B2', x: '(a + b)^{2} = a^{2} + 2ab + b^{2}', t: 'Square of a sum' },
+            { l: 'a\u00B2\u2212b\u00B2', x: 'a^{2} - b^{2} = (a + b)(a - b)', t: 'Difference of squares' },
+            { l: 'nCr', x: '\\binom{n}{r}', t: 'Binomial coefficient' },
+            { l: 'n!', x: 'n!', t: 'Factorial' },
+            { l: 'log\u2090x', x: '\\log_{a}{x}', t: 'Logarithm' },
+            { l: 'ln x', x: '\\ln{x}', t: 'Natural logarithm' },
+            { l: 'e\u02E3', x: 'e^{x}', t: 'Exponential' },
+            { l: '\u2211', x: '\\sum_{i=1}^{n}', t: 'Summation' },
+            { l: '\u220F', x: '\\prod_{i=1}^{n}', t: 'Product' },
+            { l: 'AP term', x: 'a_{n} = a + (n - 1)d', t: 'Arithmetic progression' },
+            { l: 'GP term', x: 'a_{n} = ar^{n-1}', t: 'Geometric progression' }
+          ]},
+          { group: 'Calculus', wide: true, items: [
+            { l: 'lim', x: '\\lim_{x \\to 0}', t: 'Limit' },
+            { l: 'lim \u221E', x: '\\lim_{x \\to \\infty}', t: 'Limit to infinity' },
+            { l: 'dy/dx', x: '\\frac{dy}{dx}', t: 'Derivative' },
+            { l: 'd\u00B2y/dx\u00B2', x: '\\frac{d^{2}y}{dx^{2}}', t: 'Second derivative' },
+            { l: '\u2202f/\u2202x', x: '\\frac{\\partial f}{\\partial x}', t: 'Partial derivative' },
+            { l: '\u222B dx', x: '\\int f(x)\\,dx', t: 'Indefinite integral' },
+            { l: '\u222B\u2090\u1D47', x: '\\int_{a}^{b} f(x)\\,dx', t: 'Definite integral' },
+            { l: '\u222C', x: '\\iint f(x,y)\\,dx\\,dy', t: 'Double integral' },
+            { l: '\u2207', x: '\\nabla', t: 'Gradient' }
+          ]},
+          { group: 'Trigonometry', wide: true, items: [
+            { l: 'sin \u03B8', x: '\\sin\\theta', t: 'Sine' },
+            { l: 'cos \u03B8', x: '\\cos\\theta', t: 'Cosine' },
+            { l: 'tan \u03B8', x: '\\tan\\theta', t: 'Tangent' },
+            { l: '\u03B8\u00B0', x: '\\theta^{\\circ}', t: 'Degrees' },
+            { l: 'identity', x: '\\sin^{2}\\theta + \\cos^{2}\\theta = 1', t: 'Pythagorean identity' },
+            { l: 'sine rule', x: '\\frac{a}{\\sin A} = \\frac{b}{\\sin B} = \\frac{c}{\\sin C}', t: 'Sine rule' }
+          ]},
+          { group: 'Sets & logic', items: [
+            { l: '\u2208', x: '\\in', t: 'Element of' },
+            { l: '\u2209', x: '\\notin', t: 'Not an element of' },
+            { l: '\u2282', x: '\\subset', t: 'Subset' },
+            { l: '\u222A', x: '\\cup', t: 'Union' },
+            { l: '\u2229', x: '\\cap', t: 'Intersection' },
+            { l: '\u2205', x: '\\emptyset', t: 'Empty set' },
+            { l: '\u2200', x: '\\forall', t: 'For all' },
+            { l: '\u2203', x: '\\exists', t: 'There exists' },
+            { l: '\u2192', x: '\\rightarrow', t: 'Right arrow' },
+            { l: '\u21D2', x: '\\Rightarrow', t: 'Implies' },
+            { l: '\u21D4', x: '\\Leftrightarrow', t: 'If and only if' },
+            { l: '\u2234', x: '\\therefore', t: 'Therefore' }
+          ]},
+          { group: 'Vectors & matrices', wide: true, items: [
+            { l: 'v\u20D7', x: '\\vec{v}', t: 'Vector' },
+            { l: 'n\u0302', x: '\\hat{n}', t: 'Unit vector' },
+            { l: '|v\u20D7|', x: '\\left|\\vec{v}\\right|', t: 'Magnitude' },
+            { l: 'matrix', x: '\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}', t: '2x2 matrix' },
+            { l: 'determinant', x: '\\begin{vmatrix} a & b \\\\ c & d \\end{vmatrix}', t: 'Determinant' },
+            { l: 'cases', x: '\\begin{cases} x, & x \\geq 0 \\\\ -x, & x < 0 \\end{cases}', t: 'Piecewise definition' }
+          ]},
+          { group: 'Statistics', wide: true, items: [
+            { l: 'x\u0304', x: '\\bar{x}', t: 'Mean' },
+            { l: '\u03C3', x: '\\sigma', t: 'Standard deviation' },
+            { l: '\u03C3\u00B2', x: '\\sigma^{2}', t: 'Variance' },
+            { l: 'P(A|B)', x: 'P(A \\mid B)', t: 'Conditional probability' },
+            { l: 'mean', x: '\\bar{x} = \\frac{1}{n}\\sum_{i=1}^{n} x_{i}', t: 'Arithmetic mean' }
+          ]},
+          { group: 'Greek letters', items: [
+            { l: '\u03B1', x: '\\alpha', t: 'alpha' }, { l: '\u03B2', x: '\\beta', t: 'beta' },
+            { l: '\u03B3', x: '\\gamma', t: 'gamma' }, { l: '\u03B4', x: '\\delta', t: 'delta' },
+            { l: '\u03B5', x: '\\epsilon', t: 'epsilon' }, { l: '\u03B8', x: '\\theta', t: 'theta' },
+            { l: '\u03BB', x: '\\lambda', t: 'lambda' }, { l: '\u03BC', x: '\\mu', t: 'mu' },
+            { l: '\u03C0', x: '\\pi', t: 'pi' }, { l: '\u03C1', x: '\\rho', t: 'rho' },
+            { l: '\u03C6', x: '\\phi', t: 'phi' }, { l: '\u03C9', x: '\\omega', t: 'omega' },
+            { l: '\u0394', x: '\\Delta', t: 'Delta' }, { l: '\u03A3', x: '\\Sigma', t: 'Sigma' },
+            { l: '\u03A9', x: '\\Omega', t: 'Omega' }, { l: '\u03A6', x: '\\Phi', t: 'Phi' }
+          ]}
+        ],
+        chem: [
+          { group: 'Reaction arrows', wide: true, items: [
+            { l: 'A + B \u2192 C', x: '\\ce{A + B -> C}', t: 'Forward reaction' },
+            { l: '\u21CC', x: '\\ce{A <=> B}', t: 'Reversible reaction' },
+            { l: '\u2192[\u0394]', x: '\\ce{A ->[\\Delta] B}', t: 'Reaction on heating' },
+            { l: '\u2192[cat.]', x: '\\ce{A ->[cat.] B}', t: 'Catalysed reaction' },
+            { l: '\u2192[light]', x: '\\ce{A ->[light] B}', t: 'Light-driven reaction' },
+            { l: 'gas \u2191', x: '\\ce{H2 ^}', t: 'Gas evolved' },
+            { l: 'ppt \u2193', x: '\\ce{PbI2 v}', t: 'Precipitate formed' }
+          ]},
+          { group: 'States & conditions', items: [
+            { l: '(s)', x: '\\ce{(s)}', t: 'Solid' },
+            { l: '(l)', x: '\\ce{(l)}', t: 'Liquid' },
+            { l: '(g)', x: '\\ce{(g)}', t: 'Gas' },
+            { l: '(aq)', x: '\\ce{(aq)}', t: 'Aqueous' },
+            { l: '\u0394', x: '\\Delta', t: 'Heat' },
+            { l: 'heat', x: '\\ce{->[\\Delta]}', t: 'Arrow with heat' }
+          ]},
+          { group: 'Common compounds', wide: true, items: [
+            { l: 'H\u2082O', x: '\\ce{H2O}', t: 'Water' },
+            { l: 'CO\u2082', x: '\\ce{CO2}', t: 'Carbon dioxide' },
+            { l: 'O\u2082', x: '\\ce{O2}', t: 'Oxygen' },
+            { l: 'N\u2082', x: '\\ce{N2}', t: 'Nitrogen' },
+            { l: 'HCl', x: '\\ce{HCl}', t: 'Hydrochloric acid' },
+            { l: 'H\u2082SO\u2084', x: '\\ce{H2SO4}', t: 'Sulfuric acid' },
+            { l: 'HNO\u2083', x: '\\ce{HNO3}', t: 'Nitric acid' },
+            { l: 'NaOH', x: '\\ce{NaOH}', t: 'Sodium hydroxide' },
+            { l: 'NaCl', x: '\\ce{NaCl}', t: 'Sodium chloride' },
+            { l: 'NH\u2083', x: '\\ce{NH3}', t: 'Ammonia' },
+            { l: 'CaCO\u2083', x: '\\ce{CaCO3}', t: 'Calcium carbonate' },
+            { l: 'CuSO\u2084\u00B75H\u2082O', x: '\\ce{CuSO4 * 5H2O}', t: 'Hydrated copper sulfate' },
+            { l: 'KMnO\u2084', x: '\\ce{KMnO4}', t: 'Potassium permanganate' },
+            { l: 'C\u2086H\u2081\u2082O\u2086', x: '\\ce{C6H12O6}', t: 'Glucose' }
+          ]},
+          { group: 'Ions & charges', items: [
+            { l: 'Na\u207A', x: '\\ce{Na+}', t: 'Sodium ion' },
+            { l: 'Cl\u207B', x: '\\ce{Cl-}', t: 'Chloride ion' },
+            { l: 'OH\u207B', x: '\\ce{OH-}', t: 'Hydroxide ion' },
+            { l: 'H\u2083O\u207A', x: '\\ce{H3O+}', t: 'Hydronium ion' },
+            { l: 'NH\u2084\u207A', x: '\\ce{NH4+}', t: 'Ammonium ion' },
+            { l: 'SO\u2084\u00B2\u207B', x: '\\ce{SO4^2-}', t: 'Sulfate ion' },
+            { l: 'CO\u2083\u00B2\u207B', x: '\\ce{CO3^2-}', t: 'Carbonate ion' },
+            { l: 'Fe\u00B3\u207A', x: '\\ce{Fe^3+}', t: 'Iron(III) ion' }
+          ]},
+          { group: 'Organic chemistry', wide: true, items: [
+            { l: 'CH\u2084', x: '\\ce{CH4}', t: 'Methane' },
+            { l: 'C\u2082H\u2086', x: '\\ce{C2H6}', t: 'Ethane' },
+            { l: 'CH\u2082=CH\u2082', x: '\\ce{CH2=CH2}', t: 'Ethene (double bond)' },
+            { l: 'CH\u2261CH', x: '\\ce{CH#CH}', t: 'Ethyne (triple bond)' },
+            { l: 'C\u2082H\u2085OH', x: '\\ce{CH3-CH2-OH}', t: 'Ethanol' },
+            { l: 'CH\u2083COOH', x: '\\ce{CH3COOH}', t: 'Ethanoic acid' },
+            { l: 'C\u2086H\u2086', x: '\\ce{C6H6}', t: 'Benzene' },
+            { l: '\u2013OH', x: '\\ce{-OH}', t: 'Hydroxyl group' },
+            { l: '\u2013COOH', x: '\\ce{-COOH}', t: 'Carboxyl group' },
+            { l: '\u2013CHO', x: '\\ce{-CHO}', t: 'Aldehyde group' },
+            { l: '\u2013NH\u2082', x: '\\ce{-NH2}', t: 'Amino group' }
+          ]},
+          { group: 'Nuclear chemistry', wide: true, items: [
+            { l: '\u00B9\u2074\u2086C', x: '\\ce{^{14}_{6}C}', t: 'Isotope notation' },
+            { l: '\u03B1 particle', x: '\\ce{^{4}_{2}He}', t: 'Alpha particle' },
+            { l: '\u03B2 particle', x: '\\ce{^{0}_{-1}e}', t: 'Beta particle' },
+            { l: '\u03B1 decay', x: '\\ce{^{238}_{92}U -> ^{234}_{90}Th + ^{4}_{2}He}', t: 'Alpha decay' }
+          ]},
+          { group: 'Worked equations', rows: true, items: [
+            { l: 'Photosynthesis', x: '\\ce{6CO2 + 6H2O ->[light] C6H12O6 + 6O2}', t: 'Photosynthesis' },
+            { l: 'Respiration', x: '\\ce{C6H12O6 + 6O2 -> 6CO2 + 6H2O}', t: 'Aerobic respiration' },
+            { l: 'Methane burning', x: '\\ce{CH4 + 2O2 -> CO2 + 2H2O}', t: 'Combustion of methane' },
+            { l: 'Neutralisation', x: '\\ce{HCl + NaOH -> NaCl + H2O}', t: 'Acid-base neutralisation' },
+            { l: 'Haber process', x: '\\ce{N2 + 3H2 <=>[Fe] 2NH3}', t: 'Haber process' },
+            { l: 'Rusting', x: '\\ce{4Fe + 3O2 -> 2Fe2O3}', t: 'Rusting of iron' },
+            { l: 'Water electrolysis', x: '\\ce{2H2O ->[electrolysis] 2H2 ^ + O2 ^}', t: 'Electrolysis of water' },
+            { l: 'Carbonate + acid', x: '\\ce{CaCO3 + 2HCl -> CaCl2 + H2O + CO2 ^}', t: 'Carbonate with acid' }
+          ]}
+        ]
+      };
+
       var formulaModal = document.getElementById('formulaModal');
       var formulaInput = document.getElementById('formulaInput');
       var formulaPreview = document.getElementById('formulaPreview');
       var savedFormulaRange = null;
       var formulaInsert = document.getElementById('formulaInsert');
       var formulaCancel = document.getElementById('formulaCancel');
+      var formulaClear = document.getElementById('formulaClear');
       var formulaTabs = document.querySelectorAll('.formula-tab');
-      var formulaCustom = document.getElementById('formulaCustom');
-      var formulaTemplates = document.getElementById('formulaTemplates');
+      var formulaPanels = {
+        math: document.getElementById('formulaMath'),
+        chem: document.getElementById('formulaChem')
+      };
+
+      // Build both palettes once.
+      Object.keys(FORMULA_PALETTE).forEach(function(key) {
+        var panel = formulaPanels[key];
+        if (!panel) return;
+        FORMULA_PALETTE[key].forEach(function(section) {
+          var wrap = document.createElement('div');
+          wrap.className = 'formula-group';
+          var label = document.createElement('span');
+          label.className = 'formula-group-label';
+          label.textContent = section.group;
+          wrap.appendChild(label);
+          var grid = document.createElement('div');
+          grid.className = 'formula-grid'
+            + (section.rows ? ' formula-grid--rows' : (section.wide ? ' formula-grid--wide' : ''));
+          section.items.forEach(function(item) {
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'formula-tpl';
+            btn.textContent = item.l;
+            btn.title = item.t + '  ' + item.x;
+            btn.setAttribute('aria-label', 'Insert ' + item.t);
+            btn.setAttribute('data-latex', item.x);
+            grid.appendChild(btn);
+          });
+          wrap.appendChild(grid);
+          panel.appendChild(wrap);
+        });
+      });
 
       document.getElementById('btnFormula').addEventListener('click', function() {
         // Save cursor position before modal steals focus
@@ -4514,29 +4867,49 @@
         formulaModal.classList.remove('visible');
       });
 
-      // Tab switching
+      formulaClear.addEventListener('click', function() {
+        formulaInput.value = '';
+        updateFormulaPreview();
+        formulaInput.focus();
+      });
+
+      // Tab switching between the Mathematics and Chemistry palettes
       formulaTabs.forEach(function(tab) {
         tab.addEventListener('click', function() {
-          formulaTabs.forEach(function(t) { t.classList.remove('active'); });
-          tab.classList.add('active');
           var target = tab.getAttribute('data-tab');
-          formulaCustom.classList.toggle('hidden', target !== 'custom');
-          formulaTemplates.classList.toggle('hidden', target !== 'templates');
+          formulaTabs.forEach(function(t) {
+            var on = t === tab;
+            t.classList.toggle('active', on);
+            t.setAttribute('aria-selected', on ? 'true' : 'false');
+          });
+          Object.keys(formulaPanels).forEach(function(key) {
+            if (formulaPanels[key]) formulaPanels[key].classList.toggle('hidden', key !== target);
+          });
         });
       });
 
-      // Template buttons insert into input
-      document.querySelectorAll('.formula-tpl').forEach(function(btn) {
-        btn.addEventListener('click', function() {
-          var latex = btn.getAttribute('data-latex');
-          formulaInput.value += latex;
+      // Palette clicks insert at the caret, so several pieces can be combined
+      // without leaving the palette.
+      Object.keys(formulaPanels).forEach(function(key) {
+        var panel = formulaPanels[key];
+        if (!panel) return;
+        panel.addEventListener('click', function(e) {
+          var btn = e.target.closest ? e.target.closest('.formula-tpl') : null;
+          if (!btn) return;
+          var latex = btn.getAttribute('data-latex') || '';
+          var start = formulaInput.selectionStart;
+          var end = formulaInput.selectionEnd;
+          if (typeof start === 'number' && typeof end === 'number') {
+            var before = formulaInput.value.slice(0, start);
+            var after = formulaInput.value.slice(end);
+            formulaInput.value = before + latex + after;
+            var caret = start + latex.length;
+            formulaInput.setSelectionRange(caret, caret);
+          } else {
+            formulaInput.value += latex;
+          }
           formulaInput.focus();
           updateFormulaPreview();
-          // Switch to custom tab to show input
-          formulaTabs.forEach(function(t) { t.classList.remove('active'); });
-          formulaTabs[0].classList.add('active');
-          formulaCustom.classList.remove('hidden');
-          formulaTemplates.classList.add('hidden');
         });
       });
 
@@ -4875,34 +5248,121 @@
       }
 
       // --- Insert H5P ---
+      // Two ways in: upload a .h5p package (the server unpacks it and hands
+      // back the folder the player needs), or point at a package that is
+      // already hosted. Mirrors the image-insert dialog, including the
+      // save/restore of the body selection around the async upload.
       document.getElementById('btnInsertH5P').addEventListener('click', function() {
         var savedRange = saveDocBodySelection();
-        showPromptModal({
-          title: 'Insert H5P activity',
-          label: 'H5P package URL or folder path',
-          placeholder: 'e.g. /media/my-activity  or  https://…'
-        }).then(function(src) {
-          if (!src) return;
-          restoreDocBodySelection(savedRange);
-          insertH5PContent(src);
-        });
+        var modal = document.getElementById('h5pInsertModal');
+        var urlInput = document.getElementById('h5pUrlInput');
+        var fileInput = document.getElementById('h5pFileInput');
+        var fileLabel = document.getElementById('h5pFileLabel');
+        var statusEl = document.getElementById('h5pInsertStatus');
+        var submitBtn = document.getElementById('h5pInsertSubmit');
+        var cancelBtn = document.getElementById('h5pInsertCancel');
+        var pendingFile = null;
+        var CHOOSE_LABEL = 'Choose a .h5p file…';
+        var H5P_MAX_BYTES = 400 * 1024 * 1024;
+
+        urlInput.value = '';
+        fileInput.value = '';
+        fileLabel.textContent = CHOOSE_LABEL;
+        statusEl.textContent = '';
+        statusEl.style.color = '';
+        submitBtn.textContent = 'Insert';
+        submitBtn.disabled = false;
+        modal.classList.add('visible');
+        setTimeout(function() { fileInput.focus(); }, 30);
+
+        function cleanup() {
+          submitBtn.onclick = null; cancelBtn.onclick = null;
+          modal.onclick = null; fileInput.onchange = null; urlInput.oninput = null;
+        }
+        function close() { modal.classList.remove('visible'); cleanup(); }
+        function fail(message) {
+          statusEl.style.color = '#e5484d';
+          statusEl.textContent = message;
+        }
+
+        fileInput.onchange = function() {
+          var f = fileInput.files[0];
+          statusEl.textContent = '';
+          if (!f) { pendingFile = null; fileLabel.textContent = CHOOSE_LABEL; return; }
+          if (!/\.(h5p|zip)$/i.test(f.name)) {
+            pendingFile = null;
+            fileInput.value = '';
+            fileLabel.textContent = CHOOSE_LABEL;
+            fail('Choose a .h5p package (a .zip export also works).');
+            return;
+          }
+          if (f.size > H5P_MAX_BYTES) {
+            pendingFile = null;
+            fileInput.value = '';
+            fileLabel.textContent = CHOOSE_LABEL;
+            fail('That package is ' + Math.round(f.size / (1024 * 1024)) + ' MB. The limit is 400 MB.');
+            return;
+          }
+          pendingFile = f;
+          urlInput.value = '';
+          fileLabel.textContent = f.name;
+        };
+        urlInput.oninput = function() {
+          if (urlInput.value.trim()) {
+            pendingFile = null;
+            fileInput.value = '';
+            fileLabel.textContent = CHOOSE_LABEL;
+            statusEl.textContent = '';
+          }
+        };
+
+        cancelBtn.onclick = close;
+        modal.onclick = function(e) { if (e.target === modal) close(); };
+
+        submitBtn.onclick = function() {
+          var url = urlInput.value.trim();
+          if (pendingFile) {
+            submitBtn.textContent = 'Uploading…';
+            submitBtn.disabled = true;
+            statusEl.style.color = 'var(--color-text-secondary)';
+            statusEl.textContent = 'Uploading and unpacking ' + pendingFile.name + '… larger packages take a moment.';
+            uploadMediaFile(pendingFile, 'h5p').then(function(data) {
+              var src = data && (data.url || data.src || data.path);
+              if (!src) throw new Error('Upload succeeded but no package folder was returned.');
+              restoreDocBodySelection(savedRange);
+              insertH5PContent(src);
+              close();
+            }).catch(function(err) {
+              submitBtn.disabled = false;
+              submitBtn.textContent = 'Insert';
+              fail(err.message || 'Upload failed.');
+            });
+          } else if (url) {
+            restoreDocBodySelection(savedRange);
+            insertH5PContent(url);
+            close();
+          } else {
+            fail('Choose a package to upload, or enter a path or link.');
+          }
+        };
       });
 
       function insertH5PContent(src) {
         var h5pId = 'h5p-inline-' + Date.now();
-        var html = '<div id="' + h5pId + '" class="h5p-inline-container" data-h5p-src="' + src + '" style="min-height:300px;border:1px solid var(--color-border);border-radius:8px;margin:1em 0;padding:1rem;"></div>';
+        var safeSrc = String(src).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+        var html = '<div id="' + h5pId + '" class="h5p-inline-container" data-h5p-src="' + safeSrc + '" style="min-height:300px;border:1px solid var(--color-border);border-radius:8px;margin:1em 0;padding:1rem;"></div>';
         document.execCommand('insertHTML', false, html);
         // Initialize the H5P player for the newly inserted container
         setTimeout(function() {
           var el = document.getElementById(h5pId);
           if (el && window.H5PStandalone) {
             new H5PStandalone.H5P(el, {
-              h5pJsonPath: src,
+              h5pJsonPath: window.h5pAbsSrc(src),
               frameJs: 'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js',
               frameCss: 'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css'
             });
           } else if (el) {
-            el.innerHTML = '<p style="text-align:center;color:var(--color-text-secondary);padding:2rem;">H5P content: <a href="' + src + '" target="_blank">' + src + '</a></p>';
+            el.innerHTML = '<p style="text-align:center;color:var(--color-text-secondary);padding:2rem;">H5P content: <a href="' + safeSrc + '" target="_blank" rel="noopener">' + safeSrc + '</a></p>';
           }
         }, 200);
       }
@@ -6398,6 +6858,7 @@
         { key: 'audio', icon: ICON_SVG_OPEN + '<path d="M3 14v-2a9 9 0 0118 0v2"/><rect x="2" y="14" width="5" height="7" rx="1.5"/><rect x="17" y="14" width="5" height="7" rx="1.5"/></svg>', label: 'Audio' },
         { key: 'pptx', icon: ICON_SVG_OPEN + '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg>', label: 'Presentation' },
         { key: 'h5p', icon: ICON_SVG_OPEN + '<path d="M12 3a2 2 0 012 2v1h3a2 2 0 012 2v3h-1a2 2 0 000 4h1v3a2 2 0 01-2 2h-3v-1a2 2 0 00-4 0v1H7a2 2 0 01-2-2v-3h1a2 2 0 000-4H5V8a2 2 0 012-2h3V4a2 2 0 012-2z"/></svg>', label: 'H5P Content' },
+        { key: 'vlab', icon: ICON_SVG_OPEN + '<path d="M9 3h6"/><path d="M10 3v5.5L5.4 17A2.5 2.5 0 007.6 21h8.8a2.5 2.5 0 002.2-4L14 8.5V3"/><path d="M7.5 14.5h9"/></svg>', label: 'Virtual Lab' },
         { key: 'url', icon: ICON_SVG_OPEN + '<path d="M10 13a5 5 0 007.07 0l2.83-2.83a5 5 0 00-7.07-7.07L11.5 4.5"/><path d="M14 11a5 5 0 00-7.07 0L4.1 13.83a5 5 0 007.07 7.07L12.5 19.5"/></svg>', label: 'URL Link' }
       ];
 
@@ -6492,13 +6953,17 @@
         fileInput.value = '';
         fileLabel.textContent = 'Choose file...';
         statusEl.textContent = '';
+        statusEl.style.color = '';
+        submitBtn.textContent = 'Add';
+        submitBtn.disabled = false;
 
         // Set accepted file types
         var acceptMap = {
           video: 'video/*',
           audio: 'audio/*',
           pptx: '.pptx,.ppt,.pdf,.odp',
-          h5p: '.h5p,.html,.zip'
+          h5p: '.h5p,.html,.zip',
+          vlab: '.zip'
         };
         fileInput.setAttribute('accept', acceptMap[type.key] || '*/*');
 
@@ -6517,6 +6982,7 @@
           modal.classList.remove('visible');
           fileInput.removeEventListener('change', onFileChange);
           submitBtn.removeEventListener('click', onSubmit);
+          submitBtn.removeEventListener('click', cleanup);
           cancelBtn.removeEventListener('click', onCancel);
           modal.removeEventListener('click', onBackdrop);
         }
@@ -6545,8 +7011,19 @@
               btn.setAttribute('data-media-src', result.url);
               btn.classList.add('has-content');
               updateMediaBtnLabel(btn, type);
-              statusEl.textContent = '';
               submitBtn.disabled = false;
+              if (result.warning) {
+                // Attached, but the server flagged something worth reading
+                // (e.g. a Virtual Lab built for the site root). Keep the
+                // dialog open so the message isn't missed.
+                statusEl.style.color = '#b7791f';
+                statusEl.textContent = result.warning;
+                submitBtn.textContent = 'Done';
+                submitBtn.removeEventListener('click', onSubmit);
+                submitBtn.addEventListener('click', cleanup);
+                return;
+              }
+              statusEl.textContent = '';
               cleanup();
             }).catch(function(err) {
               statusEl.textContent = 'Upload failed: ' + err.message;
@@ -6587,7 +7064,19 @@
         .then(function(res) {
           if (!res.ok) {
             if (res.status === 413) {
-              throw new Error('File too large. Maximum upload size is 500 MB.');
+              // The per-type limit comes back as JSON from /upload-media; only
+              // Flask's own MAX_CONTENT_LENGTH rejection has no JSON body.
+              return res.text().then(function(text) {
+                try {
+                  var data = JSON.parse(text);
+                  throw new Error(data.error || 'File too large.');
+                } catch (parseErr) {
+                  if (parseErr instanceof SyntaxError) {
+                    throw new Error('File too large for this server.');
+                  }
+                  throw parseErr;
+                }
+              });
             }
             return res.text().then(function(text) {
               try {
@@ -6660,12 +7149,19 @@
               setTimeout(function() {
                 var h5pEl = document.getElementById(h5pId);
                 if (h5pEl && window.H5PStandalone) {
-                  new H5PStandalone.H5P(h5pEl, { h5pJsonPath: src, frameJs: 'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js', frameCss: 'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css' });
+                  new H5PStandalone.H5P(h5pEl, { h5pJsonPath: window.h5pAbsSrc(src), frameJs: 'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js', frameCss: 'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css' });
                 } else if (h5pEl) {
                   h5pEl.innerHTML = '<iframe src="' + escapeAttr(src) + '" style="width:100%;min-height:500px;border:none;" allowfullscreen></iframe>';
                 }
               }, 100);
             }
+            break;
+          case 'vlab':
+            // A Virtual Lab is a self-contained static build (React SPA) that
+            // runs in the browser; it is embedded rather than played, and the
+            // iframe needs to be generous since labs are full-screen apps.
+            content = '<iframe src="' + escapeAttr(src) + '" style="width:100%;min-height:70vh;border:none;border-radius:6px;" allowfullscreen loading="lazy" title="Virtual Lab"></iframe>' +
+              '<p style="margin-top:0.5rem;text-align:center;font-size:0.8rem;"><a href="' + escapeAttr(src) + '" target="_blank" rel="noopener">Open the lab in a new tab</a></p>';
             break;
           case 'glossary':
             var parts = src.split('|');
@@ -6818,6 +7314,14 @@
         var clone = docBody.cloneNode(true);
         // Remove ALL editor-only UI chrome with a single selector
         clone.querySelectorAll('[data-editor-ui], .block-controls, .heading-level-ctrl, .make-interactive-btn').forEach(function(el) { el.remove(); });
+        // An H5P container must be saved empty. The player mounts a live
+        // <div class="h5p-iframe-wrapper"><iframe src="about:blank"> into it,
+        // and that markup is inert once the page reloads — a dead iframe of
+        // the player's height, which is what a saved activity used to become.
+        // The data-h5p-src attribute is all that needs persisting; the player
+        // is rebuilt from it on load.
+        clone.querySelectorAll('.h5p-inline-container').forEach(function(el) { el.innerHTML = ''; });
+        clone.querySelectorAll('script[data-h5p]').forEach(function(el) { el.remove(); });
         return clone.innerHTML;
       }
 
@@ -6960,17 +7464,106 @@
         heading.parentNode.replaceChild(newHeading, heading);        // Re-enable drag on new heading        try { enableDrag(newHeading); } catch(ex) {}        // Re-wire block controls (innerHTML copy loses event listeners)        var copiedControls = newHeading.querySelector(".block-controls");        if (copiedControls) {          copiedControls.querySelectorAll("button").forEach(function(b) { b.__wired = false; });        }        try { wireBlockControls(); refreshBlockControlsState(); } catch(ex) {}        // Re-add level controls to the new heading        initHeadingLevelControls();        // Refresh the TOC sidebar        try { refreshTOC(); } catch(e) {}
       }
 
+      // --- Image description dialog ---
+      // Double-clicking a figure (the picture or its caption) opens a dialog
+      // holding the description, which is roomier than editing a one-line
+      // caption in place and works the same way as every other editor here.
+      // Saving writes the caption and the image's alt text together, so screen
+      // readers and the CMS export get the corrected wording too.
+      (function() {
+        var modal = document.getElementById('imageCaptionModal');
+        var input = document.getElementById('imageCaptionInput');
+        var thumb = document.getElementById('imageCaptionThumb');
+        var preview = document.getElementById('imageCaptionPreview');
+        var saveBtn = document.getElementById('imageCaptionSave');
+        var cancelBtn = document.getElementById('imageCaptionCancel');
+        if (!modal || !input) return;
+
+        var target = null;  // the <figcaption> being edited
+
+        function close() {
+          modal.classList.remove('visible');
+          target = null;
+        }
+
+        function open(caption, img) {
+          target = caption;
+          input.value = caption.textContent.replace(/\s+/g, ' ').trim();
+          var src = img && img.getAttribute('src');
+          if (src) {
+            thumb.setAttribute('src', src);
+            preview.style.display = '';
+          } else {
+            thumb.removeAttribute('src');
+            preview.style.display = 'none';
+          }
+          modal.classList.add('visible');
+          setTimeout(function() { input.focus(); input.select(); }, 30);
+        }
+
+        function save() {
+          if (!target) return;
+          var text = input.value.replace(/\s+/g, ' ').trim();
+          var figure = target.closest('figure');
+          var img = figure ? figure.querySelector('img') : null;
+          // An empty description clears the caption: it is then hidden from
+          // learners and shows the "double-click to describe" prompt again.
+          target.textContent = text;
+          if (img) img.setAttribute('alt', text);
+          try { saveUndoSnapshot(); } catch (e) {}
+          close();
+        }
+
+        docBody.addEventListener('dblclick', function(e) {
+          // contenteditable is the signal the other editors in this file use.
+          if (!docBody.hasAttribute('contenteditable')) return;
+          if (!e.target || !e.target.closest) return;
+
+          // Anywhere in the figure counts, not just the caption strip: the
+          // prompt reads "describe this image" and an empty caption is only
+          // ~1.4em tall, so the picture is the natural thing to double-click.
+          var caption = e.target.closest('figcaption');
+          var figure = caption ? caption.closest('figure') : e.target.closest('figure');
+          if (!figure || !docBody.contains(figure)) return;
+          if (!caption) {
+            caption = figure.querySelector('figcaption');
+            if (!caption) {
+              // A figure saved without a caption element still needs one.
+              caption = document.createElement('figcaption');
+              figure.appendChild(caption);
+            }
+          }
+
+          e.preventDefault();
+          open(caption, figure.querySelector('img'));
+        });
+
+        saveBtn.addEventListener('click', save);
+        cancelBtn.addEventListener('click', close);
+        modal.addEventListener('click', function(e) { if (e.target === modal) close(); });
+        input.addEventListener('keydown', function(e) {
+          // Enter saves; Shift+Enter adds a line break. Escape is handled by
+          // the shared Escape-to-close wiring below.
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); }
+        });
+      })();
+
       // Initialize on page load (shows icons with content in learner mode)
       initSectionMedia();
 
-      // Initialize any inline H5P containers saved in the document
+      // Initialize any inline H5P containers saved in the document.
+      // Older saves persisted the mounted player (an about:blank iframe that
+      // is dead after a reload), so clear whatever is in the container and
+      // rebuild from data-h5p-src rather than skipping it.
       (function() {
         var h5pContainers = docBody.querySelectorAll('.h5p-inline-container[data-h5p-src]');
         h5pContainers.forEach(function(el) {
           var src = el.getAttribute('data-h5p-src');
-          if (src && window.H5PStandalone && !el.querySelector('.h5p-iframe-wrapper')) {
+          if (!src) return;
+          el.innerHTML = '';
+          if (window.H5PStandalone) {
             new H5PStandalone.H5P(el, {
-              h5pJsonPath: src,
+              h5pJsonPath: window.h5pAbsSrc(src),
               frameJs: 'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js',
               frameCss: 'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css'
             });
@@ -7702,6 +8295,8 @@
         videoInsertModal: 'videoInsertCancel',
         imageInsertModal: 'imageInsertCancel',
         flipCardModal: 'flipCardCancel',
+        h5pInsertModal: 'h5pInsertCancel',
+        imageCaptionModal: 'imageCaptionCancel',
         exportModal: 'exportCancel',
         publishModal: 'publishCancel',
         contentBoxModal: 'contentBoxCancel',
