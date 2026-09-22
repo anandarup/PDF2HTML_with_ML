@@ -14,6 +14,7 @@ import mimetypes
 from pathlib import Path
 from bs4 import BeautifulSoup
 from glossary_highlight import highlight_glossary_terms, GLOSSARY_CSS
+from tools.h5p_clean import empty_h5p_containers
 
 _log = logging.getLogger(__name__)
 
@@ -25,8 +26,16 @@ VIDEO_BUCKET = "poc-interactivetxt-media-dst-bucket"
 # File extensions treated as streaming video
 VIDEO_EXTENSIONS = {".mp4", ".m3u8", ".ts", ".webm", ".m4s"}
 
-# Extensions to skip (not media, not video)
+# Extensions to skip (not media, not video). Note that files inside an
+# unpacked H5P package are exempt — see _find_h5p_roots().
 SKIP_EXTENSIONS = {".html", ".htm", ".json", ".txt", ".md", ".log"}
+
+# Files that mark a directory as an unpacked, self-contained bundle which must
+# be uploaded whole: an H5P package (h5p.json) or a Virtual Lab static build
+# (index.html). Both are referenced by path and load their own assets at
+# runtime, so SKIP_EXTENSIONS must not apply inside them.
+H5P_MANIFEST = "h5p.json"
+BUNDLE_MARKERS = (H5P_MANIFEST, "index.html")
 
 # Output directory (relative to this file's location)
 OUTPUT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "output"))
@@ -98,6 +107,43 @@ def _is_video_file(file_path):
 def _is_skip_file(file_path):
     """Check if a file should be skipped (not media or video)."""
     return Path(file_path).suffix.lower() in SKIP_EXTENSIONS
+
+
+def _find_h5p_roots(output_path):
+    """
+    Find self-contained bundles inside a job directory.
+
+    A bundle root is any directory holding an h5p.json manifest (an H5P
+    activity) or an index.html (a Virtual Lab static build). These are uploaded
+    whole — unlike ordinary media, they are directories of JSON manifests, JS
+    and CSS, and SKIP_EXTENSIONS would drop exactly the files they need.
+
+    Returns:
+        Relative, forward-slash paths of the outermost bundle roots.
+    """
+    found = []
+    for root, _dirs, files in os.walk(str(output_path)):
+        if any(marker in files for marker in BUNDLE_MARKERS):
+            relative = os.path.relpath(root, str(output_path)).replace(os.sep, "/")
+            if relative != ".":
+                found.append(relative)
+
+    # A package can embed libraries that ship their own manifest; keep only the
+    # outermost directory so each package is mapped once.
+    found.sort()
+    outermost = []
+    for candidate in found:
+        if not any(candidate.startswith(f"{parent}/") for parent in outermost):
+            outermost.append(candidate)
+    return outermost
+
+
+def _h5p_package_for(relative_posix, h5p_roots):
+    """Return the package root containing this relative path, or None."""
+    for root in h5p_roots:
+        if relative_posix == root or relative_posix.startswith(f"{root}/"):
+            return root
+    return None
 
 
 def _strip_editor_ui(html_content):
@@ -175,6 +221,14 @@ def _strip_editor_ui(html_content):
         r'<div[^>]*class="block-controls"[^>]*>.*?</div>',
         '', html_content, flags=re.DOTALL
     )
+
+    # Empty any H5P container that has the mounted player persisted inside it.
+    # Older editor saves stored the live <div class="h5p-iframe-wrapper">
+    # <iframe src="about:blank"> markup, which is dead weight after a reload;
+    # the learner runtime rebuilds the player from data-h5p-src instead.
+    html_content, _emptied_h5p = empty_h5p_containers(html_content)
+    if _emptied_h5p:
+        _log.info(f"Cleared persisted H5P player markup in {_emptied_h5p} container(s)")
 
     # Remove the edit-toolbar CSS class definitions (optional cleanup)
     html_content = re.sub(
@@ -322,20 +376,60 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
   }
 
   function getEmbedUrl(url){
-    var m=url.match(/(?:youtube\\.com\\/watch\\?v=|youtu\\.be\\/|youtube\\.com\\/embed\\/|youtube\\.com\\/shorts\\/|youtube\\.com\\/live\\/)([a-zA-Z0-9_-]{11})/);
+    var m=url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/|youtube\.com\/live\/)([a-zA-Z0-9_-]{11})/);
     if(m)return'https://www.youtube.com/embed/'+m[1];
-    m=url.match(/youtube\\.com\\/.*[?&]v=([a-zA-Z0-9_-]{11})/);
+    m=url.match(/youtube\.com\/.*[?&]v=([a-zA-Z0-9_-]{11})/);
     if(m)return'https://www.youtube.com/embed/'+m[1];
-    m=url.match(/vimeo\\.com\\/(\\d+)/);
+    m=url.match(/vimeo\.com\/(\d+)/);
     if(m)return'https://player.vimeo.com/video/'+m[1];
-    m=url.match(/drive\\.google\\.com\\/file\\/d\\/([^/]+)/);
+    m=url.match(/drive\.google\.com\/file\/d\/([^/]+)/);
     if(m)return'https://drive.google.com/file/d/'+m[1]+'/preview';
-    m=url.match(/loom\\.com\\/share\\/([a-zA-Z0-9]+)/);
+    m=url.match(/loom\.com\/share\/([a-zA-Z0-9]+)/);
     if(m)return'https://www.loom.com/embed/'+m[1];
     return null;
   }
 
   function escAttr(s){return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');}
+
+  // --- H5P mounting ---
+  // A package is a directory: h5p-standalone fetches <src>/h5p.json. A single
+  // pre-built page is iframed instead. If the player script didn't load, fall
+  // back to a plain link rather than an empty box.
+  var H5P_FRAME_JS='https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js';
+  var H5P_FRAME_CSS='https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css';
+  function h5pIsPage(s){return /\.html?($|[?#])/i.test(s);}
+  // Packages declare embedTypes:["iframe"], so the player renders inside an
+  // iframe where relative asset URLs no longer resolve against this page —
+  // h5p.json loads but content images break. Always pass an absolute URL.
+  function h5pAbs(s){try{return new URL(s,document.baseURI).href;}catch(e){return s;}}
+  function h5pMount(el,src){
+    if(h5pIsPage(src)){
+      el.innerHTML='<iframe src="'+escAttr(src)+'" style="width:100%;min-height:500px;border:none;border-radius:8px;" allowfullscreen></iframe>';
+      return;
+    }
+    if(window.H5PStandalone){
+      try{
+        new H5PStandalone.H5P(el,{h5pJsonPath:h5pAbs(src),frameJs:H5P_FRAME_JS,frameCss:H5P_FRAME_CSS});
+        return;
+      }catch(e){}
+    }
+    el.innerHTML='<p style="text-align:center;padding:2rem;"><a href="'+escAttr(src)+'" target="_blank" rel="noopener">Open activity</a></p>';
+  }
+
+  // --- Inline H5P activities ---
+  // The editor's own initialiser is stripped for the learner view, so the
+  // players for inserted activities have to be built here or the learner sees
+  // an empty bordered box.
+  // Documents saved before the editor stopped persisting the mounted player
+  // still carry a dead <div class="h5p-iframe-wrapper"><iframe src="about:blank">
+  // inside the container. Clear it and rebuild rather than skipping, or the
+  // learner just sees an empty box the height of the old player.
+  document.querySelectorAll('.h5p-inline-container[data-h5p-src]').forEach(function(el){
+    var src=el.getAttribute('data-h5p-src');
+    if(!src)return;
+    el.innerHTML='';
+    h5pMount(el,src);
+  });
 
   // Wire all media-icon buttons
   document.querySelectorAll('.media-icon.has-content').forEach(function(btn){
@@ -361,13 +455,16 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
           else content='<div style="text-align:center;padding:2rem;"><a href="'+escAttr(src)+'" download style="padding:0.75rem 1.5rem;background:#0f4c75;color:#fff;border-radius:8px;text-decoration:none;">Download Presentation</a></div>';
           break;
         case'h5p':
-          if(src.startsWith('http://')||src.startsWith('https://')){
-            content='<iframe src="'+escAttr(src)+'" style="width:100%;min-height:500px;border:none;border-radius:6px;" allowfullscreen></iframe><p style="margin-top:0.5rem;text-align:center;font-size:0.8rem;"><a href="'+escAttr(src)+'" target="_blank" rel="noopener">Open in new tab</a></p>';
-          } else {
-            var hid='h5p-'+Date.now();
-            content='<div id="'+hid+'" style="min-height:400px;"></div>';
-            setTimeout(function(){var el=document.getElementById(hid);if(el&&window.H5PStandalone)new H5PStandalone.H5P(el,{h5pJsonPath:src,frameJs:'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js',frameCss:'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css'});else if(el){el.innerHTML='<iframe src="'+escAttr(src)+'" style="width:100%;min-height:500px;border:none;" allowfullscreen></iframe>';}},100);
-          }
+          // src is an unpacked package directory (local or a bucket URL after
+          // publish), or a single pre-built page. h5pMount picks the right one;
+          // an absolute URL is NOT a reliable signal of a page, since published
+          // packages are absolute too.
+          var hid='h5p-'+Date.now();
+          content='<div id="'+hid+'" style="min-height:400px;"></div>';
+          setTimeout(function(){var el=document.getElementById(hid);if(el)h5pMount(el,src);},100);
+          break;
+        case'vlab':
+          content='<iframe src="'+escAttr(src)+'" style="width:100%;min-height:70vh;border:none;border-radius:6px;" allowfullscreen loading="lazy" title="Virtual Lab"></iframe><p style="margin-top:0.5rem;text-align:center;font-size:0.8rem;"><a href="'+escAttr(src)+'" target="_blank" rel="noopener">Open the lab in a new tab</a></p>';
           break;
         case'glossary':
           var parts=src.split('|');
@@ -420,7 +517,7 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
           terms=terms.filter(function(g){return g.term&&g.definition&&g.term.length>=2;}).sort(function(a,b){return b.term.length-a.term.length;});
           if(!terms.length)return;
           var esc=terms.map(function(g){return g.term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');});
-          var pat=new RegExp('\\\\b('+esc.join('|')+')\\\\b','gi');
+          var pat=new RegExp('\\b('+esc.join('|')+')\\b','gi');
           var map={};terms.forEach(function(g){map[g.term.toLowerCase()]=g;});
           var counts={};terms.forEach(function(g){counts[g.term.toLowerCase()]=0;});
           var w=document.createTreeWalker(rt,NodeFilter.SHOW_TEXT,{acceptNode:function(n){if(!n.nodeValue||!n.nodeValue.trim())return NodeFilter.FILTER_REJECT;var p=n.parentElement;while(p&&p!==rt){if(SKIP[p.tagName]||p.classList.contains('glossary-term'))return NodeFilter.FILTER_REJECT;p=p.parentElement;}return NodeFilter.FILTER_ACCEPT;}});
@@ -465,7 +562,7 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
     var SKIP={SCRIPT:1,STYLE:1,CODE:1,PRE:1,DFN:1,A:1,BUTTON:1,H1:1,H2:1,H3:1};
     terms.sort(function(a,b){return b.term.length-a.term.length;});
     var esc=terms.map(function(g){return g.term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');});
-    var pat=new RegExp('\\\\b('+esc.join('|')+')\\\\b','gi');
+    var pat=new RegExp('\\b('+esc.join('|')+')\\b','gi');
     var map={};terms.forEach(function(g){map[g.term.toLowerCase()]=g;});
     var counts={};terms.forEach(function(g){counts[g.term.toLowerCase()]=0;});
     var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){if(!n.nodeValue||!n.nodeValue.trim())return NodeFilter.FILTER_REJECT;var p=n.parentElement;while(p&&p!==root){if(SKIP[p.tagName]||p.classList.contains('glossary-term')||(p.id==='chapter-glossary-data'))return NodeFilter.FILTER_REJECT;p=p.parentElement;}return NodeFilter.FILTER_ACCEPT;}});
@@ -511,7 +608,7 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
       var btn=document.createElement('button');
       btn.className='note-btn'+(notes[h.id]?' has-note':'');
       btn.title=notes[h.id]?'View/edit note':'Add note';
-      btn.textContent=notes[h.id]?'\\u270F':'\\u2795';
+      btn.textContent=notes[h.id]?'\u270F':'\u2795';
       btn.setAttribute('aria-label',notes[h.id]?'Edit note for: '+h.textContent.trim().substring(0,30):'Add note to: '+h.textContent.trim().substring(0,30));
 
       var panel=document.createElement('div');
@@ -531,12 +628,12 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
         if(text){
           notes[h.id]=text;
           btn.className='note-btn has-note';
-          btn.textContent='\\u270F';
+          btn.textContent='\u270F';
           btn.title='View/edit note';
         }else{
           delete notes[h.id];
           btn.className='note-btn';
-          btn.textContent='\\u2795';
+          btn.textContent='\u2795';
           btn.title='Add note';
         }
         saveNotes(notes);
@@ -548,7 +645,7 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
         saveNotes(notes);
         panel.querySelector('textarea').value='';
         btn.className='note-btn';
-        btn.textContent='\\u2795';
+        btn.textContent='\u2795';
         btn.title='Add note';
         open=false;panel.classList.remove('visible');
       });
@@ -608,18 +705,18 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
 
     var saveBtn=document.createElement('button');
     saveBtn.className='bm-btn bm-save';
-    saveBtn.textContent='\\uD83D\\uDD16 Save Position';
+    saveBtn.textContent='\uD83D\uDD16 Save Position';
     saveBtn.title='Bookmark your current reading position';
 
     var resumeBtn=document.createElement('button');
     resumeBtn.className='bm-btn bm-resume';
-    resumeBtn.textContent='\\u25B6 Resume Reading';
+    resumeBtn.textContent='\u25B6 Resume Reading';
     resumeBtn.title='Jump back to your saved position';
     resumeBtn.style.display='none';
 
     var clearBtn=document.createElement('button');
     clearBtn.className='bm-btn bm-clear';
-    clearBtn.textContent='\\u2716';
+    clearBtn.textContent='\u2716';
     clearBtn.title='Clear bookmark';
     clearBtn.style.display='none';
 
@@ -656,9 +753,9 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
         scrollPercent:scrollPct,
         timestamp:new Date().toISOString()
       });
-      saveBtn.textContent='\\u2705 Saved!';
+      saveBtn.textContent='\u2705 Saved!';
       saveBtn.className='bm-btn bm-save saved';
-      setTimeout(function(){saveBtn.textContent='\\uD83D\\uDD16 Save Position';saveBtn.className='bm-btn bm-save';},1500);
+      setTimeout(function(){saveBtn.textContent='\uD83D\uDD16 Save Position';saveBtn.className='bm-btn bm-save';},1500);
       resumeBtn.style.display='';
       clearBtn.style.display='';
       showToast('Position saved: '+section.textContent.trim().substring(0,40));
@@ -1119,7 +1216,7 @@ READER_SHELL_SCRIPT = r'''<script>
   document.querySelectorAll('.toc-item a').forEach(function(a){a.addEventListener('click',function(){if(window.innerWidth<=900)drawer(false);});});
 
   /* ---- media chips: add labels, keep the runtime's click handlers ---- */
-  var MI={video:'Video',audio:'Audio',pptx:'Slides',h5p:'Activity',url:'Link',glossary:'Glossary'};
+  var MI={video:'Video',audio:'Audio',pptx:'Slides',h5p:'Activity',vlab:'Lab',url:'Link',glossary:'Glossary'};
   document.querySelectorAll('.media-icon.has-content').forEach(function(b){
     var t=b.getAttribute('data-media-type');
     if(MI[t]&&!b.querySelector('.rd-mi-label')){
@@ -1166,8 +1263,28 @@ READER_SHELL_SCRIPT = r'''<script>
           if(/\.pdf($|\?)/i.test(src))return '<iframe src="'+esc(src)+'" style="width:100%;min-height:70vh;border:none"></iframe>';
           return '<div style="text-align:center;padding:2rem"><a href="'+esc(src)+'" download style="padding:.7rem 1.4rem;background:var(--rd-accent);color:#fff;border-radius:10px;text-decoration:none">Download presentation</a></div>';
         case'h5p':
-          if(/^https?:\/\//.test(src))return '<iframe src="'+esc(src)+'" style="width:100%;min-height:60vh;border:none;border-radius:8px" allowfullscreen></iframe>';
-          return '<iframe src="'+esc(src)+'" style="width:100%;min-height:60vh;border:none" allowfullscreen></iframe>';
+          // An H5P package is a directory the player reads (<src>/h5p.json);
+          // only a single pre-built page can be iframed directly.
+          var hid='h5px-'+Date.now();
+          setTimeout(function(){
+            var el=document.getElementById(hid);
+            if(!el)return;
+            if(/\.html?($|[?#])/i.test(src)){
+              el.innerHTML='<iframe src="'+esc(src)+'" style="width:100%;min-height:60vh;border:none;border-radius:8px" allowfullscreen></iframe>';
+              return;
+            }
+            if(window.H5PStandalone){
+              try{
+                var abs=src;try{abs=new URL(src,document.baseURI).href;}catch(e2){}
+                new H5PStandalone.H5P(el,{h5pJsonPath:abs,frameJs:'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js',frameCss:'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css'});
+                return;
+              }catch(e){}
+            }
+            el.innerHTML='<p style="text-align:center;padding:2rem"><a href="'+esc(src)+'" target="_blank" rel="noopener">Open activity</a></p>';
+          },60);
+          return '<div id="'+hid+'" style="min-height:60vh"></div>';
+        case'vlab':
+          return '<iframe src="'+esc(src)+'" style="width:100%;min-height:70vh;border:none;border-radius:8px" allowfullscreen loading="lazy" title="Virtual Lab"></iframe><p style="margin-top:.5rem;text-align:center;font-size:.8rem"><a href="'+esc(src)+'" target="_blank" rel="noopener">Open the lab in a new tab</a></p>';
         case'glossary':
           var parts=src.split('|');
           return '<div style="font-size:1.15rem;font-weight:700;margin-bottom:.5rem">'+esc((parts[0]||'').trim())+'</div><div style="line-height:1.6">'+esc((parts[1]||src).trim())+'</div>';
@@ -1255,20 +1372,49 @@ def publish_document(job_dir, filename):
     client, namespace = _get_oci_client()
     base_key = job_dir
 
+    html_content = html_path.read_text(encoding="utf-8")
+
+    # Unpacked H5P packages are uploaded whole, and referenced by directory
+    # rather than by file, so they are handled apart from ordinary media.
+    h5p_roots = _find_h5p_roots(output_path)
+    h5p_file_count = 0
+
+    # The .h5p/.zip archive sitting next to an unpacked package is dead weight
+    # for learners (it can be hundreds of MB). Upload it only if the document
+    # actually links to it.
+    redundant_archives = set()
+    for rel_root in h5p_roots:
+        for extension in (".h5p", ".zip"):
+            archive = f"{rel_root}{extension}"
+            if (output_path / archive).exists() and archive not in html_content:
+                redundant_archives.add(archive)
+
     # Collect files to upload
     media_map = {}  # relative_path -> public_url
     video_map = {}  # relative_path -> public_url
+    h5p_map = {}    # package directory -> public base URL
 
     for root, _dirs, files in os.walk(str(output_path)):
         for fname in files:
             full_path = os.path.join(root, fname)
             relative = os.path.relpath(full_path, str(output_path))
+            relative_posix = relative.replace(os.sep, "/")
 
-            # Skip the HTML file itself and non-media files
-            if relative == filename or _is_skip_file(full_path):
+            if relative == filename or relative_posix in redundant_archives:
                 continue
 
             object_name = f"{base_key}/{relative}"
+
+            # Inside an H5P package: upload regardless of extension. The player
+            # fetches h5p.json, content/content.json and the library files,
+            # all of which _is_skip_file() would otherwise drop.
+            if _h5p_package_for(relative_posix, h5p_roots):
+                _upload_file(client, namespace, MEDIA_BUCKET, full_path, object_name)
+                h5p_file_count += 1
+                continue
+
+            if _is_skip_file(full_path):
+                continue
 
             if _is_video_file(full_path):
                 # Videos must be publicly readable so the learner's browser can
@@ -1285,19 +1431,39 @@ def publish_document(job_dir, filename):
                 _upload_file(client, namespace, MEDIA_BUCKET, full_path, object_name)
                 media_map[relative] = _get_public_url(namespace, MEDIA_BUCKET, object_name)
 
-    # Rewrite HTML paths to OCI public URLs
-    html_content = html_path.read_text(encoding="utf-8")
+    # Map each package directory to its public base URL. h5p-standalone is
+    # given a directory (it appends /h5p.json), so this is a prefix rewrite,
+    # not a per-file one.
+    for rel_root in h5p_roots:
+        h5p_map[rel_root] = _get_public_url(
+            namespace, MEDIA_BUCKET, f"{base_key}/{rel_root}"
+        )
 
     # Strip editor UI (buttons, toolbar, modals, editing scripts) for learner view
     html_content = _strip_editor_ui(html_content)
 
-    # Replace relative paths with public URLs (media + video)
-    all_mappings = {**media_map, **video_map}
-    for relative_path, public_url in all_mappings.items():
-        # Handle both ./path and path references
-        escaped = re.escape(relative_path)
-        pattern = rf'(?:\.\/)?{escaped}'
-        html_content = re.sub(pattern, public_url, html_content)
+    # Replace relative paths with public URLs (media + video + bundles).
+    #
+    # This must be a SINGLE pass. Applying one re.sub() per mapping rewrites
+    # text that an earlier mapping already replaced: the inserted absolute URL
+    # still contains the relative path, so a shorter key matches inside it. With
+    # two uploads of the same lab ("media/Virtual_Lab" and "media/Virtual_Lab_1",
+    # the de-duplicated name), rewriting the longer one first and then the
+    # shorter one produced a URL nested inside a URL, and the bucket returned
+    # ObjectNotFound.
+    #
+    # Longest key first inside the alternation so the most specific path wins,
+    # and a trailing guard so "media/lab" cannot match the start of
+    # "media/lab_1" or "media/lab.zip".
+    all_mappings = {**media_map, **video_map, **h5p_map}
+    if all_mappings:
+        ordered_keys = sorted(all_mappings, key=len, reverse=True)
+        path_pattern = re.compile(
+            r'(?:\./)?(' + '|'.join(re.escape(k) for k in ordered_keys) + r')(?![\w.\-])'
+        )
+        html_content = path_pattern.sub(
+            lambda match: all_mappings[match.group(1)], html_content
+        )
 
     # Upload the rewritten HTML
     html_object_name = f"{base_key}/{filename}"
@@ -1306,11 +1472,14 @@ def publish_document(job_dir, filename):
 
     _log.info(
         f"Published {job_dir}/{filename}: "
-        f"{len(media_map)} media, {len(video_map)} videos"
+        f"{len(media_map)} media, {len(video_map)} videos, "
+        f"{len(h5p_map)} bundle(s) — H5P/Virtual Lab — ({h5p_file_count} files)"
     )
 
     return {
         "html_url": html_url,
         "media_uploaded": len(media_map),
         "videos_uploaded": len(video_map),
+        "h5p_packages": len(h5p_map),
+        "h5p_files": h5p_file_count,
     }

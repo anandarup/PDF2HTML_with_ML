@@ -17,6 +17,7 @@ import markdown
 from jinja2 import Environment, FileSystemLoader
 
 from tools.qr_filter import strip_qr_content, strip_qr_from_html
+from tools.caption_dedupe import remove_duplicate_captions
 
 
 # Resolve template directory relative to this file
@@ -123,6 +124,11 @@ def build_interactive_html(
     # Convert inline images to floating figures for textbook-style layout
     body_html = _wrap_images_as_figures(body_html)
 
+    # The backend emits each picture description twice — as the image's alt text
+    # (which became the caption above) and as a paragraph beside the image. Keep
+    # the caption, drop the paragraph.
+    body_html, _ = remove_duplicate_captions(body_html)
+
     # Safety net: drop any QR code leftovers (e.g. images inside tables, whose
     # rows the Markdown pass leaves intact to avoid breaking the table)
     body_html = strip_qr_from_html(body_html)
@@ -183,8 +189,12 @@ def _wrap_images_as_figures(html: str) -> str:
         alt_match = re.search(r'alt="([^"]*)"', img_tag)
         alt_text = alt_match.group(1) if alt_match else ""
 
-        # Build caption from alt text or figure number
-        caption = alt_text if alt_text else f"Figure {figure_index + 1}"
+        # The caption is the picture description. When the backend supplied none
+        # — which is deliberate for documents that are not in English, since its
+        # descriptions are always English — leave the caption empty rather than
+        # inventing "Figure N". An empty caption is hidden from learners and
+        # shows a "double-click to describe" prompt to editors.
+        caption = alt_text.strip()
 
         figure_html = (
             f'<figure class="figure-wrap">'

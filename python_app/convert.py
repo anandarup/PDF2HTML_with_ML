@@ -114,7 +114,7 @@ def convert_pdf_to_html(
     report(
         "extracting",
         "Reading your PDF and identifying text, images, and layout. "
-        "This may take a minute for longer documents...",
+        "This may take a bit longer for longer documents...",
     )
     start = time.time()
 

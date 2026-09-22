@@ -51,6 +51,13 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader
 
+try:  # works both as `python tools/resync_template.py` and as tools.resync_template
+    from h5p_clean import empty_h5p_containers
+    from caption_dedupe import remove_duplicate_captions
+except ImportError:  # pragma: no cover - import style depends on entry point
+    from tools.h5p_clean import empty_h5p_containers
+    from tools.caption_dedupe import remove_duplicate_captions
+
 _TOOLS_DIR = Path(__file__).resolve().parent
 _PYTHON_APP_DIR = _TOOLS_DIR.parent
 _TEMPLATE_DIR = _PYTHON_APP_DIR / "templates"
@@ -88,6 +95,13 @@ def _strip_editor_chrome(body_html: str) -> str:
             re.DOTALL,
         )
         body_html = pattern.sub("", body_html)
+
+    # Drop any H5P player markup a previous save persisted inside its container.
+    body_html, _ = empty_h5p_containers(body_html)
+
+    # Drop the duplicated image description that older conversions left as a
+    # paragraph beside the figure; the caption carries it.
+    body_html, _ = remove_duplicate_captions(body_html)
     return body_html
 
 

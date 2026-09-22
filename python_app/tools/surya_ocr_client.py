@@ -71,6 +71,7 @@ def _submit(
     mode: str,
     processing_location: str,
     max_retries: int = 3,
+    disable_image_captions: bool = False,
 ) -> str:
     """Submit the PDF for conversion. Returns request_check_url.
 
@@ -86,6 +87,9 @@ def _submit(
         "output_format": "markdown",
         "mode": mode,
         "paginate": "false",
+        # Picture descriptions are always written in English by the backend, so
+        # the caller disables them for documents that are not in English.
+        "disable_image_captions": "true" if disable_image_captions else "false",
     }
     # The API rejects multipart upload combined with processing_location. Since
     # the app uploads a local file (multipart), we can only honor "us" (the
@@ -205,8 +209,12 @@ def convert_pdf(
     processing_location: str = "us",
     timeout_seconds: int = 600,
     poll_interval: int = 2,
+    disable_image_captions: bool = False,
 ) -> SuryaOcrResult:
     """Convert a PDF via the Datalab/Surya API and return normalized output.
+
+    Set disable_image_captions to skip the backend's picture descriptions; they
+    are produced in English regardless of the document's language.
 
     Raises SuryaOcrError on any failure (auth, timeout, API error). Never logs
     or embeds the API key.
@@ -216,10 +224,12 @@ def convert_pdf(
 
     session = requests.Session()
     _log.info(
-        "Submitting PDF to Datalab (mode=%s, region=%s)", mode, processing_location
+        "Submitting PDF to Datalab (mode=%s, region=%s, image_captions=%s)",
+        mode, processing_location, "off" if disable_image_captions else "on",
     )
     check_url = _submit(
-        session, base_url, api_key, pdf_path, mode, processing_location
+        session, base_url, api_key, pdf_path, mode, processing_location,
+        disable_image_captions=disable_image_captions,
     )
     result = _poll(session, api_key, check_url, timeout_seconds, poll_interval)
 

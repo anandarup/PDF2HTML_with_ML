@@ -273,6 +273,51 @@ def extract_pdf_content(
     )
 
 
+def _should_disable_image_captions(pdf_path: str, cfg) -> bool:
+    """
+    Decide whether to ask the backend for picture descriptions.
+
+    The backend writes them in English whatever the document's language, so an
+    English caption on a Hindi chapter is worse than no caption — the editor can
+    write one in the document view. Captions are therefore requested only when
+    the PDF reads as English.
+
+    DATALAB_IMAGE_CAPTIONS overrides the decision ("always" / "never").
+    """
+    policy = getattr(cfg, "DATALAB_IMAGE_CAPTIONS", "auto")
+
+    if policy == "always":
+        _log.info("Image captions: on (DATALAB_IMAGE_CAPTIONS=always)")
+        return False
+    if policy == "never":
+        _log.info("Image captions: off (DATALAB_IMAGE_CAPTIONS=never)")
+        return True
+
+    from tools.lang_detect import pdf_looks_english
+
+    signals = pdf_looks_english(pdf_path)
+    if signals is None:
+        # No readable text layer, so the language is unknown. Leave captions to
+        # the editor rather than risk English text on a non-English chapter.
+        _log.info("Image captions: off (no text layer to identify the language)")
+        return True
+
+    if signals["is_english"]:
+        _log.info(
+            "Image captions: on (reads as English: non-Latin letters %.1f%%, "
+            "English function words %.1f%%)",
+            signals["non_latin_ratio"] * 100, signals["function_word_ratio"] * 100,
+        )
+        return False
+
+    _log.info(
+        "Image captions: off (not English: non-Latin letters %.1f%%, "
+        "English function words %.1f%%) — the editor writes these captions",
+        signals["non_latin_ratio"] * 100, signals["function_word_ratio"] * 100,
+    )
+    return True
+
+
 def _extract_via_surya(resolved_path: Path, image_dir: Path, report) -> ExtractionResult:
     """Extract PDF content using the hosted Datalab/Surya API.
 
@@ -291,8 +336,10 @@ def _extract_via_surya(resolved_path: Path, image_dir: Path, report) -> Extracti
     report(
         "analyzing",
         "Reading your PDF and identifying text, images, and layout. "
-        "This may take a minute for longer documents…",
+        "This may take a bit longer for longer documents…",
     )
+
+    disable_captions = _should_disable_image_captions(str(resolved_path), _config)
 
     try:
         result = convert_pdf(
@@ -303,6 +350,7 @@ def _extract_via_surya(resolved_path: Path, image_dir: Path, report) -> Extracti
             processing_location=_config.DATALAB_PROCESSING_LOCATION,
             timeout_seconds=_config.DATALAB_TIMEOUT_SECONDS,
             poll_interval=_config.DATALAB_POLL_INTERVAL_SECONDS,
+            disable_image_captions=disable_captions,
         )
     except SuryaOcrError as exc:
         # Editor-facing, key-free, brand-neutral message.

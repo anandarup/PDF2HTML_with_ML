@@ -75,6 +75,8 @@ UPLOAD_LIMITS: dict = {
     "audio": 50 * 1024 * 1024,    # 50 MB
     "pptx": 30 * 1024 * 1024,     # 30 MB
     "h5p": 400 * 1024 * 1024,     # 400 MB
+    "vlab": 300 * 1024 * 1024,    # 300 MB — Virtual Lab bundle (.zip)
+
     "pdf": 100 * 1024 * 1024,     # 100 MB
     "image": 1 * 1024 * 1024,     # 1 MB
 }
@@ -134,8 +136,18 @@ DATALAB_PROCESSING_LOCATION = _env("DATALAB_PROCESSING_LOCATION", "us").lower() 
 DATALAB_TIMEOUT_SECONDS = _env_int("DATALAB_TIMEOUT_SECONDS", 600)
 DATALAB_POLL_INTERVAL_SECONDS = _env_int("DATALAB_POLL_INTERVAL_SECONDS", 2)
 
+# Automatic image captions (picture descriptions) from the OCR backend.
+# The backend writes them in English whatever the document's language, so a
+# Hindi or Urdu chapter would get English captions. Policy:
+#   auto   : (default) caption English documents only; for anything else the
+#            caption is left empty for the editor to write.
+#   always : caption every document, whatever its language.
+#   never  : never request captions; editors write all of them.
+DATALAB_IMAGE_CAPTIONS = _env("DATALAB_IMAGE_CAPTIONS", "auto").lower()
+
 VALID_DATALAB_MODES = {"fast", "balanced", "accurate"}
 VALID_DATALAB_LOCATIONS = {"us", "eu"}
+VALID_IMAGE_CAPTION_POLICIES = {"auto", "always", "never"}
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +179,7 @@ def summary() -> dict:
         # Report only whether a key is present, never the key itself.
         "datalab_api_key_configured": bool(DATALAB_API_KEY),
         "datalab_mode": DATALAB_MODE,
+        "datalab_image_captions": DATALAB_IMAGE_CAPTIONS,
         "datalab_processing_location": DATALAB_PROCESSING_LOCATION,
     }
 
@@ -197,6 +210,11 @@ def validate() -> list[str]:
         problems.append("OCR_ENGINE=surya requires DATALAB_API_KEY")
     if OCR_ENGINE == "surya" and DATALAB_MODE not in VALID_DATALAB_MODES:
         problems.append(f"DATALAB_MODE '{DATALAB_MODE}' not in {VALID_DATALAB_MODES}")
+    if DATALAB_IMAGE_CAPTIONS not in VALID_IMAGE_CAPTION_POLICIES:
+        problems.append(
+            f"DATALAB_IMAGE_CAPTIONS '{DATALAB_IMAGE_CAPTIONS}' "
+            f"not in {VALID_IMAGE_CAPTION_POLICIES}"
+        )
     if OCR_ENGINE == "surya" and DATALAB_PROCESSING_LOCATION not in VALID_DATALAB_LOCATIONS:
         problems.append(
             f"DATALAB_PROCESSING_LOCATION '{DATALAB_PROCESSING_LOCATION}' "

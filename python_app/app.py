@@ -588,6 +588,22 @@ def upload_media(job_dir: str):
                 "error": "Only PNG and JPG images are allowed."
             }), 400
 
+    # H5P packages are ZIP archives; anything else cannot be unpacked or played.
+    # (.html is still accepted here because the per-section media chip allows
+    # pointing at a single pre-built H5P page.)
+    if media_type == "h5p":
+        allowed_extensions = (".h5p", ".zip", ".html", ".htm")
+        if not file.filename.lower().endswith(allowed_extensions):
+            return jsonify({
+                "error": "Choose a .h5p package (a .zip export also works)."
+            }), 400
+
+    # A Virtual Lab is a static site build, uploaded as a .zip.
+    if media_type == "vlab" and not file.filename.lower().endswith(".zip"):
+        return jsonify({
+            "error": "Choose the Virtual Lab bundle as a .zip file."
+        }), 400
+
     # Validate the target directory exists and is within OUTPUT_DIR
     # URL-decode the job_dir to handle double-encoding from browser JS
     from urllib.parse import unquote
@@ -624,21 +640,47 @@ def upload_media(job_dir: str):
     if media_type == "video" and target_path.suffix.lower() in (".mp4", ".m4v", ".mov"):
         _optimize_video_for_streaming(target_path)
 
-    # For H5P uploads, extract the zip archive for browser playback
+    # For H5P uploads, extract the archive — the player needs the unpacked
+    # folder (it fetches <folder>/h5p.json), not the archive itself.
     h5p_folder = ""
-    if media_type == "h5p" and target_path.suffix.lower() == ".h5p":
-        h5p_folder = _extract_h5p(target_path)
+    if media_type == "h5p" and target_path.suffix.lower() in (".h5p", ".zip"):
+        try:
+            h5p_folder = _extract_h5p(target_path)
+        except ValueError as exc:
+            # Unusable archive: drop it rather than leaving a file the player
+            # cannot load, and tell the editor why.
+            target_path.unlink(missing_ok=True)
+            return jsonify({"error": str(exc)}), 400
+
+    # A Virtual Lab is embedded in an iframe pointed at its index.html, so the
+    # bundle has to be unpacked and its entry point located.
+    vlab_entry = ""
+    vlab_warning = ""
+    if media_type == "vlab" and target_path.suffix.lower() == ".zip":
+        try:
+            result = _extract_vlab(target_path)
+            vlab_entry = result["entry"]
+            vlab_warning = result["warning"]
+        except ValueError as exc:
+            target_path.unlink(missing_ok=True)
+            return jsonify({"error": str(exc)}), 400
 
     # Return the relative URL from the HTML file's perspective
     relative_url = f"media/{target_path.name}"
     if h5p_folder:
         relative_url = f"media/{h5p_folder}"
+    elif vlab_entry:
+        relative_url = f"media/{vlab_entry}"
 
-    return jsonify({
+    payload = {
         "success": True,
         "url": relative_url,
         "filename": target_path.name,
-    }), 201
+    }
+    if vlab_warning:
+        payload["warning"] = vlab_warning
+
+    return jsonify(payload), 201
 
 
 @app.route("/output/<path:job_dir>/<path:filename>")
@@ -1015,22 +1057,225 @@ def _extract_h5p(h5p_path: Path) -> str:
     Extract an H5P file (ZIP archive) into a folder for browser playback.
 
     H5P files are ZIP archives containing HTML5 interactive content.
-    They must be extracted to be served to the h5p-standalone player.
+    They must be extracted to be served to the h5p-standalone player, which
+    fetches <folder>/h5p.json.
+
+    The archive is uploaded by an editor, so it is treated as untrusted input:
+    members that would escape the extraction directory are rejected (Zip
+    Slip), and the uncompressed size and entry count are capped so a small
+    archive cannot fill the disk.
 
     Returns:
         The folder name (relative to media/) where content was extracted.
+
+    Raises:
+        ValueError: If the archive is not a usable H5P package. The message is
+            safe to show to the user.
+    """
+    folder_name = h5p_path.stem
+    extract_dir = (h5p_path.parent / folder_name).resolve()
+
+    names = _extract_archive_safely(
+        h5p_path, extract_dir, kind="H5P package", marker="h5p.json"
+    )
+
+    # The player is pointed at the directory holding h5p.json. That is normally
+    # the archive root, but a hand-zipped package often nests everything one
+    # level down, so accept that shape too.
+    inner_dir = _package_inner_dir(names, "h5p.json")
+    return f"{folder_name}/{inner_dir}" if inner_dir else folder_name
+
+
+def _extract_vlab(zip_path: Path) -> dict:
+    """
+    Extract a Virtual Lab bundle (ZIP archive) for embedding.
+
+    A Virtual Lab is a self-contained static build of a single-page app
+    (typically Create React App: index.html plus hashed bundles under
+    static/js and static/css). It is embedded in an iframe pointed at its
+    index.html, so extraction must find that entry point.
+
+    Returns:
+        dict with:
+            entry:   path to index.html, relative to media/
+            warning: user-facing note if the build cannot work from a
+                     subdirectory, or "" when it is fine.
+
+    Raises:
+        ValueError: If the archive is not a usable Virtual Lab bundle. The
+            message is safe to show to the user.
+    """
+    folder_name = zip_path.stem
+    extract_dir = (zip_path.parent / folder_name).resolve()
+
+    names = _extract_archive_safely(
+        zip_path, extract_dir, kind="Virtual Lab bundle", marker="index.html"
+    )
+
+    inner_dir = _package_inner_dir(names, "index.html")
+    lab_root = extract_dir / inner_dir if inner_dir else extract_dir
+    warning = _make_static_bundle_relative(lab_root)
+
+    entry = f"{folder_name}/{inner_dir}/index.html" if inner_dir else f"{folder_name}/index.html"
+    return {"entry": entry, "warning": warning}
+
+
+def _extract_archive_safely(
+    archive_path: Path, extract_dir: Path, *, kind: str, marker: str
+) -> set:
+    """
+    Extract an uploaded ZIP archive, treating its contents as untrusted.
+
+    Members that would land outside extract_dir are rejected (Zip Slip), and
+    the entry count and total uncompressed size are capped so a small archive
+    cannot fill the disk. The archive must contain `marker` somewhere at the
+    root or one level down, which is what identifies it as the expected kind.
+
+    Args:
+        archive_path: The uploaded .zip/.h5p file.
+        extract_dir: Directory to extract into (created if needed).
+        kind: Human-readable package kind, used in error messages.
+        marker: File that must be present (e.g. "h5p.json", "index.html").
+
+    Returns:
+        The set of member names in the archive.
+
+    Raises:
+        ValueError: With a message safe to show to the user.
     """
     import zipfile
 
-    folder_name = h5p_path.stem
-    extract_dir = h5p_path.parent / folder_name
+    MAX_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
+    MAX_ENTRIES = 20000
 
     try:
-        with zipfile.ZipFile(str(h5p_path), "r") as zf:
+        with zipfile.ZipFile(str(archive_path), "r") as zf:
+            entries = zf.infolist()
+
+            if len(entries) > MAX_ENTRIES:
+                raise ValueError(
+                    f"This {kind} contains too many files to unpack safely."
+                )
+
+            total = sum(entry.file_size for entry in entries)
+            if total > MAX_UNCOMPRESSED_BYTES:
+                raise ValueError(
+                    f"This {kind} expands to more than 2 GB and was not unpacked."
+                )
+
+            for entry in entries:
+                # Reject absolute paths, drive letters and ../ traversal by
+                # checking where the member would actually land.
+                destination = (extract_dir / entry.filename).resolve()
+                try:
+                    destination.relative_to(extract_dir)
+                except ValueError:
+                    raise ValueError(
+                        f"This {kind} contains unsafe file paths and was not unpacked."
+                    ) from None
+
+            names = {entry.filename for entry in entries}
+            if _package_inner_dir(names, marker) is None:
+                raise ValueError(
+                    f"This does not look like a {kind} (no {marker} inside)."
+                )
+
+            extract_dir.mkdir(parents=True, exist_ok=True)
             zf.extractall(str(extract_dir))
-        return folder_name
-    except (zipfile.BadZipFile, OSError):
+            return names
+    except zipfile.BadZipFile:
+        raise ValueError(
+            f"That file isn't a valid {kind} (unreadable archive)."
+        ) from None
+    except OSError:
+        raise ValueError(f"The {kind} could not be unpacked on the server.") from None
+
+
+def _package_inner_dir(names: set, marker: str):
+    """
+    Locate the directory holding `marker` within an archive's member names.
+
+    Returns "" when the marker sits at the archive root, the single top-level
+    directory name when everything is nested one level down, or None when the
+    marker cannot be found unambiguously.
+    """
+    if marker in names:
         return ""
+    nested = [
+        name for name in names
+        if name.endswith(f"/{marker}") and name.count("/") == 1
+    ]
+    if len(nested) == 1:
+        return nested[0].rsplit("/", 1)[0]
+    return None
+
+
+def _make_static_bundle_relative(lab_root: Path) -> str:
+    """
+    Make a static SPA build loadable from a subdirectory.
+
+    Create React App builds with the default configuration reference their
+    assets from the site root ("/static/js/main.<hash>.js"). A Virtual Lab is
+    served from output/<job>/media/<lab>/, so those absolute paths resolve
+    against the wrong place and the lab renders blank. Rewriting them in
+    index.html to "./static/..." fixes the initial load.
+
+    Chunks requested at runtime use the publicPath baked into the bundle, which
+    cannot be rewritten reliably. If any remains, the lab is reported as needing
+    a rebuild with PUBLIC_URL="." rather than silently half-working.
+
+    Returns:
+        A user-facing warning, or "" if the bundle is fine.
+    """
+    import re as _re
+
+    index_path = lab_root / "index.html"
+    if not index_path.is_file():
+        return ""
+
+    try:
+        html = index_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+    # Only rewrite root-absolute references to files that exist in the bundle,
+    # so links to genuinely external resources are left alone.
+    def to_relative(match) -> str:
+        attr, quote_char, path = match.group(1), match.group(2), match.group(3)
+        if (lab_root / path.lstrip("/")).exists():
+            return f'{attr}={quote_char}./{path.lstrip("/")}'
+        return match.group(0)
+
+    rewritten = _re.sub(
+        r'\b(src|href)=(["\'])(/(?:static|manifest\.json|favicon\.ico|logo[^"\']*|asset[^"\']*)[^"\']*)',
+        to_relative,
+        html,
+    )
+
+    if rewritten != html:
+        try:
+            index_path.write_text(rewritten, encoding="utf-8")
+        except OSError:
+            return (
+                "The lab was uploaded, but its index.html could not be adjusted "
+                "for serving from a subfolder."
+            )
+
+    # Look for a baked-in absolute publicPath in the main bundles. CRA emits
+    # something like n.p="/" in the webpack runtime.
+    for script in sorted((lab_root / "static" / "js").glob("*.js")) if (lab_root / "static" / "js").is_dir() else []:
+        try:
+            text = script.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        if _re.search(r'\.p\s*=\s*["\']/["\']', text):
+            return (
+                "This lab was built for the site root, so parts loaded on demand "
+                "may not appear. Ask for a rebuild with PUBLIC_URL=\"./\" "
+                "(or homepage \".\") for full support."
+            )
+
+    return ""
 
 
 def _optimize_video_for_streaming(video_path: Path) -> None:

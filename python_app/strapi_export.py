@@ -512,6 +512,16 @@ def _media_icon_to_block(
             "source": "custom",
         }
 
+    elif media_type == "vlab":
+        # A Virtual Lab is a self-contained static build embedded in an iframe,
+        # so it exports the same way an H5P activity does — by URL.
+        return {
+            "__component": "blocks.h5p-block",
+            "title": "Virtual Lab",
+            "h5p_url": media_src,
+            "source": "custom",
+        }
+
     elif media_type == "url":
         # Check if it's a video URL (YouTube/Vimeo)
         yt_match = re.search(r"(?:youtube\.com|youtu\.be)", media_src, re.IGNORECASE)
