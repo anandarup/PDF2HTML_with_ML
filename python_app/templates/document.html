@@ -451,6 +451,23 @@
       display: block;
     }
 
+    /* Default caption size for a figure that has never been resized. Once the
+       resize JS runs (drag handles or the S/M/L/Full buttons), it sets an
+       inline font-size on this element directly, computed from the figure's
+       new width — see captionFontSizeFor() / applyFigureWidth() under "Image
+       Edit Controls". That inline style always wins over this rule.
+
+       Scaling lives in JS rather than a CSS calc()/clamp(), after two CSS-only
+       attempts failed for real, measured reasons: a linear ratio saturated
+       its ceiling by ~400px (a medium and a huge figure read identically),
+       and a wider linear fit anchored at 900px still hit a hard ceiling for
+       any larger manual resize — this app's images are user-resizable to
+       arbitrary widths (a "Full" figure or a dragged corner easily exceeds
+       1500-2000px on a scanned textbook page), so any *fixed* endpoint
+       eventually looks broken again for someone with a bigger image. A
+       continuously-growing curve (sqrt) doesn't have that problem, but CSS's
+       sqrt() math function isn't reliably supported yet, so the curve is
+       computed in JS, which has had Math.sqrt forever. */
     .document-body .figure-wrap figcaption {
       font-size: 0.8rem;
       color: var(--color-text-secondary);
@@ -526,6 +543,7 @@
     }
 
     .document-body .figure-full figcaption {
+      /* Default only; see the comment on .figure-wrap figcaption above. */
       font-size: 0.8rem;
       color: var(--color-text-secondary);
       text-align: center;
@@ -2290,6 +2308,23 @@
     .cb-imgtoggle:hover { background: var(--cb-fill); color: var(--color-text); }
     .cb-imgwrap { display: none; margin-top: 8px; }
     .cb-imgwrap.open { display: block; }
+    /* The reused .media-input-divider/.file-upload-area/.file-upload-btn
+       classes (shared with #imageInsertModal) carry their own spacing sized
+       for that modal's roomier layout; trim it down to match this modal's
+       tighter .cb-field rhythm rather than override their rules elsewhere. */
+    .cb-imgwrap .media-input-divider { margin: 10px 0; }
+    .cb-imgwrap .file-upload-area { margin: 0; }
+    .cb-img-status { font-size: 0.78rem; margin-top: 6px; min-height: 1em; }
+    .cb-img-status.cb-img-status--error { color: #e5484d; }
+    .cb-img-upload-row { display: flex; align-items: center; }
+    .cb-img-upload-row .file-upload-area { flex: 1; min-width: 0; }
+    .cb-img-remove {
+      border: 1px solid var(--color-border); border-radius: 7px;
+      width: 30px; height: 30px; flex: none; margin-left: 6px;
+      background: var(--color-bg); color: var(--color-text-secondary); cursor: pointer;
+      font-size: 12px; line-height: 1;
+    }
+    .cb-img-remove:hover { background: var(--cb-fill); color: var(--color-text); }
 
     /* footer buttons */
     .cb-btn {
@@ -3859,8 +3894,20 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
             Add an image
           </button>
+          <!-- Mirrors #imageInsertModal's upload-or-URL pattern (same classes,
+               same pendingFile-in-a-closure idiom) so the two "add an image"
+               affordances in this editor behave the same way. -->
           <div class="cb-imgwrap" id="cbImgWrap">
             <input type="url" id="cbImageInput" class="cb-input" placeholder="https://&hellip; image URL" />
+            <div class="media-input-divider"><span>or</span></div>
+            <div class="cb-img-upload-row">
+              <div class="file-upload-area">
+                <input type="file" id="cbImageFileInput" class="file-input-hidden" accept=".png,.jpg,.jpeg" />
+                <label for="cbImageFileInput" class="file-upload-btn" id="cbImageFileLabel">Choose an image&hellip;</label>
+              </div>
+              <button type="button" class="cb-img-remove" id="cbImageRemove" title="Remove image" aria-label="Remove image" style="display:none">&#10005;</button>
+            </div>
+            <div class="cb-img-status" id="cbImageStatus"></div>
           </div>
         </div>
 
@@ -6368,9 +6415,108 @@
         var titleInput = document.getElementById('cbTitleInput');
         var bodyInput = document.getElementById('cbBodyInput');
         var imageInput = document.getElementById('cbImageInput');
+        var imageFileInput = document.getElementById('cbImageFileInput');
+        var imageFileLabel = document.getElementById('cbImageFileLabel');
+        var imageStatus = document.getElementById('cbImageStatus');
+        var imageRemoveBtn = document.getElementById('cbImageRemove');
         var iconPicks = modal.querySelectorAll('.cb-icon-pick');
         var selectedStyle = 'info';
         var editingBox = null; // reference to existing content-box being edited
+        // Set once a file is chosen; cleared if the editor types a URL instead
+        // or removes the image. Mirrors the #imageInsertModal pendingFile
+        // pattern — only one of {pendingFile, imageInput.value} is ever "live".
+        var pendingImageFile = null;
+        var pendingImageDataUrl = ''; // data: preview while pendingImageFile is set
+        // The existing box's current image src, captured when the modal opens
+        // for editing. Neither pendingImageFile nor imageInput.value can carry
+        // an "uploaded image, untouched" state on their own (see openModal),
+        // so this is what resolveImageSrc() falls back to in that case.
+        var existingImageSrc = '';
+
+        function escAttr(s) {
+          return String(s == null ? '' : s)
+            .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+            .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function resetImageStatus() {
+          imageStatus.textContent = '';
+          imageStatus.classList.remove('cb-img-status--error');
+        }
+
+        function showImageError(msg) {
+          imageStatus.textContent = msg;
+          imageStatus.classList.add('cb-img-status--error');
+        }
+
+        function clearPendingImageFile() {
+          pendingImageFile = null;
+          pendingImageDataUrl = '';
+          imageFileInput.value = '';
+          imageFileLabel.textContent = 'Choose an image\u2026';
+        }
+
+        // Whether anything (uploaded, pending, or a saved-then-reopened
+        // upload) currently occupies the "file" side of the source choice.
+        function hasChosenFile() {
+          return !!pendingImageFile ||
+            (!!existingImageSrc && !imageInput.value.trim() && /(^|\/)media\//.test(existingImageSrc));
+        }
+
+        function updateRemoveButtonVisibility() {
+          imageRemoveBtn.style.display = hasChosenFile() ? '' : 'none';
+        }
+
+        // Read-only accessor for the redesign-layer IIFE's preview, which has
+        // no access to this closure's pendingImageDataUrl. A function rather
+        // than a raw value on window so it can't be overwritten from outside.
+        window.CB_PENDING_IMAGE_PREVIEW = function() { return pendingImageDataUrl; };
+
+        // Typing a URL cancels a pending upload, same as #imageInsertModal.
+        imageInput.addEventListener('input', function() {
+          if (imageInput.value.trim()) {
+            if (pendingImageFile) clearPendingImageFile();
+            existingImageSrc = ''; // typing a URL replaces whatever was there
+            resetImageStatus();
+          }
+          updateRemoveButtonVisibility();
+        });
+
+        // Choosing a file cancels a pending URL, and previews immediately
+        // without waiting on the network (upload happens on Insert/Update,
+        // matching #imageInsertModal — one request instead of upload-then-edit).
+        imageFileInput.addEventListener('change', function() {
+          var f = imageFileInput.files[0];
+          if (!f) return;
+          pendingImageFile = f;
+          imageInput.value = '';
+          imageFileLabel.textContent = f.name;
+          resetImageStatus();
+          updateRemoveButtonVisibility();
+          var reader = new FileReader();
+          reader.onload = function(e) {
+            pendingImageDataUrl = e.target.result;
+            // The live preview lives in a separate IIFE (redesign layer,
+            // further down) with its own renderPreview() closed over its own
+            // DOM refs — not reachable from here directly. It listens for
+            // this event instead, the same cross-IIFE handshake already used
+            // for "modal opened" via the MutationObserver below.
+            modal.dispatchEvent(new CustomEvent('cb-image-changed'));
+          };
+          reader.readAsDataURL(f);
+        });
+
+        // Explicit remove: covers the one case the URL/file inputs can't —
+        // discarding an uploaded image that was restored from an existing
+        // box (openModal) without the editor having touched either control.
+        imageRemoveBtn.addEventListener('click', function() {
+          imageInput.value = '';
+          existingImageSrc = '';
+          clearPendingImageFile();
+          resetImageStatus();
+          updateRemoveButtonVisibility();
+          modal.dispatchEvent(new CustomEvent('cb-image-changed'));
+        });
 
         styleBtns.forEach(function(btn) {
           btn.addEventListener('click', function() {
@@ -6422,9 +6568,25 @@
             titleInput.value = titleVal;
             bodyInput.innerHTML = bodyVal;
 
-            // Extract image
+            // Extract image. An uploaded image's src is a relative media/...
+            // path (rewritten to an absolute bucket URL only after publish);
+            // show that as a "chosen file" rather than in the URL field, so
+            // re-opening the modal doesn't look like the URL source is active
+            // when it never was. No way to re-derive the original File object
+            // for the file input itself, so the label communicates the state
+            // instead — the src is preserved either way unless the editor
+            // deliberately changes it.
+            clearPendingImageFile();
             var imgEl = editingBox.querySelector('.content-box-image');
-            imageInput.value = imgEl ? imgEl.getAttribute('src') || '' : '';
+            existingImageSrc = imgEl ? imgEl.getAttribute('src') || '' : '';
+            if (existingImageSrc && /(^|\/)media\//.test(existingImageSrc)) {
+              imageInput.value = '';
+              imageFileLabel.textContent = existingImageSrc.split('/').pop() + ' (uploaded)';
+            } else {
+              imageInput.value = existingImageSrc;
+            }
+            resetImageStatus();
+            updateRemoveButtonVisibility();
 
             // Highlight matching style button
             styleBtns.forEach(function(b) {
@@ -6447,6 +6609,10 @@
             titleInput.value = '';
             bodyInput.innerHTML = '';
             imageInput.value = '';
+            existingImageSrc = '';
+            clearPendingImageFile();
+            resetImageStatus();
+            updateRemoveButtonVisibility();
             iconPicks.forEach(function(b) { b.classList.remove('selected'); });
             insertBtn.textContent = 'Insert';
           }
@@ -6460,7 +6626,10 @@
           editingBox = null;
         }
 
-        function buildBoxHtml(icon, title, body) {
+        // imgUrl is passed explicitly (not read from imageInput.value here)
+        // because after an upload the real src is the server-returned
+        // media/<name> path, not whatever the URL field currently shows.
+        function buildBoxHtml(icon, title, body, imgUrl) {
           // `icon` is an icon key (e.g. "activity"); resolve to inline SVG.
           // A non-key truthy value is treated as legacy raw markup/emoji and
           // passed through so old boxes still round-trip.
@@ -6468,8 +6637,8 @@
           var iconSvg = icon ? (ICONS[icon] || icon) : '';
           var iconKeyAttr = icon ? icon.replace(/"/g, '') : '';
           var hasIcon = iconSvg ? ' has-icon' : '';
-          var imgUrl = imageInput.value.trim();
-          var html = '<aside class="content-box content-box--' + selectedStyle + hasIcon + '" role="note" aria-label="' + (title || 'Content box') + '">';
+          imgUrl = (imgUrl || '').trim();
+          var html = '<aside class="content-box content-box--' + selectedStyle + hasIcon + '" role="note" aria-label="' + escAttr(title || 'Content box') + '">';
           if (iconSvg) {
             html += '<span class="content-box-icon" data-icon="' + iconKeyAttr + '" aria-hidden="true">' + iconSvg + '</span>';
           }
@@ -6477,13 +6646,38 @@
             html += '<div class="content-box-title">' + title + '</div>';
           }
           if (imgUrl) {
-            html += '<img class="content-box-image" src="' + imgUrl + '" alt="' + (title || 'Content box image') + '" style="max-width:100%;border-radius:6px;margin:0.5rem 0;" />';
+            html += '<img class="content-box-image" src="' + escAttr(imgUrl) + '" alt="' + escAttr(title || 'Content box image') + '" style="max-width:100%;border-radius:6px;margin:0.5rem 0;" />';
           }
           if (body) {
             html += '<div class="content-box-body">' + body + '</div>';
           }
           html += '</aside>';
           return html;
+        }
+
+        // Resolves what the box's image src should be, uploading the pending
+        // file first if there is one. Calls back with (err, src) — err set
+        // only on upload failure; src === '' means "no image" either way.
+        // Shared by both insertBtn handlers below so upload wiring exists once.
+        function resolveImageSrc(done) {
+          if (pendingImageFile) {
+            resetImageStatus();
+            imageStatus.textContent = 'Uploading ' + pendingImageFile.name + '\u2026';
+            uploadMediaFile(pendingImageFile, 'image').then(function(data) {
+              var src = data && (data.url || data.src || data.path);
+              if (!src) { done(new Error('Upload succeeded but no URL was returned.')); return; }
+              resetImageStatus();
+              done(null, src);
+            }).catch(function(err) {
+              done(err instanceof Error ? err : new Error(String(err)));
+            });
+            return;
+          }
+          var urlVal = imageInput.value.trim();
+          if (urlVal) { done(null, urlVal); return; }
+          // Neither control has a live value: either genuinely no image, or
+          // an untouched upload restored by openModal (existingImageSrc).
+          done(null, existingImageSrc || '');
         }
 
         // Insert new content box from toolbar
@@ -6502,10 +6696,16 @@
             if (body === '<br>' || body === '<div><br></div>') body = '';
             if (!body && !title) return;
 
-            var html = buildBoxHtml(icon, title, body);
-            restoreDocBodySelection(savedRange);
-            document.execCommand('insertHTML', false, html);
-            closeModal();
+            insertBtn.disabled = true;
+            resolveImageSrc(function(err, imgSrc) {
+              insertBtn.disabled = false;
+              if (err) { showImageError(err.message || 'Upload failed.'); return; }
+
+              var html = buildBoxHtml(icon, title, body, imgSrc);
+              restoreDocBodySelection(savedRange);
+              document.execCommand('insertHTML', false, html);
+              closeModal();
+            });
           };
         });
 
@@ -6530,12 +6730,18 @@
             if (body === '<br>' || body === '<div><br></div>') body = '';
             if (!body && !title) { closeModal(); return; }
 
-            // Replace the existing box in-place
-            var temp = document.createElement('div');
-            temp.innerHTML = buildBoxHtml(icon, title, body);
-            var newBox = temp.firstChild;
-            box.parentNode.replaceChild(newBox, box);
-            closeModal();
+            insertBtn.disabled = true;
+            resolveImageSrc(function(err, imgSrc) {
+              insertBtn.disabled = false;
+              if (err) { showImageError(err.message || 'Upload failed.'); return; }
+
+              // Replace the existing box in-place
+              var temp = document.createElement('div');
+              temp.innerHTML = buildBoxHtml(icon, title, body, imgSrc);
+              var newBox = temp.firstChild;
+              box.parentNode.replaceChild(newBox, box);
+              closeModal();
+            });
           };
         });
       })();
@@ -8069,6 +8275,36 @@
         sizeLabel = null;
       }
 
+      // Caption font size for a given figure width, in px. sqrt rather than
+      // linear so it keeps growing (slower and slower) instead of hitting a
+      // hard ceiling at some guessed width — this app lets an image resize to
+      // arbitrary sizes (a dragged corner or "Full" on a scanned page easily
+      // exceeds 1500-2000px), so any fixed endpoint eventually caps out for
+      // someone with a bigger image. Fit through the one point that has to
+      // stay exact: 320px (a typical default figure-wrap width) -> 12.8px,
+      // which is today's unresized 0.8rem @ 16px root — so a figure that is
+      // never touched by the resize handles renders identically to before.
+      var CAPTION_FIT_WIDTH = 320;
+      var CAPTION_FIT_PX = 12.8;
+      var CAPTION_MIN_PX = 10.4; // 0.65rem — floor for very small figures
+
+      function captionFontSizeFor(width) {
+        var k = CAPTION_FIT_PX / Math.sqrt(CAPTION_FIT_WIDTH);
+        return Math.max(CAPTION_MIN_PX, k * Math.sqrt(width));
+      }
+
+      // Resizing an image also resizes its caption text so it scales with the
+      // figure rather than staying fixed while the image shrinks or grows
+      // (the container also gets an explicit width matching the image, since
+      // its own max-width:45%/90% box never tracks the image on its own).
+      function applyFigureWidth(container, width) {
+        container.style.width = width + 'px';
+        var caption = container.querySelector('figcaption');
+        if (caption) {
+          caption.style.fontSize = captionFontSizeFor(width).toFixed(2) + 'px';
+        }
+      }
+
       function resizeToPercent(pct) {
         if (!selectedImg) return;
         var container = getContainer(selectedImg);
@@ -8076,7 +8312,21 @@
         var newWidth = Math.round(maxWidth * pct / 100);
         selectedImg.style.width = newWidth + 'px';
         selectedImg.style.height = 'auto';
-        selectedImg.style.maxWidth = 'none';
+        var caption = container.querySelector('figcaption');
+        if (pct >= 100) {
+          // "Full" reverts to the figure's own responsive CSS max-width
+          // (45%/90% of the column) rather than pinning a px value that
+          // would stop shrinking on narrower viewports. The caption follows
+          // suit: back to the plain CSS default instead of a size computed
+          // from a px width that won't track a resized viewport either.
+          selectedImg.style.maxWidth = '';
+          container.style.width = '';
+          if (caption) caption.style.fontSize = '';
+        } else {
+          selectedImg.style.maxWidth = 'none';
+          container.style.width = newWidth + 'px';
+          if (caption) caption.style.fontSize = captionFontSizeFor(newWidth).toFixed(2) + 'px';
+        }
         if (sizeLabel) sizeLabel.textContent = newWidth + ' × auto';
       }
 
@@ -8104,6 +8354,7 @@
           selectedImg.style.width = newW + 'px';
           selectedImg.style.height = newH + 'px';
           selectedImg.style.maxWidth = 'none';
+          applyFigureWidth(getContainer(selectedImg), newW);
           if (sizeLabel) sizeLabel.textContent = newW + ' × ' + newH + 'px';
         }
 
@@ -8140,6 +8391,10 @@
             selectedImg.style.width = '';
             selectedImg.style.height = '';
             selectedImg.style.maxWidth = '';
+            var container = getContainer(selectedImg);
+            container.style.width = '';
+            var caption = container.querySelector('figcaption');
+            if (caption) caption.style.fontSize = '';
             if (sizeLabel) {
               setTimeout(function() {
                 sizeLabel.textContent = selectedImg.offsetWidth + ' × ' + selectedImg.offsetHeight + 'px';
@@ -8175,6 +8430,23 @@
         body.removeEventListener('click', onImageClick);
         body.addEventListener('click', onImageClick);
       }
+
+      // Backfill caption sizing for figures resized and saved in an earlier
+      // session: their <img> already carries an inline width from that visit,
+      // but the caption's font-size is set only by the resize handlers above
+      // and was never persisted, so on a fresh page load the caption would
+      // default back to 0.8rem while the image stays at its saved size.
+      function restoreFigureWidths() {
+        var body = document.querySelector('.document-body');
+        if (!body) return;
+        var imgs = body.querySelectorAll('.figure-wrap img, .figure-full img, figure img');
+        imgs.forEach(function(img) {
+          var w = parseFloat(img.style.width);
+          if (!w) return;
+          applyFigureWidth(getContainer(img), Math.round(w));
+        });
+      }
+      restoreFigureWidths();
 
       // Deselect when clicking non-image areas
       document.addEventListener('mousedown', function(e) {
@@ -8805,7 +9077,12 @@
       if (b === '<br>' || b === '<div><br></div>') b = '';
       pvBody.innerHTML = b || '<span class="cb-preview-empty">Your content box will appear here.</span>';
 
-      var u = imageInput.value.trim();
+      // A pending upload has no URL to preview with — CB_PENDING_IMAGE_PREVIEW
+      // (set by the other content-box IIFE) supplies the local data: URL from
+      // the FileReader instead. Falls back to the URL field for the URL path,
+      // exactly as before this feature existed.
+      var pendingPreview = window.CB_PENDING_IMAGE_PREVIEW ? window.CB_PENDING_IMAGE_PREVIEW() : '';
+      var u = pendingPreview || imageInput.value.trim();
       if (u) { pvImg.src = u; pvImg.style.display = ''; }
       else { pvImg.style.display = 'none'; pvImg.removeAttribute('src'); }
     }
@@ -8846,6 +9123,9 @@
     titleInput.addEventListener('input', function () { titleTouched = true; renderPreview(); });
     bodyInput.addEventListener('input', renderPreview);
     imageInput.addEventListener('input', renderPreview);
+    // Fired by the other content-box IIFE on file choice / remove — see
+    // the cb-image-changed dispatches there.
+    modal.addEventListener('cb-image-changed', renderPreview);
 
     /* add-image toggle */
     imgToggle.addEventListener('click', function () {
@@ -8862,7 +9142,14 @@
         wasVisible = true;
         titleTouched = false;
         Array.prototype.forEach.call(presets.children, function (c) { c.setAttribute('aria-pressed', 'false'); });
-        var hasImg = !!imageInput.value.trim();
+        // Restoring an uploaded image (openModal, other IIFE) clears the URL
+        // field and shows the filename in cbImageFileLabel instead — that
+        // label is the visible signal this IIFE can read for "has image" in
+        // that case, since the upload state itself lives in the other
+        // closure. The default label text means no file is chosen.
+        var fileLabelEl = document.getElementById('cbImageFileLabel');
+        var hasFile = !!fileLabelEl && fileLabelEl.textContent !== 'Choose an image\u2026';
+        var hasImg = !!imageInput.value.trim() || hasFile;
         imgWrap.classList.toggle('open', hasImg);
         imgToggle.setAttribute('aria-expanded', String(hasImg));
         renderPreview();
@@ -9047,10 +9334,24 @@
 
       var assets = getAssets() || getLegacyAssets();
 
+      // Inside a frame the host may sandbox us (the DIKSHA CMS embeds the
+      // editor in a sandboxed iframe), and Chrome/Edge never render a PDF in
+      // a sandboxed frame — or anything nested in one, on any origin, with no
+      // sandbox flag that lifts it. A HEAD probe can't detect this: the PDF
+      // is really there, the browser just refuses to display it in that
+      // context, and the <iframe> below reports no error when that happens.
+      // Use page images whenever we're framed at all, not just when we can
+      // prove the frame is sandboxed — window.self !== window.top can't tell
+      // the difference, so this errs toward the fallback that always works
+      // rather than one that silently fails for some embedders.
+      var framed = (function () {
+        try { return window.self !== window.top; } catch (e) { return true; }
+      })();
+
       // Skip the embedded viewer on narrow viewports: the panes stack there
       // (see the 820px media query) and mobile browsers commonly offer a PDF
       // as a download instead of rendering it.
-      var preferPdf = !!assets.pdf &&
+      var preferPdf = !!assets.pdf && !framed &&
         (!window.matchMedia || window.matchMedia('(min-width: 821px)').matches);
 
       if (preferPdf) {
