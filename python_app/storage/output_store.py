@@ -144,7 +144,12 @@ class OciOutputStore(OutputStore):
         # bucket is public (ObjectRead); the object was uploaded at conversion.
         try:
             oci_storage = self._oci()
-            url = oci_storage.get_public_url(self._html_object_name(job_dir, filename))
+            # Must be the HTML bucket. get_public_url defaults to the MEDIA
+            # bucket, so omitting this produced a 404 URL for every document.
+            url = oci_storage.get_public_url(
+                self._html_object_name(job_dir, filename),
+                bucket=oci_storage.HTML_BUCKET_NAME,
+            )
             return ServeResult(kind="redirect", url=url)
         except Exception:
             # If OCI is unreachable, fall back to a local mirror if we have one.
@@ -160,7 +165,21 @@ class OciOutputStore(OutputStore):
             p = _safe_join(self._mirror, job_dir, filename)
             if p and p.exists():
                 return p.read_text(encoding="utf-8")
-        return None  # (a bucket GET could be added here if no mirror exists)
+
+        # No mirror (fresh replica, or the mirror aged out under retention):
+        # fall back to the durable copy in the bucket. A bucket keyspace is flat
+        # so ".." cannot escape anything, but the mirror branch rejects it and
+        # keeping both branches equally strict avoids a misleading asymmetry.
+        if ".." in job_dir or ".." in filename:
+            return None
+        try:
+            oci_storage = self._oci()
+            return oci_storage.get_text(
+                self._html_object_name(job_dir, filename),
+                bucket=oci_storage.HTML_BUCKET_NAME,
+            )
+        except Exception:
+            return None
 
     def write_html(self, job_dir: str, filename: str, html: str) -> None:
         # Write back to the HTML bucket (durable) and update the local mirror.

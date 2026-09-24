@@ -28,7 +28,16 @@ VIDEO_EXTENSIONS = {".mp4", ".m3u8", ".ts", ".webm", ".m4s"}
 
 # Extensions to skip (not media, not video). Note that files inside an
 # unpacked H5P package are exempt — see _find_h5p_roots().
+#
+# Deliberately does NOT list ".pdf": editors attach PDFs as learner media and
+# those must keep publishing. Only the conversion's preserved original is
+# withheld, matched by name in _is_source_pdf().
 SKIP_EXTENSIONS = {".html", ".htm", ".json", ".txt", ".md", ".log"}
+
+# Suffix of the source PDF that conversion preserves beside the output for the
+# editor's split view (see convert.py). Editor-only: it is the whole original
+# document, and the learner bundle has no use for it.
+SOURCE_PDF_SUFFIX = "-source.pdf"
 
 # Files that mark a directory as an unpacked, self-contained bundle which must
 # be uploaded whole: an H5P package (h5p.json) or a Virtual Lab static build
@@ -107,6 +116,16 @@ def _is_video_file(file_path):
 def _is_skip_file(file_path):
     """Check if a file should be skipped (not media or video)."""
     return Path(file_path).suffix.lower() in SKIP_EXTENSIONS
+
+
+def _is_source_pdf(file_path):
+    """Check if a file is the preserved original PDF kept for the editor.
+
+    Matched by name rather than extension on purpose: editor-attached PDFs are
+    legitimate learner media and must still publish. Only conversion's
+    `<stem>-source.pdf` artifact is held back.
+    """
+    return Path(file_path).name.lower().endswith(SOURCE_PDF_SUFFIX)
 
 
 def _find_h5p_roots(output_path):
@@ -208,8 +227,31 @@ def _strip_editor_ui(html_content):
         '', html_content, count=1, flags=re.DOTALL
     )
 
+    # Drop the editable-title affordance rules (dashed outline + "Edit title"
+    # pill). They key off [contenteditable], which the strip below removes —
+    # and that strip also mangles the selector into an invalid `[]` — so
+    # deleting the blocks outright keeps the learner stylesheet clean instead of
+    # leaning on CSS error recovery.
+    html_content = re.sub(
+        r'\s*\.document-title\[contenteditable="true"\][^{]*\{[^}]*\}',
+        '', html_content
+    )
+
     # Remove any remaining contenteditable attributes
     html_content = re.sub(r'\s*contenteditable="[^"]*"', '', html_content)
+
+    # Defensive: the editor makes <h1 class="document-title"> editable at
+    # runtime (contenteditable + role/tabindex/aria-label). Those attributes are
+    # never persisted by the save route, but if a stale file carries them the
+    # learner view would announce an editable textbox that does nothing — so
+    # strip them from that heading specifically.
+    html_content = re.sub(
+        r'<h1[^>]*class="document-title"[^>]*>',
+        lambda m: re.sub(
+            r'\s*(?:role|tabindex|spellcheck|aria-label)="[^"]*"', '', m.group(0)
+        ),
+        html_content, count=1,
+    )
 
     # Remove leftover editor drag affordances. draggable="true" on headings and
     # .section-media makes the browser start a native drag on mousedown, which
@@ -1414,6 +1456,11 @@ def publish_document(job_dir, filename):
                 continue
 
             if _is_skip_file(full_path):
+                continue
+
+            # The editor's copy of the original document: never part of the
+            # learner bundle.
+            if _is_source_pdf(full_path):
                 continue
 
             if _is_video_file(full_path):

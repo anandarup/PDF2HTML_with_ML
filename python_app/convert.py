@@ -12,6 +12,7 @@ Examples:
 
 from __future__ import annotations
 
+import shutil
 import sys
 import time
 import re
@@ -32,6 +33,14 @@ from tools.qr_filter import is_qr_code_value, is_qr_related_text
 # within extraction, so this is coarse (a handful of stages), but every
 # message it sends is genuinely true at the moment it's sent.
 ProgressCallback = Callable[[str, str], None]
+
+
+class _UploadsDisabled(Exception):
+    """Internal signal: skip an object-storage upload block for this run.
+
+    Raised inside the upload try/except blocks so disabling uploads takes the
+    same path as "OCI not importable", without duplicating their bodies.
+    """
 
 
 def convert_pdf_to_html(
@@ -114,7 +123,7 @@ def convert_pdf_to_html(
     report(
         "extracting",
         "Reading your PDF and identifying text, images, and layout. "
-        "This may take a bit longer for longer documents...",
+        "This may take a bit longer for complex documents…",
     )
     start = time.time()
 
@@ -141,6 +150,31 @@ def convert_pdf_to_html(
             extraction.markdown, extraction.first_page_text, pdf_stem
         )
         print(f"[pdf2webview]   - Chapter title: {document_title}")
+
+    # Preserve the source PDF beside the output, so the editor's split view can
+    # show the real original and a converted document stays re-derivable. The
+    # upload is transient (cleanup_job removes it once the job is terminal);
+    # this copy lives with the output and inherits output retention, including
+    # the "published content is never deleted" invariant.
+    #
+    # It lives under images/ deliberately: the upload+rewrite block further
+    # down uploads that directory and rewrites literal `images/...` strings to
+    # absolute bucket URLs, so the PDF reaches object storage and its reference
+    # is absolutised with no extra code. `_collect_image_paths()` filters on
+    # image extensions, so a .pdf here never lands in image_paths/image_count.
+    #
+    # Must happen BEFORE build_interactive_html: the HTML builder records this
+    # file in the split-view asset descriptor only if it already exists.
+    try:
+        _preserved_pdf = Path(image_dir) / f"{pdf_stem}-source.pdf"
+        if resolved_pdf.exists() and not _preserved_pdf.exists():
+            _preserved_pdf.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(resolved_pdf, _preserved_pdf)
+            print(f"[pdf2webview]   - Preserved source PDF: {_preserved_pdf.name}")
+    except Exception as exc:
+        # Never fail a conversion over this; the split view degrades to page
+        # rasters, then to its "not available" message.
+        print(f"[pdf2webview]   - Source PDF preservation warning: {exc}")
 
     # --- Step 2: Build interactive HTML ---
     print("[pdf2webview] Step 2/2: Building interactive HTML...")
@@ -177,8 +211,24 @@ def convert_pdf_to_html(
     print(f"[pdf2webview]   - HTML file: {html_result.html_path}")
     print(f"[pdf2webview]   - File size: {_format_bytes(html_result.file_size)} ({elapsed_html:.1f}s)")
 
+    # Uploads are on by default. OCI_UPLOADS_ENABLED=false lets a real
+    # conversion run without writing to object storage, which is the only safe
+    # way to exercise this pipeline on a machine holding production credentials
+    # (note these uploads do NOT depend on OUTPUT_BACKEND — a "local" backend
+    # uploads too, and rewrites the HTML to absolute bucket URLs).
+    _uploads_enabled = True
+    try:
+        import config as _cfg
+        _uploads_enabled = getattr(_cfg, "OCI_UPLOADS_ENABLED", True)
+    except Exception:
+        pass
+    if not _uploads_enabled:
+        print("[pdf2webview]   - Object storage uploads disabled (OCI_UPLOADS_ENABLED=false)")
+
     # Upload images to OCI Object Storage and rewrite HTML paths
     try:
+        if not _uploads_enabled:
+            raise _UploadsDisabled
         from oci_storage import upload_directory
         import re as _re
 
@@ -205,6 +255,8 @@ def convert_pdf_to_html(
                     html_content = html_content.replace(f"images/{local_rel}", bucket_url)
                 Path(html_result.html_path).write_text(html_content, encoding="utf-8")
                 print(f"[pdf2webview]   - Uploaded {len(url_map)} files to OCI bucket")
+    except _UploadsDisabled:
+        pass  # explicitly disabled for this run
     except ImportError:
         pass  # OCI not available (local dev), skip
     except Exception as e:
@@ -212,12 +264,16 @@ def convert_pdf_to_html(
 
     # Upload the HTML file to the HTML bucket
     try:
+        if not _uploads_enabled:
+            raise _UploadsDisabled
         from oci_storage import upload_html_to_bucket
         html_path = Path(html_result.html_path)
         html_object_name = f"{html_path.parent.name}/{html_path.name}"
         html_bucket_url = upload_html_to_bucket(html_path, html_object_name)
         if html_bucket_url:
             print(f"[pdf2webview]   - HTML uploaded to bucket: {html_object_name}")
+    except _UploadsDisabled:
+        pass  # explicitly disabled for this run
     except ImportError:
         pass
     except Exception as e:

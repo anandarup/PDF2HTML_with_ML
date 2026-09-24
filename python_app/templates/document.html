@@ -242,6 +242,13 @@
       border-bottom: 1px solid var(--color-border);
     }
     .split-source-pages { display: flex; flex-direction: column; gap: 14px; }
+    /* Tier 1: the preserved source PDF in the browser's own viewer. Fills the
+       pane so the viewer's controls (search, zoom, page nav) are usable. */
+    .split-source-pdf {
+      width: 100%; height: 100%; min-height: 60vh;
+      border: 0; display: block; border-radius: 8px; background: #fff;
+    }
+    body.split-view .split-source-pages:has(> .split-source-pdf) { height: 100%; }
     .split-source-page {
       width: 100%; height: auto; display: block;
       border: 1px solid var(--color-border); border-radius: 8px;
@@ -1046,6 +1053,45 @@
 
     .document-body[contenteditable="true"]:focus {
       outline-color: var(--color-link-hover);
+    }
+    /* Editable chapter title. The affordance is attached to [contenteditable],
+       which only exists while the editor is in edit mode — so the learner view
+       (which has contenteditable stripped) shows a plain heading with no hint. */
+    .document-title[contenteditable="true"] {
+      outline: 2px dashed var(--color-link);
+      outline-offset: 6px;
+      border-radius: 6px;
+      cursor: text;
+      transition: outline-color 0.15s ease, background-color 0.15s ease;
+    }
+    .document-title[contenteditable="true"]:hover {
+      background-color: color-mix(in srgb, var(--color-link) 6%, transparent);
+    }
+    .document-title[contenteditable="true"]:focus {
+      outline-color: var(--color-link-hover);
+      background-color: color-mix(in srgb, var(--color-link) 9%, transparent);
+    }
+    /* Pill hint sits in a pseudo-element, so it never lands in textContent
+       and can never be saved as part of the title. */
+    .document-title[contenteditable="true"]::after {
+      content: "Edit title";
+      display: inline-block;
+      vertical-align: middle;
+      margin-left: 0.65rem;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--color-link);
+      color: var(--color-bg);
+      font-family: var(--font-body);
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .document-title[contenteditable="true"]:focus::after {
+      content: "Editing title";
+      background: var(--color-link-hover);
     }
 
     .save-status {
@@ -4084,10 +4130,47 @@
       var editCancel = document.getElementById('editCancel');
       var saveStatus = document.getElementById('saveStatus');
       var docBody = document.querySelector('.document-body');
+      var docTitle = document.querySelector('.document-title');
       var originalContent = '';
+      var originalTitle = '';
       var isEditing = false;
 
       if (!editToggle || !docBody) return;
+
+      // --- Chapter title editing -------------------------------------------
+      // The title lives in <header>, outside the contenteditable article, so it
+      // gets its own contenteditable plus plain-text guards, and is sent to the
+      // server as a separate `title` field on save.
+      function readTitle() {
+        return docTitle ? docTitle.textContent.replace(/\s+/g, ' ').trim() : '';
+      }
+      if (docTitle) {
+        // A title is single-line plain text: Enter commits instead of inserting
+        // a <br>/<div>, Escape reverts, and pasted rich text is flattened.
+        docTitle.addEventListener('keydown', function(e) {
+          if (!isEditing) return;
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            docTitle.blur();
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            docTitle.textContent = originalTitle;
+            docTitle.blur();
+          }
+        });
+        docTitle.addEventListener('paste', function(e) {
+          if (!isEditing) return;
+          e.preventDefault();
+          var cb = e.clipboardData || window.clipboardData;
+          var text = cb ? (cb.getData('text') || '') : '';
+          document.execCommand('insertText', false, text.replace(/\s+/g, ' ').trim());
+        });
+        // Never leave the document with a blank heading.
+        docTitle.addEventListener('blur', function() {
+          if (!isEditing) return;
+          if (!readTitle()) docTitle.textContent = originalTitle;
+        });
+      }
 
       editToggle.addEventListener('click', function() {
         if (!isEditing) {
@@ -4106,7 +4189,8 @@
       editSave.addEventListener('click', saveContent);
 
       function hasUnsavedChanges() {
-        return isEditing && docBody.innerHTML !== originalContent;
+        if (!isEditing) return false;
+        return docBody.innerHTML !== originalContent || readTitle() !== originalTitle;
       }
 
       // Warn before leaving the page (tab close, refresh, navigation) with
@@ -4155,6 +4239,14 @@
       function enterEditMode() {
         isEditing = true;
         originalContent = docBody.innerHTML;
+        if (docTitle) {
+          originalTitle = readTitle();
+          docTitle.setAttribute('contenteditable', 'true');
+          docTitle.setAttribute('spellcheck', 'false');
+          docTitle.setAttribute('role', 'textbox');
+          docTitle.setAttribute('aria-label', 'Chapter title — editable');
+          docTitle.setAttribute('tabindex', '0');
+        }
         docBody.setAttribute('contenteditable', 'true');
         docBody.focus();
         editToolbar.classList.add('visible');
@@ -4171,6 +4263,14 @@
         isEditing = false;
         if (revert) {
           docBody.innerHTML = originalContent;
+          if (docTitle && originalTitle) docTitle.textContent = originalTitle;
+        }
+        if (docTitle) {
+          docTitle.removeAttribute('contenteditable');
+          docTitle.removeAttribute('role');
+          docTitle.removeAttribute('aria-label');
+          docTitle.removeAttribute('tabindex');
+          docTitle.removeAttribute('spellcheck');
         }
         docBody.removeAttribute('contenteditable');
         editToolbar.classList.remove('visible');
@@ -4190,16 +4290,30 @@
         var liveContent = docBody.innerHTML;
         var htmlToSave = typeof getCleanBodyHtml === 'function' ? getCleanBodyHtml() : liveContent;
 
+        // The title is sent as plain text, and never blank — an emptied heading
+        // falls back to the value the document had when editing started.
+        var titleToSave = readTitle() || originalTitle;
+        if (docTitle && titleToSave && readTitle() !== titleToSave) {
+          docTitle.textContent = titleToSave;
+        }
+        var payload = { body_html: htmlToSave };
+        if (titleToSave) payload.title = titleToSave;
+
         fetch(window.location.pathname, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ body_html: htmlToSave })
+          body: JSON.stringify(payload)
         })
         .then(function(res) {
           if (res.ok) {
             saveStatus.textContent = 'Saved';
             saveStatus.className = 'save-status success';
             originalContent = liveContent;
+            if (titleToSave) {
+              originalTitle = titleToSave;
+              // Keep the browser tab in sync with the saved heading.
+              document.title = titleToSave;
+            }
             try { refreshTOC(); } catch(e) {}
             setTimeout(function() { exitEditMode(false); }, 1000);
           } else {
@@ -8758,11 +8872,27 @@
     }).observe(modal, { attributes: true, attributeFilter: ['class'] });
   })();
 
+  </script>
+
+  <!-- split-view:begin -->
+  <!-- Editor-only: the source assets for split view, emitted by build_html.py
+       as literal `images/...` paths so the conversion-time upload step
+       (convert.py) rewrites them into absolute bucket URLs, exactly as it does
+       for the document's own <img> tags. Without that rewrite the split view
+       would request them relative to the page and, under OUTPUT_BACKEND=oci,
+       be redirected to the HTML bucket where these assets don't live.
+
+       type="application/json" keeps this inert: never executed, never fetched,
+       read via textContent. Everything between the split-view markers sits
+       after the Formula Input Dialog comment, so _strip_editor_ui() removes it
+       from the published learner page. -->
+  <script type="application/json" id="originalSplitAssets">{{ split_assets | tojson }}</script>
+
+  <script>
   // ===================================================================
-  // Editor-only Split View — converted HTML beside the original pages,
-  // with the content panel collapsed and synchronized scrolling.
-  // This whole block lives after the Formula Input Dialog comment, so
-  // _strip_editor_ui() removes it from the published learner page.
+  // Editor-only Split View — converted HTML beside the original document.
+  // Content resolves in tiers: the preserved source PDF in an embedded
+  // viewer, else rasterised page images, else an honest empty state.
   // ===================================================================
   (function () {
     var btn = document.getElementById('railSplitBtn');
@@ -8787,7 +8917,9 @@
       return '';
     }
 
-    // Page count is echoed into .document-meta as "N pages".
+    // Page count is echoed into .document-meta as "N pages". Only used by the
+    // legacy fallback below — .document-meta is editable content, so a document
+    // built with an asset descriptor never depends on it.
     function getPageCount() {
       var meta = document.querySelector('.document-meta');
       if (meta) {
@@ -8797,10 +8929,111 @@
       return 0;
     }
 
+    // The descriptor emitted by build_html.py: real filenames for assets that
+    // exist, already rewritten to bucket URLs when serving from OCI.
+    // Returns null for documents built before the descriptor existed, which
+    // selects the legacy filename-guessing path.
+    function getAssets() {
+      var el = document.getElementById('originalSplitAssets');
+      if (!el) return null;
+      try {
+        var a = JSON.parse(el.textContent);
+        if (!a || typeof a !== 'object') return null;
+        return { pdf: a.pdf || null, pages: a.pages || [] };
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Legacy shape for pre-descriptor documents: guess `images/<jobDir>-page-N`
+    // from the URL and the page count in the header.
+    function getLegacyAssets() {
+      var jobDir = getJobDir();
+      var count = getPageCount();
+      if (!jobDir || count < 1) return { pdf: null, pages: [] };
+      var urls = [];
+      for (var i = 1; i <= count; i++) {
+        urls.push('images/' + encodeURIComponent(jobDir) + '-page-' + i + '.png');
+      }
+      return { pdf: null, pages: urls };
+    }
+
+    function showEmpty(container) {
+      var empty = document.createElement('p');
+      empty.className = 'split-source-empty';
+      empty.textContent = 'Original page images are not available for this document.';
+      container.appendChild(empty);
+    }
+
+    // Tier 1 — the preserved source PDF in the browser's native viewer. Gives
+    // selectable text, in-document search and zoom without bundling a renderer.
+    function buildPdfTier(container, url) {
+      var frame = document.createElement('iframe');
+      frame.className = 'split-source-pdf';
+      frame.title = 'Original document';
+      frame.src = url;
+      container.appendChild(frame);
+    }
+
+    // Tier 2 — rasterised page images.
+    function buildPagesTier(container, urls) {
+      if (!urls || !urls.length) { showEmpty(container); return; }
+
+      var loaded = 0, failed = 0, firstSettled = false, messaged = false;
+
+      // Only claim "nothing is available" once the first page has settled and
+      // nothing at all has loaded. Gating on "every image failed" would never
+      // fire: images below the fold are lazy and may never load or error until
+      // scrolled into view. A total failure almost always means the files are
+      // absent, so page 1 is the reliable signal — and a partial failure stays
+      // silent because loaded > 0.
+      function settle() {
+        if (!messaged && loaded === 0 && failed >= 1 && firstSettled) {
+          messaged = true;
+          showEmpty(container);
+        }
+      }
+
+      for (var i = 0; i < urls.length; i++) {
+        var img = document.createElement('img');
+        var num = document.createElement('p');
+        // Page number comes from the filename, so labels stay truthful even if
+        // the descriptor has gaps. Bucket URLs keep the filename in the path.
+        var m = /-page-(\d+)\.png(?:[?#]|$)/i.exec(urls[i]);
+        var label = m ? m[1] : String(i + 1);
+
+        img.className = 'split-source-page';
+        // Page 1 eagerly so at least one image always settles (see settle()).
+        img.loading = (i === 0) ? 'eager' : 'lazy';
+        img.alt = 'Original page ' + label;
+        img.src = urls[i];
+
+        num.className = 'split-source-num';
+        num.textContent = 'Page ' + label;
+
+        (function (im, lbl, isFirst) {
+          im.onload = function () {
+            loaded++;
+            if (isFirst) { firstSettled = true; }
+          };
+          im.onerror = function () {
+            im.style.display = 'none';
+            if (lbl) lbl.style.display = 'none';
+            failed++;
+            if (isFirst) { firstSettled = true; }
+            settle();
+          };
+        })(img, num, i === 0);
+
+        container.appendChild(img);
+        container.appendChild(num);
+      }
+    }
+
     function buildSourcePane() {
       sourcePane = document.createElement('aside');
       sourcePane.className = 'split-source';
-      sourcePane.setAttribute('aria-label', 'Original document pages');
+      sourcePane.setAttribute('aria-label', 'Original document');
 
       var head = document.createElement('div');
       head.className = 'split-source-head';
@@ -8812,34 +9045,31 @@
       var pages = document.createElement('div');
       pages.className = 'split-source-pages';
 
-      var jobDir = getJobDir();
-      var count = getPageCount();
+      var assets = getAssets() || getLegacyAssets();
 
-      if (!jobDir || count < 1) {
-        var empty = document.createElement('p');
-        empty.className = 'split-source-empty';
-        empty.textContent = 'Original page images are not available for this document.';
-        pages.appendChild(empty);
+      // Skip the embedded viewer on narrow viewports: the panes stack there
+      // (see the 820px media query) and mobile browsers commonly offer a PDF
+      // as a download instead of rendering it.
+      var preferPdf = !!assets.pdf &&
+        (!window.matchMedia || window.matchMedia('(min-width: 821px)').matches);
+
+      if (preferPdf) {
+        // An <iframe> reports no usable error for a missing or non-PDF body, so
+        // probe first and fall through to page images if it isn't really there.
+        fetch(assets.pdf, { method: 'HEAD' })
+          .then(function (r) {
+            var ct = (r.headers.get('content-type') || '').toLowerCase();
+            if (r.ok && ct.indexOf('pdf') !== -1) {
+              buildPdfTier(pages, assets.pdf);
+            } else {
+              buildPagesTier(pages, assets.pages);
+            }
+          })
+          .catch(function () { buildPagesTier(pages, assets.pages); });
       } else {
-        for (var i = 1; i <= count; i++) {
-          var img = document.createElement('img');
-          img.className = 'split-source-page';
-          img.loading = 'lazy';
-          img.alt = 'Original page ' + i;
-          // Same relative base the converted HTML uses for its own images.
-          img.src = 'images/' + encodeURIComponent(jobDir) + '-page-' + i + '.png';
-          var num = document.createElement('p');
-          num.className = 'split-source-num';
-          num.textContent = 'Page ' + i;
-          // Hide any page image (and its label) that fails to load — some
-          // documents don't have per-page PNGs.
-          img.onerror = (function (im, label) {
-            return function () { im.style.display = 'none'; if (label) label.style.display = 'none'; };
-          })(img, num);
-          pages.appendChild(img);
-          pages.appendChild(num);
-        }
+        buildPagesTier(pages, assets.pages);
       }
+
       sourcePane.appendChild(pages);
       wrapper.appendChild(sourcePane);
       built = true;
@@ -8893,5 +9123,6 @@
     }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
   })();
   </script>
+  <!-- split-view:end -->
 </body>
 </html>

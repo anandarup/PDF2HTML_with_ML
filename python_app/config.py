@@ -157,6 +157,23 @@ FLASK_ENV = _env("FLASK_ENV", "production")
 APP_PORT = _env_int("APP_PORT", 8501)
 RETENTION_TTL_DAYS = _env_int("RETENTION_TTL_DAYS", 30)  # Phase 7 cleanup
 
+# Escape hatch for running a real conversion without touching object storage.
+# Defaults to True, which is the long-standing behaviour: convert.py uploads a
+# job's images and HTML to the buckets whenever the OCI SDK is importable, and
+# this is independent of OUTPUT_BACKEND — a "local" deployment still uploads,
+# and the rendered HTML is rewritten to absolute bucket URLs.
+#
+# Set OCI_UPLOADS_ENABLED=false to exercise the pipeline end to end on a
+# workstation (or against production credentials) without writing objects.
+OCI_UPLOADS_ENABLED = _env_bool("OCI_UPLOADS_ENABLED", True)
+
+# Rasterised page images (<stem>-page-N.png) back the fallback tier of the
+# editor's split view, used when the embedded PDF viewer can't render — most
+# notably on narrow viewports, where browsers tend to download a PDF rather
+# than display it. Disable to save storage; the split view then relies on the
+# preserved source PDF alone.
+SPLIT_VIEW_PAGE_RASTERS = _env_bool("SPLIT_VIEW_PAGE_RASTERS", True)
+
 
 def summary() -> dict:
     """Return a non-secret snapshot of the active configuration (for /readyz,

@@ -698,13 +698,106 @@ def serve_output(job_dir: str, filename: str):
     return send_from_directory(action.directory, action.filename)
 
 
+def sanitize_document_title(raw_title) -> str:
+    """
+    Reduce a client-supplied chapter title to safe, single-line plain text.
+
+    The title is rendered as element text in both <h1 class="document-title">
+    and <head><title>, so markup is never legitimate here: any tags are
+    stripped, and the remaining characters are collapsed onto one line. The
+    return value is NOT yet HTML-escaped — callers must escape before
+    inserting it into markup (see _apply_document_title).
+
+    Returns "" for a value that is empty, whitespace-only, or markup-only;
+    callers treat that as "reject, keep the previous title".
+    """
+    import re
+
+    if raw_title is None:
+        return ""
+    text = str(raw_title)
+    # Drop comments and anything tag-shaped rather than escaping it into visible
+    # junk. The pattern deliberately requires a letter (or !/?) after "<" so a
+    # legitimate "<0>" or "a < b" in a title is preserved as text — it is
+    # HTML-escaped later, so leaving it in is safe.
+    text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
+    text = re.sub(r'</?[a-zA-Z][^>]*>|<[!?][^>]*>', '', text, flags=re.DOTALL)
+    # Collapse newlines/tabs/NBSP (contenteditable loves to insert these).
+    text = text.replace('\u00a0', ' ')
+    text = re.sub(r'\s+', ' ', text).strip()
+    # Defensive cap — a title is a heading, not a document.
+    return text[:300]
+
+
+def _apply_document_title(html_content: str, clean_title: str) -> tuple[str, int]:
+    """
+    Write `clean_title` into the document's <h1 class="document-title"> and
+    <head><title>, HTML-escaping it exactly once.
+
+    The replacements use callable replacers, so backslashes and \\g<...> in the
+    title are never interpreted as re.sub group references — a title such as
+    'Tom & Jerry \\1 \\g<0>' round-trips as literal text.
+
+    Returns (updated_html, headings_replaced). headings_replaced == 0 means the
+    document-title heading was not found and nothing was changed.
+    """
+    import html as _html
+    import re
+
+    escaped = _html.escape(clean_title, quote=True)
+
+    updated, h1_count = re.subn(
+        r'(<h1[^>]*class="document-title"[^>]*>)(.*?)(</h1>)',
+        lambda m: m.group(1) + escaped + m.group(3),
+        html_content, count=1, flags=re.DOTALL,
+    )
+    if h1_count == 0:
+        return html_content, 0
+
+    # Keep the browser tab / downstream metadata consistent with the heading.
+    updated = re.sub(
+        r'(<title[^>]*>)(.*?)(</title>)',
+        lambda m: m.group(1) + escaped + m.group(3),
+        updated, count=1, flags=re.DOTALL | re.IGNORECASE,
+    )
+    return updated, h1_count
+
+
+def _sync_job_record_title(job_dir: str, clean_title: str) -> None:
+    """
+    Mirror an edited title into the job record's result.title.
+
+    /api/status/<refId> and /api/sections/<refId> serve result.title to the
+    embedding CMS, so leaving it at the auto-generated value would show a stale
+    title in listings after an edit. Best-effort: a missing/legacy job record is
+    not an error for the save itself.
+    """
+    try:
+        job_id = job_dir.split("_")[0] if "_" in job_dir else job_dir[:8]
+        job = _read_job(job_id)
+        if not job:
+            return
+        result = job.get("result")
+        if not isinstance(result, dict):
+            return
+        if result.get("title") == clean_title:
+            return
+        result["title"] = clean_title
+        job["result"] = result
+        _write_job(job_id, job)
+    except Exception:  # noqa: BLE001 — never fail a content save on bookkeeping
+        traceback.print_exc()
+
+
 @app.route("/output/<path:job_dir>/<path:filename>", methods=["PUT"])
 def save_output(job_dir: str, filename: str):
     """
     Save edited HTML content back to the output file.
 
-    Accepts JSON body with { "body_html": "<updated content>" }.
-    Replaces the article content in the saved HTML file.
+    Accepts JSON body with { "body_html": "<updated content>" } and an optional
+    { "title": "<chapter title>" }. Replaces the article content in the saved
+    HTML file, and — when a title is supplied — the document heading and
+    <head><title> too.
     """
     if not filename.lower().endswith(".html"):
         return jsonify({"error": "Only HTML files can be edited"}), 400
@@ -721,6 +814,14 @@ def save_output(job_dir: str, filename: str):
     html_content = output_store.read_html(job_dir, filename)
     if html_content is None:
         return jsonify({"error": "File not found"}), 404
+
+    # An edited chapter title is optional; when present it must survive the
+    # save, so validate it BEFORE any file write (all-or-nothing).
+    clean_title = None
+    if "title" in data:
+        clean_title = sanitize_document_title(data.get("title"))
+        if not clean_title:
+            return jsonify({"error": "Title cannot be empty"}), 400
 
     try:
         # Replace the article body content between the markers
@@ -741,10 +842,24 @@ def save_output(job_dir: str, filename: str):
         # Rebuild the TOC from the new headings
         updated_html = _rebuild_toc_in_html(updated_html, new_body)
 
+        # Apply the edited chapter title (heading + <head><title>).
+        title_saved = None
+        if clean_title:
+            updated_html, h1_count = _apply_document_title(updated_html, clean_title)
+            if h1_count == 0:
+                return jsonify({"error": "Could not locate document title"}), 500
+            title_saved = clean_title
+
         # Persist via the output store (local disk, or write-back to the bucket).
         output_store.write_html(job_dir, filename, updated_html)
 
-        return jsonify({"success": True, "message": "Content saved"}), 200
+        if title_saved:
+            _sync_job_record_title(job_dir, title_saved)
+
+        payload = {"success": True, "message": "Content saved"}
+        if title_saved:
+            payload["title"] = title_saved
+        return jsonify(payload), 200
 
     except (OSError, ValueError) as e:
         return jsonify({"error": f"File write failed: {e}"}), 500
