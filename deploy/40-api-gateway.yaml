@@ -13,7 +13,7 @@ specification:
   requestPolicies:
     cors:
       allowedOrigins: ["https://poc-interactivetxtbk.diksha.gov.in"]
-      allowedMethods: ["GET", "POST", "PUT", "OPTIONS"]
+      allowedMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
     # Default per-caller throttle; tightened per-route below.
     rateLimiting:
       rateInRequestsPerSecond: 50
@@ -72,6 +72,17 @@ specification:
       methods: ["GET"]
       requestPolicies: { authorization: { type: ANY_OF, allowedScope: ["service", "editor"] } }
       backend: { type: HTTP_BACKEND, url: "http://<oke-lb>/api/sections/${request.path[refId]}" }
+
+    # --- Server-to-server delete: irreversible, so "service" scope PLUS the
+    # app-level X-Delete-Token (config.DELETE_API_TOKEN) as defense-in-depth.
+    # Restrict allowedScope the same way as /api/lookup -- do not add "editor"
+    # here; the browser-facing editor session has no business calling this.
+    - path: /api/documents/{job_dir}
+      methods: ["DELETE"]
+      requestPolicies:
+        authorization: { type: ANY_OF, allowedScope: ["service"] }
+        rateLimiting: { rateInRequestsPerSecond: 5 }
+      backend: { type: HTTP_BACKEND, url: "http://<oke-lb>/api/documents/${request.path[job_dir]}" }
 
   # NOTE: Public learner documents are served directly from the Object Storage
   # bucket via CDN (the /output GET redirect points there under OUTPUT_BACKEND=oci),

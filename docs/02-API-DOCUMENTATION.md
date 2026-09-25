@@ -22,6 +22,7 @@
 | POST | `/upload-media/<job_dir>` | Upload media for a document |
 | GET | `/output/<job_dir>/<filename>` | Serve rendered HTML/assets |
 | PUT | `/output/<job_dir>/<filename>` | Save edited HTML |
+| DELETE | `/api/documents/<job_dir>` | Permanently delete a document: job record, HTML, all assets, source PDF, OCI objects |
 | POST | `/publish` | Publish document to OCI for learners |
 | POST | `/export-cms` | Export to Strapi or WordPress |
 | GET | `/api/label-info/<term>` | Diagram label description (Wikipedia) |
@@ -192,6 +193,53 @@ Replaces the content inside `<article class="document-body">…</article>` and r
 
 **200** — `{ "success": true, "message": "Content saved" }`
 **400** — non-`.html` / missing `body_html` · **403** — invalid path · **404** — file not found · **500** — write failed / content section not found
+
+---
+
+## 7a. `DELETE /api/documents/<job_dir>`
+
+Permanently deletes a document: the job record, the converted HTML, every asset (`images/`, `media/`), and the preserved original PDF — on local disk and, if OCI is reachable, in all three buckets (HTML/media/video) under the `<job_dir>/` prefix. **There is no undo.**
+
+This is the endpoint behind the DIKSHA CMS's delete action; see `docs/03-DELETE-WEBHOOK.md` for the integration guide written for that team. It is deliberately separate from `cleanup_job.py` (the retention CronJob), which only ever removes unpublished, TTL-expired content and never touches a published document — this route deletes on request, published or not.
+
+- **Auth:** the API Gateway route requires `allowedScope: ["service"]` (see `deploy/40-api-gateway.yaml`) — this is not reachable with an editor JWT. The app also checks an `X-Delete-Token` header against `config.DELETE_API_TOKEN` when that's configured (defense-in-depth; see `.env.example`).
+- **Path:** `job_dir` is the same value already used by `/output/<job_dir>/<filename>` and `/upload-media/<job_dir>` — e.g. `a1b2c3d4_Chapter 5`.
+
+**Header**
+
+| Header | Required | Notes |
+|---|---|---|
+| `X-Delete-Token` | only if `DELETE_API_TOKEN` is set | Exact match, case-sensitive |
+
+**Success — 200**
+```json
+{
+  "success": true,
+  "job_dir": "a1b2c3d4_Chapter 5",
+  "job_id": "a1b2c3d4",
+  "output_dir_removed": true,
+  "uploads_removed": 0,
+  "oci": {
+    "attempted": true,
+    "buckets": {
+      "html":  { "deleted": 1, "failed": [] },
+      "media": { "deleted": 46, "failed": [] },
+      "video": { "deleted": 0, "failed": [] }
+    }
+  },
+  "job_record_removed": true
+}
+```
+Every field reports what actually happened for that step — this is not a bare success flag. `oci.attempted` is `false` (with `buckets: {}`) when OCI is unreachable from this deployment; that is not treated as an error, since a local-only deployment has nothing there to remove.
+
+**Errors**
+
+| Status | Meaning |
+|---|---|
+| `400` | `job_dir` missing or contains `..` |
+| `401` | `X-Delete-Token` missing or wrong (only when `DELETE_API_TOKEN` is configured) |
+| `404` | Nothing found for this `job_dir` — no job record, no output directory, nothing removed from any bucket. Also the response for a `job_dir` that was already deleted. |
+| `409` | The job is still `processing`. Retry once it reaches a terminal state (`done`, `published`, or `error`) — deleting mid-conversion could race the writer. |
 
 ---
 

@@ -157,6 +157,37 @@ FLASK_ENV = _env("FLASK_ENV", "production")
 APP_PORT = _env_int("APP_PORT", 8501)
 RETENTION_TTL_DAYS = _env_int("RETENTION_TTL_DAYS", 30)  # Phase 7 cleanup
 
+# ---------------------------------------------------------------------------
+# Document delete webhook (DELETE /api/documents/<job_dir>).
+#
+# No route in this app is authenticated at the Flask layer today — that's by
+# design (see docs/02-API-DOCUMENTATION.md), enforced instead at the OCI API
+# Gateway via JWT scope. A delete is irreversible and destroys published
+# learner content, so it gets a second, defense-in-depth check here: the
+# caller must present this exact value in the X-Delete-Token header. This is
+# NOT a replacement for the gateway's "service" scope requirement — both
+# apply. Empty (the default) means the header check is skipped, which matches
+# this app's existing all-routes-unauthenticated posture for any deployment
+# that hasn't set the token yet; set it before exposing this route publicly.
+DELETE_API_TOKEN = _env("DELETE_API_TOKEN", "")
+
+# Escape hatch for running a real conversion without touching object storage.
+# Defaults to True, which is the long-standing behaviour: convert.py uploads a
+# job's images and HTML to the buckets whenever the OCI SDK is importable, and
+# this is independent of OUTPUT_BACKEND — a "local" deployment still uploads,
+# and the rendered HTML is rewritten to absolute bucket URLs.
+#
+# Set OCI_UPLOADS_ENABLED=false to exercise the pipeline end to end on a
+# workstation (or against production credentials) without writing objects.
+OCI_UPLOADS_ENABLED = _env_bool("OCI_UPLOADS_ENABLED", True)
+
+# Rasterised page images (<stem>-page-N.png) back the fallback tier of the
+# editor's split view, used when the embedded PDF viewer can't render — most
+# notably on narrow viewports, where browsers tend to download a PDF rather
+# than display it. Disable to save storage; the split view then relies on the
+# preserved source PDF alone.
+SPLIT_VIEW_PAGE_RASTERS = _env_bool("SPLIT_VIEW_PAGE_RASTERS", True)
+
 
 def summary() -> dict:
     """Return a non-secret snapshot of the active configuration (for /readyz,
@@ -181,6 +212,8 @@ def summary() -> dict:
         "datalab_mode": DATALAB_MODE,
         "datalab_image_captions": DATALAB_IMAGE_CAPTIONS,
         "datalab_processing_location": DATALAB_PROCESSING_LOCATION,
+        # Report only whether a token is set, never the token itself.
+        "delete_api_token_configured": bool(DELETE_API_TOKEN),
     }
 
 

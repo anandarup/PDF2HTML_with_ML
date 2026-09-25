@@ -36,3 +36,9 @@ python_app/uploads/
 *.bak.*
 __pycache__/
 *.pyc
+
+# Coverage artifacts
+.coverage
+.coverage.*
+coverage.json
+htmlcov/

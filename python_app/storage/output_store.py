@@ -63,6 +63,17 @@ class OutputStore(abc.ABC):
         """Return the local output root if this backend uses one (else None).
         Used by routes that still resolve local paths (media, sections)."""
 
+    @abc.abstractmethod
+    def delete(self, job_dir: str) -> bool:
+        """Remove a job's entire output directory: HTML, images/, media/, the
+        preserved source PDF -- everything under job_dir. Does NOT touch OCI
+        buckets (a separate, explicit step; see oci_storage.delete_prefix) --
+        this method only knows about the local/mirror side of storage.
+
+        Returns True if a directory existed and was removed, False if there
+        was nothing there. Safe to call on an unknown job_dir.
+        """
+
 
 def _safe_join(root: Path, job_dir: str, filename: str) -> Optional[Path]:
     """Resolve root/job_dir/filename, rejecting traversal outside root."""
@@ -113,6 +124,18 @@ class LocalOutputStore(OutputStore):
     def local_output_root(self) -> Optional[Path]:
         return self._output
 
+    def delete(self, job_dir: str) -> bool:
+        p = self._output.resolve() / job_dir
+        try:
+            p.resolve().relative_to(self._output.resolve())
+        except ValueError:
+            return False  # traversal attempt -- refuse rather than guess
+        if not p.exists():
+            return False
+        import shutil
+        shutil.rmtree(str(p))
+        return True
+
 
 class OciOutputStore(OutputStore):
     """
@@ -144,7 +167,12 @@ class OciOutputStore(OutputStore):
         # bucket is public (ObjectRead); the object was uploaded at conversion.
         try:
             oci_storage = self._oci()
-            url = oci_storage.get_public_url(self._html_object_name(job_dir, filename))
+            # Must be the HTML bucket. get_public_url defaults to the MEDIA
+            # bucket, so omitting this produced a 404 URL for every document.
+            url = oci_storage.get_public_url(
+                self._html_object_name(job_dir, filename),
+                bucket=oci_storage.HTML_BUCKET_NAME,
+            )
             return ServeResult(kind="redirect", url=url)
         except Exception:
             # If OCI is unreachable, fall back to a local mirror if we have one.
@@ -160,7 +188,21 @@ class OciOutputStore(OutputStore):
             p = _safe_join(self._mirror, job_dir, filename)
             if p and p.exists():
                 return p.read_text(encoding="utf-8")
-        return None  # (a bucket GET could be added here if no mirror exists)
+
+        # No mirror (fresh replica, or the mirror aged out under retention):
+        # fall back to the durable copy in the bucket. A bucket keyspace is flat
+        # so ".." cannot escape anything, but the mirror branch rejects it and
+        # keeping both branches equally strict avoids a misleading asymmetry.
+        if ".." in job_dir or ".." in filename:
+            return None
+        try:
+            oci_storage = self._oci()
+            return oci_storage.get_text(
+                self._html_object_name(job_dir, filename),
+                bucket=oci_storage.HTML_BUCKET_NAME,
+            )
+        except Exception:
+            return None
 
     def write_html(self, job_dir: str, filename: str, html: str) -> None:
         # Write back to the HTML bucket (durable) and update the local mirror.
@@ -200,6 +242,24 @@ class OciOutputStore(OutputStore):
 
     def local_output_root(self) -> Optional[Path]:
         return self._mirror
+
+    def delete(self, job_dir: str) -> bool:
+        # Only the local mirror -- the bucket objects are deleted separately
+        # by the caller via oci_storage.delete_prefix, same split as every
+        # other OciOutputStore method (bucket is durable truth, mirror is a
+        # local cache of it).
+        if not self._mirror:
+            return False
+        p = self._mirror.resolve() / job_dir
+        try:
+            p.resolve().relative_to(self._mirror.resolve())
+        except ValueError:
+            return False
+        if not p.exists():
+            return False
+        import shutil
+        shutil.rmtree(str(p))
+        return True
 
 
 def build_output_store(config_module) -> OutputStore:

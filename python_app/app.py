@@ -698,13 +698,106 @@ def serve_output(job_dir: str, filename: str):
     return send_from_directory(action.directory, action.filename)
 
 
+def sanitize_document_title(raw_title) -> str:
+    """
+    Reduce a client-supplied chapter title to safe, single-line plain text.
+
+    The title is rendered as element text in both <h1 class="document-title">
+    and <head><title>, so markup is never legitimate here: any tags are
+    stripped, and the remaining characters are collapsed onto one line. The
+    return value is NOT yet HTML-escaped — callers must escape before
+    inserting it into markup (see _apply_document_title).
+
+    Returns "" for a value that is empty, whitespace-only, or markup-only;
+    callers treat that as "reject, keep the previous title".
+    """
+    import re
+
+    if raw_title is None:
+        return ""
+    text = str(raw_title)
+    # Drop comments and anything tag-shaped rather than escaping it into visible
+    # junk. The pattern deliberately requires a letter (or !/?) after "<" so a
+    # legitimate "<0>" or "a < b" in a title is preserved as text — it is
+    # HTML-escaped later, so leaving it in is safe.
+    text = re.sub(r'<!--.*?-->', '', text, flags=re.DOTALL)
+    text = re.sub(r'</?[a-zA-Z][^>]*>|<[!?][^>]*>', '', text, flags=re.DOTALL)
+    # Collapse newlines/tabs/NBSP (contenteditable loves to insert these).
+    text = text.replace('\u00a0', ' ')
+    text = re.sub(r'\s+', ' ', text).strip()
+    # Defensive cap — a title is a heading, not a document.
+    return text[:300]
+
+
+def _apply_document_title(html_content: str, clean_title: str) -> tuple[str, int]:
+    """
+    Write `clean_title` into the document's <h1 class="document-title"> and
+    <head><title>, HTML-escaping it exactly once.
+
+    The replacements use callable replacers, so backslashes and \\g<...> in the
+    title are never interpreted as re.sub group references — a title such as
+    'Tom & Jerry \\1 \\g<0>' round-trips as literal text.
+
+    Returns (updated_html, headings_replaced). headings_replaced == 0 means the
+    document-title heading was not found and nothing was changed.
+    """
+    import html as _html
+    import re
+
+    escaped = _html.escape(clean_title, quote=True)
+
+    updated, h1_count = re.subn(
+        r'(<h1[^>]*class="document-title"[^>]*>)(.*?)(</h1>)',
+        lambda m: m.group(1) + escaped + m.group(3),
+        html_content, count=1, flags=re.DOTALL,
+    )
+    if h1_count == 0:
+        return html_content, 0
+
+    # Keep the browser tab / downstream metadata consistent with the heading.
+    updated = re.sub(
+        r'(<title[^>]*>)(.*?)(</title>)',
+        lambda m: m.group(1) + escaped + m.group(3),
+        updated, count=1, flags=re.DOTALL | re.IGNORECASE,
+    )
+    return updated, h1_count
+
+
+def _sync_job_record_title(job_dir: str, clean_title: str) -> None:
+    """
+    Mirror an edited title into the job record's result.title.
+
+    /api/status/<refId> and /api/sections/<refId> serve result.title to the
+    embedding CMS, so leaving it at the auto-generated value would show a stale
+    title in listings after an edit. Best-effort: a missing/legacy job record is
+    not an error for the save itself.
+    """
+    try:
+        job_id = job_dir.split("_")[0] if "_" in job_dir else job_dir[:8]
+        job = _read_job(job_id)
+        if not job:
+            return
+        result = job.get("result")
+        if not isinstance(result, dict):
+            return
+        if result.get("title") == clean_title:
+            return
+        result["title"] = clean_title
+        job["result"] = result
+        _write_job(job_id, job)
+    except Exception:  # noqa: BLE001 — never fail a content save on bookkeeping
+        traceback.print_exc()
+
+
 @app.route("/output/<path:job_dir>/<path:filename>", methods=["PUT"])
 def save_output(job_dir: str, filename: str):
     """
     Save edited HTML content back to the output file.
 
-    Accepts JSON body with { "body_html": "<updated content>" }.
-    Replaces the article content in the saved HTML file.
+    Accepts JSON body with { "body_html": "<updated content>" } and an optional
+    { "title": "<chapter title>" }. Replaces the article content in the saved
+    HTML file, and — when a title is supplied — the document heading and
+    <head><title> too.
     """
     if not filename.lower().endswith(".html"):
         return jsonify({"error": "Only HTML files can be edited"}), 400
@@ -721,6 +814,14 @@ def save_output(job_dir: str, filename: str):
     html_content = output_store.read_html(job_dir, filename)
     if html_content is None:
         return jsonify({"error": "File not found"}), 404
+
+    # An edited chapter title is optional; when present it must survive the
+    # save, so validate it BEFORE any file write (all-or-nothing).
+    clean_title = None
+    if "title" in data:
+        clean_title = sanitize_document_title(data.get("title"))
+        if not clean_title:
+            return jsonify({"error": "Title cannot be empty"}), 400
 
     try:
         # Replace the article body content between the markers
@@ -741,13 +842,105 @@ def save_output(job_dir: str, filename: str):
         # Rebuild the TOC from the new headings
         updated_html = _rebuild_toc_in_html(updated_html, new_body)
 
+        # Apply the edited chapter title (heading + <head><title>).
+        title_saved = None
+        if clean_title:
+            updated_html, h1_count = _apply_document_title(updated_html, clean_title)
+            if h1_count == 0:
+                return jsonify({"error": "Could not locate document title"}), 500
+            title_saved = clean_title
+
         # Persist via the output store (local disk, or write-back to the bucket).
         output_store.write_html(job_dir, filename, updated_html)
 
-        return jsonify({"success": True, "message": "Content saved"}), 200
+        if title_saved:
+            _sync_job_record_title(job_dir, title_saved)
+
+        payload = {"success": True, "message": "Content saved"}
+        if title_saved:
+            payload["title"] = title_saved
+        return jsonify(payload), 200
 
     except (OSError, ValueError) as e:
         return jsonify({"error": f"File write failed: {e}"}), 500
+
+
+def _check_delete_token() -> bool:
+    """True if the caller's X-Delete-Token header matches config.DELETE_API_TOKEN.
+
+    Defense-in-depth alongside the API Gateway's "service" scope requirement
+    (see deploy/40-api-gateway.yaml) -- this route is irreversible and
+    destroys published content, so it does not rely on the gateway alone.
+    An unset token (the default) skips this check, matching this app's
+    existing all-routes-unauthenticated posture until an operator configures
+    one; see the DELETE_API_TOKEN comment in config.py.
+    """
+    if not config.DELETE_API_TOKEN:
+        return True
+    return request.headers.get("X-Delete-Token", "") == config.DELETE_API_TOKEN
+
+
+@app.route("/api/documents/<path:job_dir>", methods=["DELETE"])
+def delete_document(job_dir: str):
+    """
+    Permanently delete a document: its job record, the converted HTML, all
+    assets (images/media), and the preserved original PDF -- locally and, if
+    reachable, in every OCI bucket the document was published or uploaded to.
+
+    Built for the DIKSHA CMS's Strapi-hosted custom UI, which embeds this
+    editor in an iframe and needs a "delete" action of its own; see
+    docs/03-DELETE-WEBHOOK.md for the integration guide this route implements.
+
+    This is NOT the retention cleanup job (cleanup_job.py): that only ever
+    removes unpublished, TTL-expired content and never touches published
+    documents. This route deletes on request, published or not -- there is
+    no undo.
+    """
+    from urllib.parse import unquote
+
+    job_dir = unquote(job_dir)
+
+    if not job_dir or ".." in job_dir:
+        return jsonify({"error": "Invalid job_dir"}), 400
+
+    if not _check_delete_token():
+        return jsonify({"error": "Invalid or missing X-Delete-Token"}), 401
+
+    from delete_job import job_id_from_dir, delete_job_artifacts
+
+    job_id = job_id_from_dir(job_dir)
+    job = job_store.get_job(job_id)
+
+    # A job genuinely mid-conversion could still be writing to its output
+    # directory; deleting under it would race the writer and could leave a
+    # half-removed, half-rewritten mess. Ask the caller to retry once it's
+    # terminal rather than guess. (Also flags an unknown job_dir -- see below.)
+    if job is not None and job.get("status") == "processing":
+        return jsonify({
+            "error": "Document is still being converted. Retry once it reaches "
+                     "a terminal state (done, published, or error)."
+        }), 409
+
+    # No job record at all is not treated as an error: cleanup_job.py's TTL
+    # sweep, or an earlier partial/manual delete, can leave a bare output
+    # directory with no matching record, and the whole point of this route
+    # is to finish the job of removing exactly that. delete_job_artifacts
+    # is unconditionally best-effort per step regardless.
+    result = delete_job_artifacts(job_dir, job_store, output_store, job_id=job_id)
+
+    anything_removed = (
+        result["output_dir_removed"]
+        or result["uploads_removed"] > 0
+        or result["job_record_removed"]
+        or any(b.get("deleted", 0) > 0 for b in result["oci"]["buckets"].values())
+    )
+    if not anything_removed and job is None:
+        return jsonify({
+            "error": "Nothing found for this job_dir.",
+            "job_dir": job_dir,
+        }), 404
+
+    return jsonify({"success": True, **result}), 200
 
 
 @app.route("/publish", methods=["POST"])

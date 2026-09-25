@@ -336,7 +336,7 @@ def _extract_via_surya(resolved_path: Path, image_dir: Path, report) -> Extracti
     report(
         "analyzing",
         "Reading your PDF and identifying text, images, and layout. "
-        "This may take a bit longer for longer documents…",
+        "This may take a bit longer for complex documents…",
     )
 
     disable_captions = _should_disable_image_captions(str(resolved_path), _config)
@@ -421,10 +421,16 @@ def _extract_via_surya(resolved_path: Path, image_dir: Path, report) -> Extracti
 
     report(
         "saving_pages",
-        "Text extraction complete.",
+        f"Saving {page_count} page image{'s' if page_count != 1 else ''}…",
         page_count=page_count,
         image_count=len(saved_names),
     )
+    # Page rasters for the editor's split-view fallback tier. Deliberately
+    # after _collect_image_paths() above: they are a viewer asset, not extracted
+    # content, so they must not inflate image_paths or the "N images" shown in
+    # the document header. build_html discovers them by scanning images/.
+    if getattr(_config, "SPLIT_VIEW_PAGE_RASTERS", True):
+        _render_page_images(str(resolved_path), image_dir, doc_stem)
 
     return ExtractionResult(
         markdown=markdown,
@@ -449,6 +455,57 @@ def _collect_image_paths(image_dir: Path) -> List[str]:
             paths.append(str(entry.resolve()))
 
     return paths
+
+
+# Render scale for split-view page rasters. 1.0 == 72 DPI, so 1.75 ≈ 126 DPI:
+# legible for side-by-side proofreading without bloating the output directory.
+_PAGE_RASTER_ZOOM = 1.75
+
+
+def _render_page_images(pdf_path: str, image_dir: Path, doc_stem: str) -> int:
+    """Rasterise each PDF page to images/<doc_stem>-page-<N>.png (1-based).
+
+    Mirrors the filenames the Docling path produces (see the page-image loop in
+    _extract_via_docling), which the editor's split view uses as its fallback
+    tier when the embedded PDF viewer can't render.
+
+    Idempotent: pages whose file already exists are counted and skipped, so this
+    is cheap to re-run over an existing output directory.
+
+    Best-effort by design: returns the number of pages available and never
+    raises. A document without rasters must still convert — the split view
+    falls through to the preserved PDF, then to its "not available" message.
+    """
+    import pymupdf
+
+    written = 0
+    doc = None
+    try:
+        image_dir = Path(image_dir)
+        image_dir.mkdir(parents=True, exist_ok=True)
+        doc = pymupdf.open(pdf_path)
+        matrix = pymupdf.Matrix(_PAGE_RASTER_ZOOM, _PAGE_RASTER_ZOOM)
+        for index, page in enumerate(doc, start=1):
+            out_path = image_dir / f"{doc_stem}-page-{index}.png"
+            if out_path.exists():
+                written += 1
+                continue
+            try:
+                page.get_pixmap(matrix=matrix).save(str(out_path))
+                written += 1
+            except Exception as exc:
+                _log.warning(
+                    "Could not rasterise page %d of %s: %s", index, pdf_path, exc
+                )
+    except Exception as exc:
+        _log.warning("Page rasterisation unavailable for %s: %s", pdf_path, exc)
+    finally:
+        if doc is not None:
+            try:
+                doc.close()
+            except Exception:
+                pass
+    return written
 
 
 def _get_first_page_text(pdf_path: str) -> str:

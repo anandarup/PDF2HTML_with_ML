@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List
@@ -22,6 +23,46 @@ from tools.caption_dedupe import remove_duplicate_captions
 
 # Resolve template directory relative to this file
 _TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "templates"
+
+# Rasterised page images backing the editor's split-view fallback tier.
+_PAGE_IMAGE_RE = re.compile(r"-page-(\d+)\.png$", re.IGNORECASE)
+
+
+def _split_view_assets(resolved_output_dir: Path, doc_stem: str) -> dict:
+    """Collect the editor's split-view source assets as relative refs.
+
+    Returns {"pdf": "images/<stem>-source.pdf" | None,
+             "pages": ["images/<stem>-page-1.png", ...]}
+
+    Discovered by scanning images/ rather than taken from `image_paths`: page
+    rasters are deliberately excluded from that list so they don't inflate the
+    "N images" count, and the preserved PDF isn't an image at all. Scanning also
+    guarantees we only ever reference assets that exist (FR-4.3).
+
+    The refs are emitted into the HTML as literal `images/...` strings, which is
+    what lets convert.py's upload step rewrite them to absolute bucket URLs —
+    the same treatment the document's own <img> tags get. Without that, the
+    split view would request them relative to the page and, under
+    OUTPUT_BACKEND=oci, be redirected to the HTML bucket where they don't live.
+    """
+    images_dir = Path(resolved_output_dir) / "images"
+    if not images_dir.is_dir():
+        return {"pdf": None, "pages": []}
+
+    pages: List[tuple] = []
+    for entry in images_dir.iterdir():
+        if not entry.is_file():
+            continue
+        match = _PAGE_IMAGE_RE.search(entry.name)
+        if match and entry.name.startswith(f"{doc_stem}-page-"):
+            # Sort on the parsed number, not the name: lexicographic ordering
+            # puts page-10 before page-2.
+            pages.append((int(match.group(1)), f"images/{entry.name}"))
+
+    pdf_name = f"{doc_stem}-source.pdf"
+    pdf_ref = f"images/{pdf_name}" if (images_dir / pdf_name).is_file() else None
+
+    return {"pdf": pdf_ref, "pages": [ref for _, ref in sorted(pages)]}
 
 
 @dataclass
@@ -149,6 +190,9 @@ def build_interactive_html(
         toc=toc_entries,
         page_count=page_count,
         image_count=len(image_paths),
+        split_assets=_split_view_assets(
+            resolved_output_dir, Path(output_filename).stem
+        ),
     )
 
     # Write output
@@ -440,15 +484,49 @@ def _extract_toc(html: str) -> List[TocEntry]:
     return entries
 
 
+# Unicode general categories that carry meaning inside a slug.
+#
+# Letters and numbers are the obvious keepers. Combining marks matter just as
+# much for Indic scripts: Devanagari, Tamil and friends build a syllable from a
+# base letter plus spacing/non-spacing marks (categories Mc/Mn), and Python's
+# `\w` does not match those. Dropping them mangles words rather than slugging
+# them -- "भारत" would become "भ-रत" and "क्रिया" would become "क-र-य".
+_SLUG_KEEP_CATEGORIES = frozenset({
+    "Lu", "Ll", "Lt", "Lm", "Lo",   # letters
+    "Nd", "Nl", "No",               # digits and other numerics
+    "Mn", "Mc", "Me",               # combining marks (matras, virama, nukta...)
+})
+
+
 def _slugify(value: str, separator: str = "-") -> str:
     """
     Generate a URL-friendly slug from a heading string.
-    Matches the behavior expected by the TOC extension.
+
+    Keeps Unicode letters, numbers and combining marks so non-Latin headings
+    (Hindi, Tamil, Bengali...) yield real anchors. Previously these slugged to
+    the empty string, and the TOC extension's `unique()` fell back to
+    positional ids -- `_1`, `_2`, `_3` -- which convey nothing and shift
+    whenever the document is edited.
+
+    Pure-ASCII headings slug exactly as they did before, so anchors and deep
+    links already published for English content are unaffected.
     """
     # Remove HTML tags
     value = re.sub(r"<[^>]+>", "", value)
-    # Convert to lowercase and replace non-alphanumeric with separator
-    value = re.sub(r"[^a-z0-9]+", separator, value.lower())
+    # Normalize first so canonically-equivalent spellings of the same word
+    # (precomposed vs decomposed) produce the same anchor.
+    value = unicodedata.normalize("NFC", value).lower()
+
+    # Replace each run of non-slug characters with a single separator.
+    chars: list[str] = []
+    pending_separator = False
+    for char in value:
+        if unicodedata.category(char) in _SLUG_KEEP_CATEGORIES:
+            chars.append(char)
+            pending_separator = False
+        elif not pending_separator:
+            chars.append(separator)
+            pending_separator = True
+
     # Strip leading/trailing separators
-    value = value.strip(separator)
-    return value
+    return "".join(chars).strip(separator)

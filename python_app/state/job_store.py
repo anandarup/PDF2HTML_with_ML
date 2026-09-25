@@ -58,6 +58,14 @@ class JobStore(abc.ABC):
     def find_by_ref_id(self, ref_id: str) -> Optional[dict]:
         """Return the job record for an external ref_id, or None."""
 
+    @abc.abstractmethod
+    def delete_job(self, job_id: str) -> bool:
+        """Remove a job's record entirely (and any ref_id index entry for it).
+
+        Returns True if a record existed and was removed, False if there was
+        nothing to delete. Safe to call on an unknown job_id.
+        """
+
 
 class FileJobStore(JobStore):
     """
@@ -160,6 +168,21 @@ class FileJobStore(JobStore):
                     self._ref_index[ref_id] = job_file.stem
                     return rec
             return None
+
+    def delete_job(self, job_id: str) -> bool:
+        with self._lock:
+            rec = self._read_file(job_id)
+            path = self._job_path(job_id)
+            try:
+                path.unlink()
+                existed = True
+            except FileNotFoundError:
+                existed = False
+            if rec:
+                ref = rec.get("ref_id")
+                if ref and self._ref_index.get(ref) == job_id:
+                    del self._ref_index[ref]
+            return existed
 
 
 class ServiceJobStore(JobStore):
@@ -297,6 +320,16 @@ class ServiceJobStore(JobStore):
         if rec and rec.get("ref_id") == ref_id:
             return rec
         return None
+
+    def delete_job(self, job_id: str) -> bool:
+        rec = self.get_job(job_id)
+        existed = self._r.delete(self._job_key(job_id)) > 0
+        self._r.srem(self._jobs_set_key(), job_id)
+        if rec:
+            ref = rec.get("ref_id")
+            if ref:
+                self._r.delete(self._ref_key(ref))
+        return existed
 
 
 def _build_redis_client(config_module):
