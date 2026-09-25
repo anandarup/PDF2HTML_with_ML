@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF2HTML — Delete Webhook Integration Guide</title>
+<style>
+:root{--bg:#0f1117;--ink:#1a1a2e;--text:#2b2f38;--muted:#5b6472;--line:#e3e7ee;
+--accent:#0f4c75;--accent2:#3282b8;--code-bg:#0f1117;--code-ink:#e6edf3;
+--warn-bg:#fff4e5;--warn-line:#e0a030;--warn-ink:#7a4a00;
+--tok-bg:#eefcf3;--tok-line:#22a35a;}
+*{box-sizing:border-box;}html{scroll-behavior:smooth;}
+body{margin:0;color:var(--text);background:#f6f8fb;
+font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+.wrap{max-width:940px;margin:0 auto;padding:0 24px 96px;}
+header.hero{background:linear-gradient(135deg,var(--accent) 0%,var(--ink) 100%);color:#fff;padding:52px 24px;}
+header.hero .inner{max-width:940px;margin:0 auto;}
+header.hero h1{margin:0 0 6px;font-size:1.9rem;line-height:1.2;}
+header.hero .sub{opacity:.85;}
+h1{font-size:1.6rem;margin:36px 0 12px;}
+h2{font-size:1.35rem;margin:40px 0 12px;border-bottom:2px solid var(--line);padding-bottom:6px;}
+h3{font-size:1.1rem;margin:26px 0 8px;color:var(--ink);}
+p{margin:12px 0;}
+code{background:#eef1f6;padding:2px 6px;border-radius:5px;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.88em;}
+pre{background:var(--code-bg);color:var(--code-ink);padding:16px 18px;border-radius:10px;overflow-x:auto;
+font-family:"SF Mono",Menlo,Consolas,monospace;font-size:.82rem;line-height:1.5;margin:16px 0;}
+pre code{background:none;padding:0;color:inherit;}
+table{border-collapse:collapse;width:100%;margin:18px 0;font-size:.92rem;background:#fff;}
+th,td{border:1px solid var(--line);padding:9px 12px;text-align:left;vertical-align:top;}
+th{background:#eef2f8;font-weight:600;}
+tbody tr:nth-child(even){background:#fafbfd;}
+blockquote{margin:18px 0;padding:12px 18px;background:#ecfeff;border-left:4px solid var(--accent2);border-radius:0 8px 8px 0;color:#0b4f58;}
+ul,ol{padding-left:24px;}li{margin:5px 0;}
+hr{border:none;border-top:1px solid var(--line);margin:32px 0;}
+a{color:var(--accent);}
+nav.toc{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 20px;margin:26px 0;}
+nav.toc h2{margin:0 0 8px;font-size:.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);border:0;padding:0;}
+nav.toc a{text-decoration:none;}nav.toc a:hover{text-decoration:underline;}
+nav.toc ul{list-style:none;padding-left:0;margin:0;}
+nav.toc li{margin:3px 0;}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.85rem;}
+.warn{margin:18px 0;padding:14px 18px;background:var(--warn-bg);border-left:4px solid var(--warn-line);border-radius:0 8px 8px 0;color:var(--warn-ink);}
+.warn strong{display:block;margin-bottom:4px;}
+.token-box{margin:18px 0;padding:16px 18px;background:var(--tok-bg);border:1px dashed var(--tok-line);border-radius:10px;}
+.token-box .label{font-size:.78rem;text-transform:uppercase;letter-spacing:.06em;color:#177a45;font-weight:700;margin-bottom:8px;}
+.token-box code{display:block;background:#fff;border:1px solid var(--tok-line);padding:10px 12px;font-size:.95rem;word-break:break-all;}
+</style></head>
+<body>
+<header class="hero"><div class="inner">
+<h1>Delete Integration Guide</h1>
+<div class="sub">For the DIKSHA CMS / Strapi custom UI team &middot; 05-DELETE-WEBHOOK-INTEGRATION</div>
+</div></header>
+<div class="wrap">
+
+<nav class="toc"><h2>Contents</h2><ul>
+<li><a href="#credential">Your Credential</a></li>
+<li><a href="#what-it-does">What This Endpoint Does</a></li>
+<li><a href="#job-dir">Before You Integrate: How You Got the job_dir</a></li>
+<li><a href="#making-the-call">Making the Call</a></li>
+<li><a href="#auth">Authentication &mdash; Two Layers, Both Required</a></li>
+<li><a href="#response">Response Shape</a></li>
+<li><a href="#pattern">Recommended Integration Pattern</a></li>
+<li><a href="#not-do">Things This Endpoint Deliberately Does Not Do</a></li>
+<li><a href="#questions">Questions</a></li>
+</ul></nav>
+
+<p><strong>Endpoint:</strong> <code>DELETE /api/documents/&lt;job_dir&gt;</code><br>
+<strong>Base URL:</strong> <code>https://poc-interactivetxtbk.diksha.gov.in</code><br>
+<strong>Audience:</strong> the team building the delete action in the Strapi-hosted custom UI that embeds this editor in an iframe.</p>
+
+<blockquote>This document is self-contained &mdash; you shouldn't need anything else from the conversion tool's repo to integrate. The full API reference (every endpoint, not just this one) lives in <code>02-API-DOCUMENTATION.html</code>; this route is documented there too, as section 7a.</blockquote>
+
+<h2 id="credential">Your Credential</h2>
+
+<div class="token-box">
+<div class="label">X-Delete-Token</div>
+<code>&lt;&lt;PASTE_DELETE_API_TOKEN_HERE_BEFORE_SENDING&gt;&gt;</code>
+</div>
+
+<div class="warn"><strong>Before sharing this document:</strong>
+Replace the placeholder above with the real token value, over whatever secure channel your organisation already uses for sharing secrets &mdash; not email, not a public chat, not a ticket that gets archived somewhere widely readable. This document was generated with a placeholder deliberately, so the real value never has to pass through a chat transcript or an AI assistant's context to reach you.
+</div>
+
+<p>Send this exact value in the <code>X-Delete-Token</code> header on every call. It is compared byte-for-byte, case-sensitive &mdash; store it as-is, don't trim or re-encode it.</p>
+
+<p>If this value is ever exposed (committed to a repo, pasted somewhere public, shared over an insecure channel), ask the conversion-tool team to rotate it before you rely on it again. A leaked delete credential is a standing risk: anyone who has it can permanently delete any document.</p>
+
+<hr>
+
+<h2 id="what-it-does">What This Endpoint Does</h2>
+
+<p>One call, and it's final: it deletes <strong>everything</strong> connected to a converted document &mdash;</p>
+<ul>
+<li>the job record (status, title, page/image counts, the <code>ref_id</code> you may have used to find it)</li>
+<li>the converted HTML file the editor produces</li>
+<li>every asset the document references &mdash; extracted figures, tables, page images, and anything uploaded through the editor (<code>media/</code>)</li>
+<li>the preserved original PDF the editor's split view uses</li>
+<li>if the document was published, the same set of files in OCI Object Storage (the HTML, media, and video buckets)</li>
+</ul>
+
+<p><strong>There is no undo, no trash, no soft delete.</strong> If a creator clicks delete in your UI, this call should only fire after your UI has confirmed that's really what they want.</p>
+
+<p>This is a different thing from the automatic retention cleanup this app also runs: that job only ever removes <em>unpublished</em> content that's aged past a TTL, and it explicitly refuses to touch anything that's been published. This endpoint has no such restriction &mdash; it deletes on request, published or not.</p>
+
+<hr>
+
+<h2 id="job-dir">Before You Integrate: How You Got the <code>job_dir</code></h2>
+
+<p>You already have <code>job_dir</code> from earlier in the flow &mdash; it's the same value that appears in:</p>
+<ul>
+<li>The <code>editUrl</code> / <code>renderUrl</code> you got back from <code>/api/lookup/&lt;refId&gt;</code> (it's the path segment right before the filename: <code>/output/&lt;job_dir&gt;/&lt;file&gt;.html</code>)</li>
+<li>The URL of the editor iframe itself, if you're pointing it at <code>.../output/&lt;job_dir&gt;/&lt;file&gt;.html</code> directly</li>
+</ul>
+
+<p>It looks like <code>a1b2c3d4_Chapter 5 &mdash; 79-99</code> &mdash; an 8-character id, an underscore, then the original filename's stem. <strong>Treat it as an opaque string.</strong> It can contain spaces and punctuation (including em-dashes) from the original PDF's filename, so:</p>
+<ul>
+<li>URL-encode it when building the request path.</li>
+<li>Don't try to parse or reconstruct it &mdash; just pass through whatever you already have.</li>
+</ul>
+
+<hr>
+
+<h2 id="making-the-call">Making the Call</h2>
+
+<pre><code>DELETE https://poc-interactivetxtbk.diksha.gov.in/api/documents/{job_dir}
+X-Delete-Token: &lt;&lt;PASTE_DELETE_API_TOKEN_HERE_BEFORE_SENDING&gt;&gt;</code></pre>
+
+<p>No request body. <code>job_dir</code> is a path segment, URL-encoded.</p>
+
+<h3>Example (curl)</h3>
+<pre><code>curl -X DELETE \
+  "https://poc-interactivetxtbk.diksha.gov.in/api/documents/a1b2c3d4_Chapter%205%20%E2%80%94%2079-99" \
+  -H "X-Delete-Token: &lt;&lt;the token from the box above&gt;&gt;"</code></pre>
+
+<h3>Example (Node / fetch, as you'd call it from Strapi)</h3>
+<pre><code>async function deleteConvertedDocument(jobDir, deleteToken) {
+  const url = `https://poc-interactivetxtbk.diksha.gov.in/api/documents/${encodeURIComponent(jobDir)}`;
+  const res = await fetch(url, {
+    method: "DELETE",
+    headers: { "X-Delete-Token": deleteToken },
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    throw new Error(body.error || `Delete failed (HTTP ${res.status})`);
+  }
+  return body; // see "Response Shape" below
+}</code></pre>
+
+<p>Store <code>deleteToken</code> in Strapi's own secrets/environment configuration &mdash; not hardcoded in source, not in a config file that gets committed.</p>
+
+<hr>
+
+<h2 id="auth">Authentication &mdash; Two Layers, Both Required</h2>
+
+<p>This call has to clear two separate checks:</p>
+<ol>
+<li><strong>Network / gateway.</strong> The route is registered at the OCI API Gateway with a <code>"service"</code> authorization scope &mdash; the same scope your existing <code>/api/lookup/&lt;refId&gt;</code> integration already uses. If your <code>/api/lookup</code> calls work today, you already have whatever credential (service token / mTLS) satisfies this; this route is configured the same way.</li>
+<li><strong>Application-level shared secret.</strong> Because this call is irreversible, the app itself also checks the <code>X-Delete-Token</code> header against the value in the box above. Send it on every call, exactly as given.</li>
+</ol>
+
+<p>If a call ever gets a <code>401</code> even though you're sending the token from the box above, don't retry with the same value &mdash; it may have been rotated. Ask the conversion-tool team to confirm the current value before trying again.</p>
+
+<hr>
+
+<h2 id="response">Response Shape</h2>
+
+<h3>Success &mdash; <code>200 OK</code></h3>
+<pre><code>{
+  "success": true,
+  "job_dir": "a1b2c3d4_Chapter 5",
+  "job_id": "a1b2c3d4",
+  "output_dir_removed": true,
+  "uploads_removed": 0,
+  "oci": {
+    "attempted": true,
+    "buckets": {
+      "html":  { "deleted": 1,  "failed": [] },
+      "media": { "deleted": 46, "failed": [] },
+      "video": { "deleted": 0,  "failed": [] }
+    }
+  },
+  "job_record_removed": true
+}</code></pre>
+
+<p><code>success: true</code> here means "the delete request was processed," not necessarily "every single artifact existed and was removed" &mdash; a document that was never published will correctly show <code>oci.attempted: false</code> (nothing to remove there), and that's success, not a partial failure. If you want to show the creator a confirmation with real numbers, <code>media.deleted</code> and <code>output_dir_removed</code> are the two fields worth surfacing; the rest is mostly useful for your own support/debugging logs.</p>
+
+<h3>Errors</h3>
+<table><thead><tr><th>Status</th><th>Body</th><th>What it means</th><th>What to do</th></tr></thead>
+<tbody>
+<tr><td><code>400</code></td><td><code>{"error": "Invalid job_dir"}</code></td><td><code>job_dir</code> was empty or looked malformed</td><td>Check how you built the URL &mdash; this shouldn't happen if you're passing through a <code>job_dir</code> you got from this app</td></tr>
+<tr><td><code>401</code></td><td><code>{"error": "Invalid or missing X-Delete-Token"}</code></td><td>The shared secret is missing or wrong</td><td>Check the header is actually being sent, and confirm the current value with the tool team &mdash; don't retry with the same value</td></tr>
+<tr><td><code>404</code></td><td><code>{"error": "Nothing found for this job_dir.", "job_dir": "..."}</code></td><td>Already deleted, or never existed</td><td>Treat as success for your UI's purposes &mdash; the end state ("this document is gone") is what you wanted. Don't retry.</td></tr>
+<tr><td><code>409</code></td><td><code>{"error": "Document is still being converted. Retry once it reaches a terminal state..."}</code></td><td>The document is mid-conversion right now</td><td>Wait and retry &mdash; don't delete a document while it's still being built. A reasonable retry is checking <code>/api/lookup/&lt;refId&gt;</code> until status is no longer <code>converting</code>, then retrying the delete.</td></tr>
+</tbody></table>
+
+<p>There's no <code>500</code> documented here on purpose &mdash; every deletion step (local files, uploads, each OCI bucket, the job record) is independent and best-effort inside this endpoint. One step failing doesn't take down the whole request; you'll see it reflected as a smaller number in the relevant <code>oci.buckets.*.failed</code> list rather than an error response. If you see an empty response body or a connection failure, that's an infrastructure problem worth escalating rather than something to retry blindly.</p>
+
+<hr>
+
+<h2 id="pattern">Recommended Integration Pattern</h2>
+<ol>
+<li>Confirm with the creator before calling this at all &mdash; your UI is the only confirmation step; the API has none.</li>
+<li>Call <code>DELETE /api/documents/&lt;job_dir&gt;</code>.</li>
+<li>On <code>200</code>: remove the document from your UI's list/state. Done.</li>
+<li>On <code>404</code>: also remove it from your UI's list/state &mdash; the document is already gone, which is the outcome you wanted.</li>
+<li>On <code>409</code>: show the creator "still converting, try again shortly" rather than a generic error &mdash; this is a normal, expected condition, not a bug.</li>
+<li>On <code>401</code>: don't show this to the creator at all &mdash; it's a configuration problem on the integration, not something they caused. Log it and alert whoever owns the integration.</li>
+<li>Anything else (network error, unexpected status): retry once with backoff, then surface a generic "couldn't delete right now" to the creator.</li>
+</ol>
+
+<hr>
+
+<h2 id="not-do">Things This Endpoint Deliberately Does Not Do</h2>
+<ul>
+<li><strong>It does not ask you to confirm twice, or support a "cancel within N seconds" grace period.</strong> If you want that experience, build it in your UI before you call this endpoint &mdash; once called, it's final on this side.</li>
+<li><strong>It does not return a job you can poll.</strong> The deletion runs synchronously and the response reflects the final state; there's no async job ID here the way there is for conversion.</li>
+<li><strong>It does not remove the document from any listing or index Strapi itself maintains.</strong> That's yours to update in step 3 above &mdash; this endpoint only knows about the conversion tool's own storage.</li>
+</ul>
+
+<hr>
+
+<h2 id="questions">Questions</h2>
+<p>Route any integration questions to the conversion tool team (<code>poc-interactivetxtbk.diksha.gov.in</code>) &mdash; specifically, you'll need them to:</p>
+<ul>
+<li>Confirm the current <code>X-Delete-Token</code> value if a call ever starts failing with <code>401</code>.</li>
+<li>Confirm your existing <code>/api/lookup</code> service credential also covers this route at the gateway (it should, but worth confirming per environment).</li>
+</ul>
+
+<footer>PDF2HTML Conversion Tool &middot; Delete Webhook Integration Guide &middot; generated 2026-09-25</footer>
+</div>
+</body></html>

@@ -353,3 +353,56 @@ def object_exists(object_name: str, bucket: str | None = None) -> bool:
         if exc.status == 404:
             return False
         raise
+
+
+def delete_object(object_name: str, bucket: str | None = None) -> bool:
+    """
+    Delete a single object.
+
+    Returns:
+        True if the object was deleted, False if it was already absent (a
+        404 here is not an error — the caller's goal, "this object is gone",
+        is already satisfied).
+
+    Raises:
+        OciUnavailableError: if the client/namespace cannot be obtained.
+        oci.exceptions.ServiceError: for any service error other than 404.
+    """
+    target = bucket or BUCKET_NAME
+    try:
+        _get_client().delete_object(_get_namespace(), target, object_name)
+        _log.info(f"Deleted oci://{target}/{object_name}")
+        return True
+    except oci.exceptions.ServiceError as exc:
+        if exc.status == 404:
+            return False
+        raise
+
+
+def delete_prefix(prefix: str, bucket: str | None = None) -> dict:
+    """
+    Delete every object under a prefix.
+
+    Object Storage has no bulk-delete-by-prefix call, so this lists (via
+    iter_objects, transparently paginated) then deletes one at a time. A
+    single object's failure does not abort the rest -- this is cleanup, and
+    a partial delete that removes everything it can is strictly better than
+    an all-or-nothing one that leaves everything behind over one bad object.
+
+    Returns:
+        {"deleted": int, "failed": list[str]} -- object names that raised a
+        non-404 error are collected in "failed" rather than raising, so a
+        caller cleaning up several buckets/prefixes can finish the others.
+    """
+    target = bucket or BUCKET_NAME
+    deleted = 0
+    failed: list[str] = []
+    for obj in iter_objects(prefix=prefix, bucket=target):
+        name = obj["name"]
+        try:
+            if delete_object(name, bucket=target):
+                deleted += 1
+        except Exception as exc:
+            _log.warning(f"Failed to delete oci://{target}/{name}: {exc}")
+            failed.append(name)
+    return {"deleted": deleted, "failed": failed}

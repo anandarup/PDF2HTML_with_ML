@@ -137,6 +137,23 @@ class FakeRedis:
         self.sets.setdefault(key, set()).update(vals)
         return len(vals)
 
+    def delete(self, key):
+        # redis-py's DEL returns the number of keys actually removed.
+        existed = key in self.kv
+        self.kv.pop(key, None)
+        return 1 if existed else 0
+
+    def srem(self, key, *vals):
+        s = self.sets.get(key)
+        if not s:
+            return 0
+        removed = 0
+        for v in vals:
+            if v in s:
+                s.discard(v)
+                removed += 1
+        return removed
+
     def pipeline(self):
         if self._pipeline_factory is not None:
             return self._pipeline_factory(self)
@@ -280,6 +297,40 @@ class TestFileJobStore:
         (d / "corrupt.json").write_text("{broken", encoding="utf-8")
         store = FileJobStore(d)
         assert store.find_by_ref_id("G")["ref_id"] == "G"   # corrupt skipped, good found
+
+    # --- delete_job ---------------------------------------------------------
+    def test_delete_job_removes_the_file_and_returns_true(self, store):
+        store.create_job("j1", {"ref_id": "R1"})
+        assert store.delete_job("j1") is True
+        assert store.get_job("j1") is None
+        assert not store._job_path("j1").exists()
+
+    def test_delete_job_missing_returns_false(self, store):
+        assert store.delete_job("ghost") is False
+
+    def test_delete_job_removes_stale_ref_index_entry(self, store):
+        store.create_job("j1", {"ref_id": "R1"})
+        assert store.find_by_ref_id("R1") is not None  # populate the index
+        store.delete_job("j1")
+        # The index entry must be gone too, not just the file — otherwise a
+        # later find_by_ref_id("R1") would return a stale hit until the
+        # fallback scan's staleness guard caught it. Confirm it doesn't even
+        # get that far: no index entry survives.
+        assert "R1" not in store._ref_index
+        assert store.find_by_ref_id("R1") is None
+
+    def test_delete_job_with_no_ref_id_does_not_touch_index(self, store):
+        store.create_job("j1", {})  # no ref_id key at all
+        assert store.delete_job("j1") is True  # _index_ref falsy branch, no crash
+
+    def test_delete_job_does_not_remove_a_different_jobs_index_entry(self, store):
+        # Regression guard for the `self._ref_index.get(ref) == job_id` check:
+        # without it, deleting j2 (which shares no ref) must not clobber j1's.
+        store.create_job("j1", {"ref_id": "SHARED"})
+        store.find_by_ref_id("SHARED")  # index built
+        store.create_job("j2", {"ref_id": None})
+        store.delete_job("j2")
+        assert store.find_by_ref_id("SHARED")["ref_id"] == "SHARED"
 
 
 # =============================================================================
@@ -480,6 +531,31 @@ class TestServiceJobStore:
         s = ServiceJobStore(r)
         r.kv[s._ref_key("r1")] = "ghost"
         assert s.find_by_ref_id("r1") is None
+
+    # --- delete_job ---------------------------------------------------------
+    def test_delete_job_removes_key_and_returns_true(self, store):
+        store.create_job("j1", {"ref_id": "R1"})
+        assert store.delete_job("j1") is True
+        assert store.get_job("j1") is None
+
+    def test_delete_job_missing_returns_false(self, store):
+        assert store.delete_job("ghost") is False
+
+    def test_delete_job_removes_ref_index_entry(self, store):
+        store.create_job("j1", {"ref_id": "R1"})
+        store.delete_job("j1")
+        assert store.find_by_ref_id("R1") is None
+        assert store._r.get(store._ref_key("R1")) is None
+
+    def test_delete_job_removes_from_jobs_set(self, store):
+        store.create_job("j1", {"ref_id": None})
+        assert "j1" in store._r.sets.get(store._jobs_set_key(), set())
+        store.delete_job("j1")
+        assert "j1" not in store._r.sets.get(store._jobs_set_key(), set())
+
+    def test_delete_job_with_no_ref_id_does_not_touch_ref_keys(self, store):
+        store.create_job("j1", {})  # no ref_id key at all -- `if ref:` falsy branch
+        assert store.delete_job("j1") is True
 
 
 # =============================================================================

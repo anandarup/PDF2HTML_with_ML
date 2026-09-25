@@ -52,6 +52,24 @@ class LocalOutputStoreTest(unittest.TestCase):
         self.assertTrue(Path(ref).exists())
         self.assertEqual(Path(ref).read_bytes(), b"%PDF-1.4")
 
+    def test_delete_removes_the_job_directory(self):
+        d = self.out / "job1_stem"
+        (d / "images").mkdir(parents=True)
+        (d / "job1_stem.html").write_text("x", encoding="utf-8")
+        (d / "images" / "job1_stem-source.pdf").write_bytes(b"%PDF-1.4")
+        self.assertTrue(self.store.delete("job1_stem"))
+        self.assertFalse(d.exists())
+
+    def test_delete_missing_job_dir_returns_false(self):
+        self.assertFalse(self.store.delete("does-not-exist"))
+
+    def test_delete_traversal_rejected(self):
+        # A crafted job_dir must not be able to delete outside output/.
+        outside = self.root / "outside-marker"
+        outside.mkdir()
+        self.assertFalse(self.store.delete("../outside-marker"))
+        self.assertTrue(outside.exists())
+
 
 class ThreadQueueTest(unittest.TestCase):
     def test_enqueue_runs_handler_in_thread(self):

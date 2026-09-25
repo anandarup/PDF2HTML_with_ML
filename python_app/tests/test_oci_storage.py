@@ -68,6 +68,7 @@ class FakeClient:
         self.list_calls = []
         self.put_calls = []
         self.head_calls = []
+        self.delete_calls = []
 
     def get_namespace(self):
         return FakeResponse("fake-namespace")
@@ -89,6 +90,13 @@ class FakeClient:
 
     def put_object(self, namespace, bucket, object_name, body, content_type=None):
         self.put_calls.append((bucket, object_name, body, content_type))
+        return FakeResponse(None)
+
+    def delete_object(self, namespace, bucket, object_name):
+        self.delete_calls.append((bucket, object_name))
+        if object_name not in self._objects:
+            raise oci.exceptions.ServiceError(404, "ObjectNotFound", {}, "nope")
+        del self._objects[object_name]
         return FakeResponse(None)
 
 
@@ -339,6 +347,72 @@ class TestUploadBytes:
         client = _inject(monkeypatch, FakeClient())
         oci_storage.upload_bytes(b"{}", "graph/v1/chapters/x.json")
         assert client.put_calls[0][1].endswith(".json")
+
+
+# --- deletion ---------------------------------------------------------------
+
+class TestDeleteObject:
+
+    def test_deletes_existing_object_and_returns_true(self, monkeypatch):
+        client = _inject(monkeypatch, FakeClient(objects={"a/b.png": b"x"}))
+        assert oci_storage.delete_object("a/b.png", bucket="bkt") is True
+        assert client.delete_calls == [("bkt", "a/b.png")]
+        assert "a/b.png" not in client._objects
+
+    def test_missing_object_returns_false_not_error(self, monkeypatch):
+        _inject(monkeypatch, FakeClient())
+        assert oci_storage.delete_object("nope.png") is False
+
+    def test_non_404_service_error_propagates(self, monkeypatch):
+        class ExplodingClient(FakeClient):
+            def delete_object(self, namespace, bucket, object_name):
+                raise oci.exceptions.ServiceError(500, "InternalError", {}, "boom")
+
+        _inject(monkeypatch, ExplodingClient())
+        with pytest.raises(oci.exceptions.ServiceError):
+            oci_storage.delete_object("a.png")
+
+    def test_default_bucket_used_when_none_given(self, monkeypatch):
+        client = _inject(monkeypatch, FakeClient(objects={"a.png": b"x"}))
+        oci_storage.delete_object("a.png")
+        assert client.delete_calls == [(oci_storage.BUCKET_NAME, "a.png")]
+
+
+class TestDeletePrefix:
+
+    def test_deletes_every_object_under_prefix_across_pages(self, monkeypatch):
+        objects = {"job1/a.png": b"1", "job1/b.png": b"2", "job1/sub/c.png": b"3"}
+        pages = [
+            FakePage([FakeSummary("job1/a.png"), FakeSummary("job1/b.png")],
+                     next_start_with="job1/b.png"),
+            FakePage([FakeSummary("job1/sub/c.png")]),
+        ]
+        client = _inject(monkeypatch, FakeClient(pages=pages, objects=objects))
+        result = oci_storage.delete_prefix("job1/", bucket="bkt")
+        assert result == {"deleted": 3, "failed": []}
+        assert client._objects == {}
+        assert set(client.delete_calls) == {
+            ("bkt", "job1/a.png"), ("bkt", "job1/b.png"), ("bkt", "job1/sub/c.png"),
+        }
+
+    def test_no_matching_objects_deletes_nothing(self, monkeypatch):
+        _inject(monkeypatch, FakeClient(pages=[FakePage([])]))
+        assert oci_storage.delete_prefix("nope/") == {"deleted": 0, "failed": []}
+
+    def test_one_failure_does_not_abort_the_rest(self, monkeypatch):
+        good = {"job1/a.png": b"1", "job1/b.png": b"2"}
+        pages = [FakePage([FakeSummary("job1/a.png"), FakeSummary("job1/b.png")])]
+
+        class FlakyClient(FakeClient):
+            def delete_object(self, namespace, bucket, object_name):
+                if object_name == "job1/a.png":
+                    raise oci.exceptions.ServiceError(500, "InternalError", {}, "boom")
+                return super().delete_object(namespace, bucket, object_name)
+
+        client = _inject(monkeypatch, FlakyClient(pages=pages, objects=good))
+        result = oci_storage.delete_prefix("job1/")
+        assert result == {"deleted": 1, "failed": ["job1/a.png"]}
+        assert "job1/b.png" not in client._objects
 
 
 # --- config wiring ---------------------------------------------------------

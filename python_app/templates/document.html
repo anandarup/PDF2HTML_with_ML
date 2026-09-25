@@ -2349,6 +2349,15 @@
       overflow: hidden;
       line-height: 0;
       margin: 2rem 0;
+      /* Figures float (.figure-wrap: float left/right, max-width:45%). A
+         divider placed right after one starts beside it in the same block
+         formatting context, so its own width:100% resolves against the
+         narrow space remaining next to the float, not the full column —
+         exactly the "stops short" case in the reported screenshot. Headings
+         and .figure-full already clear floats (see below); the divider needs
+         the same treatment since it's just as often inserted right after a
+         floated figure to mark a section break. */
+      clear: both;
     }
 
     .shape-divider-inner {
@@ -2376,6 +2385,13 @@
     /* Static (no motion) — the default */
     .shape-divider--static .shape-divider-inner { animation: none; width: 100%; }
     .shape-divider--static .shape-divider-inner svg:nth-child(2) { display: none; }
+    /* The base rule below sizes each svg to 50% for the scrolling pair (two
+       copies side by side inside a 200%-wide track, animated between them).
+       Hiding the second copy above does nothing to that 50% on the one that's
+       left — it still renders at half the divider's width, which is exactly
+       this bug: a static divider filling only its left half. The remaining
+       svg needs to claim the full track once there's only one of it. */
+    .shape-divider--static .shape-divider-inner svg:first-child { width: 100%; }
 
     /* Height variants */
     .shape-divider--sm { max-height: 40px; }
@@ -2396,6 +2412,11 @@
       }
       .shape-divider-inner svg:nth-child(2) {
         display: none;
+      }
+      /* Same fix as .shape-divider--static above: hiding the second svg
+         leaves the first one still sized at 50% from the base rule. */
+      .shape-divider-inner svg:first-child {
+        width: 100%;
       }
     }
 

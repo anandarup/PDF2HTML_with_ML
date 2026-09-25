@@ -865,6 +865,84 @@ def save_output(job_dir: str, filename: str):
         return jsonify({"error": f"File write failed: {e}"}), 500
 
 
+def _check_delete_token() -> bool:
+    """True if the caller's X-Delete-Token header matches config.DELETE_API_TOKEN.
+
+    Defense-in-depth alongside the API Gateway's "service" scope requirement
+    (see deploy/40-api-gateway.yaml) -- this route is irreversible and
+    destroys published content, so it does not rely on the gateway alone.
+    An unset token (the default) skips this check, matching this app's
+    existing all-routes-unauthenticated posture until an operator configures
+    one; see the DELETE_API_TOKEN comment in config.py.
+    """
+    if not config.DELETE_API_TOKEN:
+        return True
+    return request.headers.get("X-Delete-Token", "") == config.DELETE_API_TOKEN
+
+
+@app.route("/api/documents/<path:job_dir>", methods=["DELETE"])
+def delete_document(job_dir: str):
+    """
+    Permanently delete a document: its job record, the converted HTML, all
+    assets (images/media), and the preserved original PDF -- locally and, if
+    reachable, in every OCI bucket the document was published or uploaded to.
+
+    Built for the DIKSHA CMS's Strapi-hosted custom UI, which embeds this
+    editor in an iframe and needs a "delete" action of its own; see
+    docs/03-DELETE-WEBHOOK.md for the integration guide this route implements.
+
+    This is NOT the retention cleanup job (cleanup_job.py): that only ever
+    removes unpublished, TTL-expired content and never touches published
+    documents. This route deletes on request, published or not -- there is
+    no undo.
+    """
+    from urllib.parse import unquote
+
+    job_dir = unquote(job_dir)
+
+    if not job_dir or ".." in job_dir:
+        return jsonify({"error": "Invalid job_dir"}), 400
+
+    if not _check_delete_token():
+        return jsonify({"error": "Invalid or missing X-Delete-Token"}), 401
+
+    from delete_job import job_id_from_dir, delete_job_artifacts
+
+    job_id = job_id_from_dir(job_dir)
+    job = job_store.get_job(job_id)
+
+    # A job genuinely mid-conversion could still be writing to its output
+    # directory; deleting under it would race the writer and could leave a
+    # half-removed, half-rewritten mess. Ask the caller to retry once it's
+    # terminal rather than guess. (Also flags an unknown job_dir -- see below.)
+    if job is not None and job.get("status") == "processing":
+        return jsonify({
+            "error": "Document is still being converted. Retry once it reaches "
+                     "a terminal state (done, published, or error)."
+        }), 409
+
+    # No job record at all is not treated as an error: cleanup_job.py's TTL
+    # sweep, or an earlier partial/manual delete, can leave a bare output
+    # directory with no matching record, and the whole point of this route
+    # is to finish the job of removing exactly that. delete_job_artifacts
+    # is unconditionally best-effort per step regardless.
+    result = delete_job_artifacts(job_dir, job_store, output_store, job_id=job_id)
+
+    anything_removed = (
+        result["output_dir_removed"]
+        or result["uploads_removed"] > 0
+        or result["job_record_removed"]
+        or any(b.get("deleted", 0) > 0 for b in result["oci"]["buckets"].values())
+    )
+    if not anything_removed and job is None:
+        return jsonify({
+            "error": "Nothing found for this job_dir.",
+            "job_dir": job_dir,
+        }), 404
+
+    return jsonify({"success": True, **result}), 200
+
+
 @app.route("/publish", methods=["POST"])
 def publish_for_learners():
     """
