@@ -3765,6 +3765,21 @@
     </div>
   </div>
 
+  <!-- Generic Confirm Modal (replaces native confirm() calls). Titled
+       "Interactive Textbook" rather than showing the deployment's domain --
+       a page/iframe can never do that with the browser's own confirm(), which
+       always prefixes its own chrome with "<hostname> says". -->
+  <div class="modal-overlay" id="confirmModal" role="alertdialog" aria-modal="true" aria-labelledby="confirmModalTitle" aria-describedby="confirmModalMessage">
+    <div class="modal-dialog" style="max-width:440px">
+      <h3 id="confirmModalTitle">Interactive Textbook</h3>
+      <p id="confirmModalMessage" style="margin:0 0 0.25rem;"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" id="confirmModalCancel">Cancel</button>
+        <button type="button" class="btn-save" id="confirmModalSubmit">OK</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Two-field Glossary Modal (replaces the pipe-delimited native prompt()) -->
   <div class="modal-overlay" id="glossaryModal" role="dialog" aria-modal="true" aria-labelledby="glossaryModalTitle">
     <div class="modal-dialog" style="max-width:540px">
@@ -4243,15 +4258,17 @@
       editToggle.addEventListener('click', function() {
         if (!isEditing) {
           enterEditMode();
-        } else if (!hasUnsavedChanges() || confirm('You have unsaved changes. Stop editing and discard them?')) {
-          exitEditMode(true);
+          return;
         }
+        if (!hasUnsavedChanges()) { exitEditMode(true); return; }
+        showConfirmModal('You have unsaved changes. Do you want to discard them?')
+          .then(function(ok) { if (ok) exitEditMode(true); });
       });
 
       editCancel.addEventListener('click', function() {
-        if (!hasUnsavedChanges() || confirm('Discard your unsaved changes?')) {
-          exitEditMode(true);
-        }
+        if (!hasUnsavedChanges()) { exitEditMode(true); return; }
+        showConfirmModal('Do you want to discard unsaved changes?')
+          .then(function(ok) { if (ok) exitEditMode(true); });
       });
 
       editSave.addEventListener('click', saveContent);
@@ -4316,7 +4333,7 @@
           docTitle.setAttribute('tabindex', '0');
         }
         docBody.setAttribute('contenteditable', 'true');
-        docBody.focus();
+        docBody.focus({ preventScroll: true });
         editToolbar.classList.add('visible');
         var _el = editToggle.querySelector('.ta-label'); if (_el) _el.textContent = 'Editing…';
         editToggle.classList.add('is-active');
@@ -4524,7 +4541,13 @@
       }
       function restoreDocBodySelection(range) {
         if (!range) return;
-        docBody.focus();
+        // preventScroll: focusing a large contenteditable element makes the
+        // browser scroll it into view from its own top edge, ignoring where
+        // the restored caret actually is — insert something while scrolled
+        // to the middle of a long document and the page visibly jumps to the
+        // top. The caret still moves to the right place; only the viewport
+        // must not follow it here.
+        docBody.focus({ preventScroll: true });
         var sel = window.getSelection();
         sel.removeAllRanges();
         sel.addRange(range);
@@ -4573,6 +4596,52 @@
           cancelBtn.addEventListener('click', onCancel);
           modal.addEventListener('click', onBackdrop);
           input.addEventListener('keydown', onKeydown);
+        });
+      }
+
+      // Generic Confirm Modal (replaces native confirm() calls — the
+      // "<hostname> says" browser dialogs). Resolves true on OK, false on
+      // Cancel/backdrop/Escape — never rejects, so callers don't need a
+      // .catch(). Async, unlike confirm(): every call site awaits the
+      // Promise (via .then or await) instead of branching on a return value.
+      function showConfirmModal(message, opts) {
+        opts = opts || {};
+        return new Promise(function(resolve) {
+          var modal = document.getElementById('confirmModal');
+          var titleEl = document.getElementById('confirmModalTitle');
+          var messageEl = document.getElementById('confirmModalMessage');
+          var submitBtn = document.getElementById('confirmModalSubmit');
+          var cancelBtn = document.getElementById('confirmModalCancel');
+
+          titleEl.textContent = opts.title || 'Interactive Textbook';
+          messageEl.textContent = message || '';
+          submitBtn.textContent = opts.okLabel || 'OK';
+          cancelBtn.textContent = opts.cancelLabel || 'Cancel';
+
+          modal.classList.add('visible');
+          submitBtn.focus();
+
+          function cleanup() {
+            modal.classList.remove('visible');
+            submitBtn.removeEventListener('click', onOk);
+            cancelBtn.removeEventListener('click', onCancel);
+            modal.removeEventListener('click', onBackdrop);
+            document.removeEventListener('keydown', onKeydown);
+          }
+          function onOk() { cleanup(); resolve(true); }
+          function onCancel() { cleanup(); resolve(false); }
+          function onBackdrop(e) { if (e.target === modal) onCancel(); }
+          // Escape is handled by the global "Escape-to-close" delegate further
+          // down (registered in CLOSE_BUTTON_BY_OVERLAY as confirmModal ->
+          // confirmModalCancel) — not duplicated here, to avoid firing twice.
+          function onKeydown(e) {
+            if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+          }
+
+          submitBtn.addEventListener('click', onOk);
+          cancelBtn.addEventListener('click', onCancel);
+          modal.addEventListener('click', onBackdrop);
+          document.addEventListener('keydown', onKeydown);
         });
       }
 
@@ -5118,7 +5187,7 @@
         var wrapped = type === 'inline' ? '\\(' + latex + '\\)' : '\\[' + latex + '\\]';
 
         // Restore cursor position and insert at the saved location
-        docBody.focus();
+        docBody.focus({ preventScroll: true });
         var span = document.createElement('span');
         span.innerHTML = wrapped;
 
@@ -5172,7 +5241,7 @@
         btn.title = 'Insert ' + sym;
         btn.setAttribute('aria-label', 'Insert symbol ' + sym);
         btn.addEventListener('click', function() {
-          docBody.focus();
+          docBody.focus({ preventScroll: true });
           // Restore cursor position before inserting symbol
           if (savedSymbolRange) {
             var sel2 = window.getSelection();
@@ -5209,13 +5278,13 @@
       // --- Font Color ---
       document.getElementById('btnFontColor').addEventListener('input', function(e) {
         document.execCommand('foreColor', false, e.target.value);
-        docBody.focus();
+        docBody.focus({ preventScroll: true });
       });
 
       // --- Background Color ---
       document.getElementById('btnBgColor').addEventListener('input', function(e) {
         document.execCommand('hiliteColor', false, e.target.value);
-        docBody.focus();
+        docBody.focus({ preventScroll: true });
       });
 
       // --- Insert Image (link or upload) ---
@@ -5699,7 +5768,7 @@
           }
           html += '</div>';
 
-          docBody.focus();
+          docBody.focus({ preventScroll: true });
           if (savedRange) {
             var sel2 = window.getSelection();
             sel2.removeAllRanges();
@@ -6331,7 +6400,7 @@
 
         function restoreSelection() {
           if (!savedSel) return;
-          docBody.focus();
+          docBody.focus({ preventScroll: true });
           var sel = window.getSelection();
           sel.removeAllRanges();
           sel.addRange(savedSel);
@@ -7706,10 +7775,11 @@
           });
           delBtn.addEventListener('click', function(e) {
             e.preventDefault();
-            if (confirm('Remove this section?')) {
+            showConfirmModal('Remove this section?').then(function(ok) {
+              if (!ok) return;
               block.remove();
               refreshBlockControlsState();
-            }
+            });
           });
         });
       }
@@ -8713,7 +8783,8 @@
         accordionModal: 'accordionCancel',
         shapeDividerModal: 'shapeDividerCancel',
         promptModal: 'promptModalCancel',
-        glossaryModal: 'glossaryModalCancel'
+        glossaryModal: 'glossaryModalCancel',
+        confirmModal: 'confirmModalCancel'
       };
       var lastFocused = null;
 
@@ -8802,7 +8873,10 @@
     function restoreRange() {
       if (!railSavedRange || !docBody) return;
       try {
-        docBody.focus();
+        // preventScroll — see the identical comment on restoreDocBodySelection
+        // above; same fix, same reason, both restore focus to a possibly
+        // off-screen caret position inside a long document.
+        docBody.focus({ preventScroll: true });
         var s = window.getSelection();
         s.removeAllRanges();
         s.addRange(railSavedRange);
@@ -8906,7 +8980,7 @@
     var textSwatches = document.getElementById('railTextSwatches');
     function applyForeColor(hex) {
       restoreRange();
-      if (docBody) docBody.focus();
+      if (docBody) docBody.focus({ preventScroll: true });
       document.execCommand('foreColor', false, hex);
       if (colorBar && hex !== 'inherit') colorBar.style.background = hex;
     }
@@ -8932,7 +9006,7 @@
         e.preventDefault();
         restoreRange();
         if (docBody) {
-          docBody.focus();
+          docBody.focus({ preventScroll: true });
           var ink = getComputedStyle(docBody).color || 'inherit';
           document.execCommand('foreColor', false, ink);
         }
@@ -8952,7 +9026,7 @@
         segBtns.forEach(function (b, j) { b.setAttribute('aria-checked', String(j === i)); });
         moveThumb(i);
         if (runCmd && docBody) {
-          docBody.focus();
+          docBody.focus({ preventScroll: true });
           try { document.execCommand(segBtns[i].getAttribute('data-cmd'), false, null); } catch (e) {}
         }
       }
