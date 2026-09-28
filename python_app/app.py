@@ -104,6 +104,30 @@ def index():
     return render_template("index.html")
 
 
+# Project docs (including the end-user manual) live in ../docs relative to
+# this file's parent (python_app/../docs). Served read-only so the manual is
+# reachable from inside the running app itself, not just as a repo file.
+DOCS_DIR = Path(__file__).resolve().parent.parent / "docs"
+
+
+@app.route("/docs/")
+@app.route("/manual")
+def user_manual():
+    """Convenience alias straight to the end-user manual (idiot's guide)."""
+    return send_from_directory(DOCS_DIR, "06-USER-MANUAL.html")
+
+
+@app.route("/docs/<path:filename>")
+def serve_docs(filename: str):
+    """Serve project documentation (manual, API docs, and their images).
+
+    send_from_directory rejects path traversal (".." segments) on its own,
+    so this is safe to expose without additional checks -- it only ever
+    reads from DOCS_DIR.
+    """
+    return send_from_directory(DOCS_DIR, filename)
+
+
 @app.route("/healthz")
 def healthz():
     """Liveness probe: the process is up and serving. No dependency checks."""

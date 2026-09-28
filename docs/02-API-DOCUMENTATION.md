@@ -2,7 +2,7 @@
 
 **Base URL:** `https://poc-interactivetxtbk.diksha.gov.in`
 **Source:** `python_app/app.py`
-**Date:** 2026-09-09
+**Date:** 2026-09-26
 
 > Documents the HTTP endpoints exactly as implemented. All routes are defined with `@app.route` in `app.py`. Authentication is not enforced at the application layer in the current code (server-to-server callers are expected to be restricted by network/firewall).
 
@@ -13,6 +13,10 @@
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/` | Upload page (drag-and-drop) |
+| GET | `/healthz` | Liveness probe |
+| GET | `/readyz` | Readiness probe (config + backend checks) |
+| GET | `/metrics/queue-depth` | Pending conversion job count (autoscaler) |
+| GET | `/metrics` | Operational metrics snapshot |
 | POST | `/convert` | Upload a PDF, start background conversion |
 | GET | `/convert-status/<job_id>` | Poll conversion progress |
 | GET | `/api/lookup/<refId>` | Look up a job by external reference ID |
@@ -30,6 +34,79 @@
 | POST | `/api/progress` | Save video playback progress |
 | GET | `/api/progress/<learner_id>/<video_src>` | Get saved video progress |
 | POST | `/api/generate-captions/<video_path>` | Generate WebVTT captions (Whisper) |
+
+---
+
+## 0.1. `GET /healthz`
+
+Liveness probe: the process is up and serving. No dependency checks — always `200` if the process can respond at all.
+
+**200**
+```json
+{ "status": "ok" }
+```
+
+---
+
+## 0.2. `GET /readyz`
+
+Readiness probe: configuration is valid and the active backends are reachable. With the default backends (`STATE_BACKEND=file`, `OUTPUT_BACKEND=local`) this checks local path writability; a `service`/`oci` backend would also get a reachability check once wired up (the state-service check currently reports `"service backend not yet implemented"` rather than falsely claiming healthy).
+
+**200** (ready) / **503** (not ready)
+```json
+{
+  "status": "ok",
+  "checks": {
+    "config": "ok",
+    "job_store": "ok",
+    "output_store": "ok",
+    "queue_backend": "thread",
+    "config_summary": {
+      "state_backend": "file",
+      "output_backend": "local",
+      "queue_backend": "thread",
+      "oci_region": "ap-hyderabad-1",
+      "buckets": { "html": "poc-interactivetxtbk1", "media": "poc-interactivetxt-media-src-bucket", "video": "poc-interactivetxt-media-dst-bucket" },
+      "redis_configured": false,
+      "jsondb_configured": false,
+      "queue_name": "pdf-convert",
+      "queue_configured": false,
+      "ocr_engine": "rapidocr",
+      "datalab_api_key_configured": false,
+      "datalab_mode": "balanced",
+      "datalab_image_captions": "auto",
+      "datalab_processing_location": "us",
+      "delete_api_token_configured": false
+    }
+  }
+}
+```
+`config_summary` never includes credential values, only booleans for whether one is set (e.g. `datalab_api_key_configured`, `delete_api_token_configured`) — see `config.py`'s `summary()`.
+
+---
+
+## 0.3. `GET /metrics/queue-depth`
+
+Pending conversion job count, for the worker autoscaler (KEDA metrics-api trigger). Under `QUEUE_BACKEND=queue` this is the queue's visible-message count; otherwise a best-effort count of non-terminal jobs from the state store. Always `200`, even if the backend is unreachable — an unreachable backend is reported as `0` (no load) rather than an error, so the scaler doesn't misbehave.
+
+**200**
+```json
+{ "queue_depth": 0 }
+```
+
+---
+
+## 0.4. `GET /metrics`
+
+Lightweight operational snapshot — no Prometheus exporter, kept dependency-free.
+
+**200**
+```json
+{
+  "queue_depth": 0,
+  "backends": { "state_backend": "file", "output_backend": "local", "queue_backend": "thread", "...": "see /readyz for the full shape" }
+}
+```
 
 ---
 
@@ -200,7 +277,7 @@ Replaces the content inside `<article class="document-body">…</article>` and r
 
 Permanently deletes a document: the job record, the converted HTML, every asset (`images/`, `media/`), and the preserved original PDF — on local disk and, if OCI is reachable, in all three buckets (HTML/media/video) under the `<job_dir>/` prefix. **There is no undo.**
 
-This is the endpoint behind the DIKSHA CMS's delete action; see `docs/03-DELETE-WEBHOOK.md` for the integration guide written for that team. It is deliberately separate from `cleanup_job.py` (the retention CronJob), which only ever removes unpublished, TTL-expired content and never touches a published document — this route deletes on request, published or not.
+This is the endpoint behind the DIKSHA CMS's delete action; see `docs/05-DELETE-WEBHOOK-INTEGRATION.md` for the integration guide written for that team. It is deliberately separate from `cleanup_job.py` (the retention CronJob), which only ever removes unpublished, TTL-expired content and never touches a published document — this route deletes on request, published or not.
 
 - **Auth:** the API Gateway route requires `allowedScope: ["service"]` (see `deploy/40-api-gateway.yaml`) — this is not reachable with an editor JWT. The app also checks an `X-Delete-Token` header against `config.DELETE_API_TOKEN` when that's configured (defense-in-depth; see `.env.example`).
 - **Path:** `job_dir` is the same value already used by `/output/<job_dir>/<filename>` and `/upload-media/<job_dir>` — e.g. `a1b2c3d4_Chapter 5`.
