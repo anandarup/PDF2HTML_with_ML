@@ -154,6 +154,23 @@ When you're done, you have two choices at the far right of the toolbar:
 > changes. It's a short history on purpose — save often rather than relying on
 > a long undo trail.
 
+**Exactly how undo works, in detail:**
+- The editor takes a snapshot of the whole document **300 milliseconds after
+  you stop typing/editing** (not after every keystroke) — so a burst of fast
+  typing counts as one undo step, not dozens.
+- Only your **last 5 snapshots** are kept. Making a 6th change permanently
+  drops the oldest one — there's no way to go back further than 5 steps, even
+  if you haven't saved yet.
+- Undo and Redo share that same 5-slot budget: undoing pushes the current
+  state onto the Redo list (also capped at 5), so redoing after several undos
+  works exactly like you'd expect, just within that 5-step window.
+- **The history resets to empty every time you enter Edit mode.** Leaving edit
+  mode (Save or Cancel) and coming back in later starts a fresh undo history —
+  you can't undo something from a previous editing session.
+- This is a custom undo/redo built for this editor — it is *not* the same as
+  your browser's native undo, so it only works while the document editor has
+  focus and only for changes made through this editor.
+
 ---
 
 ## 5. The formatting toolbar, piece by piece
@@ -334,11 +351,79 @@ gently animate ("Motion": Off/Gentle/Playful).
 ![Glossary dialog](manual-images/06b-glossary-modal.png)
 
 This is chapter-wide, not a single insertion — it manages every glossary term
-for the whole document. Add a **Term** and its **Definition**; the tool then
-automatically finds and underlines every occurrence of that word throughout
-the chapter, and learners see the definition on hover/tap. You can also
-**bulk upload a CSV** of terms (there's a "Download template" link to get the
-right column format) instead of typing them one at a time.
+for the whole document, and it's the same dialog whether you're adding your
+first term or your fiftieth. There are two ways to get terms into it:
+**typing them in one at a time**, or **bulk-uploading a CSV file**. Both end
+up in the exact same list, and both get **highlighted the same way** once
+saved — the difference is purely about *how you get the terms into the list*,
+not how they behave afterward.
+
+#### How glossary highlighting actually works
+
+However a term gets into the list, here's what happens once you click
+**Save All**:
+
+1. The tool searches the **entire chapter's text** for that exact word or
+   phrase, matching **whole words only** (so "cell" won't match inside
+   "cellular") and **case-insensitively** (so "Photosynthesis" in your
+   glossary matches "photosynthesis" in the text too).
+2. **Every** matching occurrence in the chapter gets wrapped with a dotted
+   underline — not just the first one. If a term appears 12 times in the
+   chapter, all 12 get the tooltip treatment.
+3. It skips text inside headings, code blocks, links, and buttons — so a term
+   accidentally matching part of a heading or a button label won't get
+   highlighted there.
+4. If two glossary terms overlap (e.g. "carbon" and "carbon dioxide"), the
+   **longer phrase wins** — "carbon dioxide" gets highlighted as one term
+   rather than "carbon" being highlighted inside it.
+5. Hovering or tapping a highlighted term shows its definition in a small
+   popup, both while you're editing and in the final published view.
+
+#### Manual entry (typing terms in)
+
+- Click **Add term** to get a new blank row, fill in the **Term** and its
+  **Definition**, repeat for as many terms as you need.
+- Good for adding a handful of terms, or fixing/wording a definition exactly
+  the way you want.
+- There's no live check while typing that the term actually appears in the
+  chapter — you can save a term that doesn't exist in the text; it simply
+  won't visually highlight anywhere (harmless, but worth double-checking the
+  spelling matches the chapter if a term isn't lighting up as expected).
+
+#### Bulk CSV upload
+
+- Click **Bulk upload CSV** and choose a `.csv` file. Click **Download
+  template** first if you want a starter file with the exact column
+  format (`term,definition`) and a few example rows already filled in as a
+  guide.
+- The CSV needs two columns: **term** and **definition**. A header row
+  (`term,definition`, or `word,meaning`, or `keyword,description`) is
+  automatically detected and skipped if present — you don't need to remove it
+  yourself.
+- **Unlike manual entry, the CSV import checks each term against your
+  chapter's actual text before adding it** — this is the key difference.
+  For every row in the file, one of four things happens, and you get a
+  summary of exactly what happened after the upload:
+  | Outcome | Why | What you see |
+  |---|---|---|
+  | **Added** | Term is 2+ characters, has a definition, and is found somewhere in the chapter's text | Counted in "✓ Added N terms from CSV" |
+  | **Skipped — not found** | Term isn't found anywhere in the chapter's text (often a typo, or a term meant for a different chapter) | Listed under "⚠ Skipped N terms not found in this chapter" |
+  | **Skipped — duplicate** | You already have that exact term (case-insensitive) in the list, either typed in manually or from an earlier CSV row | Listed under duplicates |
+  | **Skipped — invalid** | The term is under 2 characters, or the definition column is empty | Listed under invalid rows |
+- Terms added via CSV land as ordinary rows in the same list — after import,
+  you can still edit, delete, or add more terms manually before clicking
+  **Save All**. Nothing is final until you save.
+- CSV import is **additive**, not a replacement: uploading a CSV never
+  deletes or overwrites terms already in the list, it only adds new ones on
+  top (skipping exact duplicates, as above).
+
+**When to use which:** manual entry is best for a handful of terms or when
+you want full control over exact wording as you go. CSV bulk upload is best
+when you (or someone else) has already prepared a list of terms and
+definitions elsewhere — e.g. a spreadsheet a subject-matter expert filled in
+— since it saves you from retyping everything, and its built-in "not found in
+this chapter" check catches typos/mismatches you might otherwise miss with
+manual entry.
 
 ### Formula (math/chemistry)
 ![Insert formula dialog](manual-images/05-formula-modal.png)

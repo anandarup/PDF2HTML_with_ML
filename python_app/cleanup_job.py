@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 
 import config
+from app_logging import prune_old_files
 from state.job_store import build_job_store
 
 TERMINAL_STATES = {"done", "published", "error"}
@@ -117,11 +118,22 @@ def cleanup(dry_run: bool = False) -> dict:
                     pass
             jobs_expired += 1
 
+    # Infra snapshots (logs/snapshots/infra-*.jsonl) are the primary safety
+    # net against unbounded growth is logrotate (app.log) + journald
+    # (MaxRetentionSec) -- this is a belt-and-suspenders sweep for the one
+    # thing neither of those manages: the snapshot JSONL files.
+    snapshots_removed = 0
+    if not dry_run:
+        snapshots_removed = prune_old_files(
+            config.SNAPSHOT_DIR, "infra-*.jsonl", config.SNAPSHOT_RETENTION_DAYS
+        )
+
     summary = {
         "uploads_removed": uploads_removed,
         "jobs_expired": jobs_expired,
         "output_dirs_removed": output_removed,
         "published_skipped": published_skipped,
+        "snapshots_removed": snapshots_removed,
         "ttl_days": ttl_days,
         "dry_run": dry_run,
     }

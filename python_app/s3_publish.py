@@ -9,14 +9,20 @@ Uses the same OCI Instance Principal auth as the rest of the app.
 
 import os
 import re
-import logging
+import time
 import mimetypes
 from pathlib import Path
 from bs4 import BeautifulSoup
+from app_logging import capture_infra_snapshot, get_logger, job_context
 from glossary_highlight import highlight_glossary_terms, GLOSSARY_CSS
 from tools.h5p_clean import empty_h5p_containers
 
-_log = logging.getLogger(__name__)
+# NOTE: previously `logging.getLogger(__name__)` -- that logger ("s3_publish")
+# had no handlers configured anywhere in the app, so every _log.info() call
+# below silently went nowhere (Python's logging "handler of last resort" only
+# surfaces WARNING+ to stderr, unformatted). get_logger() returns the shared,
+# configured "pdf2webview" logger (file + stdout, JSON-formatted) instead.
+_log = get_logger(__name__)
 
 # Bucket constants (matching the existing OCI setup)
 HTML_BUCKET = "poc-interactivetxtbk1"
@@ -85,27 +91,42 @@ def _upload_file(client, namespace, bucket, file_path, object_name):
     """Upload a single file to OCI Object Storage."""
     content_type = mimetypes.guess_type(str(file_path))[0] or "application/octet-stream"
 
-    with open(file_path, "rb") as f:
-        client.put_object(
-            namespace,
-            bucket,
-            object_name,
-            f,
-            content_type=content_type,
+    try:
+        with open(file_path, "rb") as f:
+            client.put_object(
+                namespace,
+                bucket,
+                object_name,
+                f,
+                content_type=content_type,
+            )
+    except Exception:
+        # Left uncaught (re-raised) on purpose: publish_document()'s wrapper
+        # catches it, snapshots infra state, and marks the publish failed --
+        # a half-uploaded H5P/media set must not be reported as a success.
+        _log.exception(
+            "Upload failed", extra={"bucket": bucket, "object_name": object_name}
         )
-    _log.info(f"Uploaded {file_path} -> oci://{bucket}/{object_name}")
+        raise
+    _log.debug("Uploaded file", extra={"bucket": bucket, "object_name": object_name})
 
 
 def _upload_bytes(client, namespace, bucket, data, object_name, content_type="text/html"):
     """Upload raw bytes to OCI Object Storage."""
-    client.put_object(
-        namespace,
-        bucket,
-        object_name,
-        data,
-        content_type=content_type,
-    )
-    _log.info(f"Uploaded bytes -> oci://{bucket}/{object_name}")
+    try:
+        client.put_object(
+            namespace,
+            bucket,
+            object_name,
+            data,
+            content_type=content_type,
+        )
+    except Exception:
+        _log.exception(
+            "Upload failed", extra={"bucket": bucket, "object_name": object_name}
+        )
+        raise
+    _log.debug("Uploaded bytes", extra={"bucket": bucket, "object_name": object_name})
 
 
 def _is_video_file(file_path):
@@ -559,7 +580,8 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
           terms=terms.filter(function(g){return g.term&&g.definition&&g.term.length>=2;}).sort(function(a,b){return b.term.length-a.term.length;});
           if(!terms.length)return;
           var esc=terms.map(function(g){return g.term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');});
-          var pat=new RegExp('\\b('+esc.join('|')+')\\b','gi');
+          // Unicode-aware whole word (JS \b is ASCII-only and misses Indic terms)
+          var pat=new RegExp('(?<![\\p{L}\\p{M}\\p{N}_])('+esc.join('|')+')(?![\\p{L}\\p{M}\\p{N}_])','giu');
           var map={};terms.forEach(function(g){map[g.term.toLowerCase()]=g;});
           var counts={};terms.forEach(function(g){counts[g.term.toLowerCase()]=0;});
           var w=document.createTreeWalker(rt,NodeFilter.SHOW_TEXT,{acceptNode:function(n){if(!n.nodeValue||!n.nodeValue.trim())return NodeFilter.FILTER_REJECT;var p=n.parentElement;while(p&&p!==rt){if(SKIP[p.tagName]||p.classList.contains('glossary-term'))return NodeFilter.FILTER_REJECT;p=p.parentElement;}return NodeFilter.FILTER_ACCEPT;}});
@@ -604,7 +626,8 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
     var SKIP={SCRIPT:1,STYLE:1,CODE:1,PRE:1,DFN:1,A:1,BUTTON:1,H1:1,H2:1,H3:1};
     terms.sort(function(a,b){return b.term.length-a.term.length;});
     var esc=terms.map(function(g){return g.term.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');});
-    var pat=new RegExp('\\b('+esc.join('|')+')\\b','gi');
+    // Unicode-aware whole word (JS \b is ASCII-only and misses Indic terms)
+    var pat=new RegExp('(?<![\\p{L}\\p{M}\\p{N}_])('+esc.join('|')+')(?![\\p{L}\\p{M}\\p{N}_])','giu');
     var map={};terms.forEach(function(g){map[g.term.toLowerCase()]=g;});
     var counts={};terms.forEach(function(g){counts[g.term.toLowerCase()]=0;});
     var w=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,{acceptNode:function(n){if(!n.nodeValue||!n.nodeValue.trim())return NodeFilter.FILTER_REJECT;var p=n.parentElement;while(p&&p!==root){if(SKIP[p.tagName]||p.classList.contains('glossary-term')||(p.id==='chapter-glossary-data'))return NodeFilter.FILTER_REJECT;p=p.parentElement;}return NodeFilter.FILTER_ACCEPT;}});
@@ -1407,7 +1430,32 @@ def publish_document(job_dir, filename):
     """
     output_path = Path(OUTPUT_DIR) / job_dir
     html_path = output_path / filename
+    started_at = time.monotonic()
 
+    with job_context(job_dir=job_dir, filename=filename):
+        _log.info("Publish started")
+        try:
+            result = _publish_document_impl(output_path, html_path, job_dir, filename)
+        except Exception as e:
+            elapsed = round(time.monotonic() - started_at, 1)
+            _log.exception("Publish failed", extra={"elapsed_seconds": elapsed})
+            # A failed/partial publish is exactly the kind of event that can
+            # leave an H5P package (or any media) half-uploaded -- capture the
+            # machine's state at the moment of failure for later correlation.
+            capture_infra_snapshot(
+                "publish_failed",
+                job_dir=job_dir, filename=filename,
+                error=str(e), elapsed_seconds=elapsed,
+            )
+            raise
+        elapsed = round(time.monotonic() - started_at, 1)
+        _log.info("Publish finished", extra={"elapsed_seconds": elapsed, **result})
+        return result
+
+
+def _publish_document_impl(output_path: Path, html_path: Path, job_dir: str, filename: str) -> dict:
+    """The actual publish work, split out from publish_document() purely so
+    the try/except + logging wrapper above has a single call to guard."""
     if not html_path.exists():
         raise FileNotFoundError(f"Document not found: {html_path}")
 
@@ -1518,9 +1566,13 @@ def publish_document(job_dir, filename):
     html_url = _get_public_url(namespace, HTML_BUCKET, html_object_name)
 
     _log.info(
-        f"Published {job_dir}/{filename}: "
-        f"{len(media_map)} media, {len(video_map)} videos, "
-        f"{len(h5p_map)} bundle(s) — H5P/Virtual Lab — ({h5p_file_count} files)"
+        "Upload phase complete",
+        extra={
+            "media_uploaded": len(media_map),
+            "videos_uploaded": len(video_map),
+            "h5p_packages": len(h5p_map),
+            "h5p_files": h5p_file_count,
+        },
     )
 
     return {

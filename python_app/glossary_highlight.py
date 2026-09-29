@@ -26,7 +26,9 @@ Performance:
 from __future__ import annotations
 
 import re
+import sys
 import logging
+import unicodedata
 from typing import Any
 
 from bs4 import BeautifulSoup, NavigableString, Tag
@@ -40,6 +42,38 @@ SKIP_ELEMENTS = frozenset([
     'h1', 'h2', 'h3',  # Don't highlight inside headings
     'figcaption',
 ])
+
+
+def _combining_mark_class() -> str:
+    """Regex character-class body covering every Unicode combining mark (Mn/Mc/Me).
+
+    Python's ``\\w`` treats letters and digits as word characters but not
+    combining marks, so Indic vowel signs (matras) such as the Devanagari
+    ``ी`` (U+0940) or anusvara ``ं`` count as non-word characters. ``\\b``
+    therefore finds no boundary after a term like "निवासी" and the term is
+    never matched. Folding the marks into the word-character set fixes that.
+    """
+    ranges = []
+    start = prev = None
+    for cp in range(sys.maxunicode + 1):
+        if unicodedata.category(chr(cp)).startswith('M'):
+            if start is None:
+                start = cp
+            elif cp != prev + 1:
+                ranges.append((start, prev))
+                start = cp
+            prev = cp
+    if start is not None:
+        ranges.append((start, prev))
+    return ''.join(
+        f'\\U{a:08x}' if a == b else f'\\U{a:08x}-\\U{b:08x}' for a, b in ranges
+    )
+
+
+# A "word character" for glossary matching: \w (letters, digits, underscore)
+# plus combining marks. Used in lookarounds in place of \b so terms ending or
+# starting with a vowel sign match in Hindi, Marathi, Bengali, Tamil, etc.
+_WORD_CHAR = '[\\w' + _combining_mark_class() + ']'
 
 
 def highlight_glossary_terms(
@@ -79,9 +113,10 @@ def highlight_glossary_terms(
 
     # Escape regex special characters in terms
     escaped_terms = [re.escape(g['term'].strip()) for g in valid_terms]
-    # Use word boundaries to avoid partial matches
+    # Whole-word match without \b: \b ignores combining marks, which breaks
+    # Indic terms ending in a vowel sign (see _WORD_CHAR).
     pattern = re.compile(
-        r'\b(' + '|'.join(escaped_terms) + r')\b',
+        '(?<!' + _WORD_CHAR + ')(' + '|'.join(escaped_terms) + ')(?!' + _WORD_CHAR + ')',
         re.IGNORECASE
     )
 

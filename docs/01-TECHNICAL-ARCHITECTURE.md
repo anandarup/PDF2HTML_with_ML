@@ -36,7 +36,10 @@ Nginx  (server_name poc-interactivetxtbk.diksha.gov.in)
       ▼
 Gunicorn  (systemd unit: pdf2html.service)
   - gunicorn --workers 1 --threads 4 --timeout 600
-  - --bind 127.0.0.1:8501 --max-requests 200 --max-requests-jitter 30
+  - --bind 127.0.0.1:8501 --max-requests 3000 --max-requests-jitter 300
+    (raised from 200/30 on 2026-09-28 — see docs/07-LOGGING-AND-DEBUGGING.md
+    §1: at 200, a worker recycle could land mid-conversion often enough to
+    silently kill in-flight PDF conversions and H5P publishes)
   - app:app   (Flask application object)
       │
       ├── conversion runs in a background threading.Thread
@@ -101,7 +104,7 @@ Job state is **file-based**, persisted as one JSON file per job under `python_ap
 
 - Writes are **atomic**: the record is written to a `.tmp` file and then `replace()`d (POSIX-atomic).
 - A module-level `threading.Lock` (`CONVERSION_JOBS_LOCK`) guards read/modify/write.
-- The design comment notes this deliberately survives Gunicorn worker recycling (`--max-requests 200`).
+- The design comment notes this deliberately survives Gunicorn worker recycling (`--max-requests`, now 3000/300 — see §1's cross-reference above): the on-disk JSON record itself is safe across a recycle, but the in-flight *computation* was not, until the fixes in `docs/07-LOGGING-AND-DEBUGGING.md` §1 (higher `--max-requests`, plus a startup reconciliation sweep that marks any job abandoned by a killed worker as `error` instead of leaving it stuck at `processing` forever).
 
 A job record contains:
 

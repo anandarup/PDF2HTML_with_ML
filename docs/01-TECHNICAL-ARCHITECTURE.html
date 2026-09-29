@@ -63,7 +63,10 @@ Nginx  (server_name poc-interactivetxtbk.diksha.gov.in)
       ▼
 Gunicorn  (systemd unit: pdf2html.service)
   - gunicorn --workers 1 --threads 4 --timeout 600
-  - --bind 127.0.0.1:8501 --max-requests 200 --max-requests-jitter 30
+  - --bind 127.0.0.1:8501 --max-requests 3000 --max-requests-jitter 300
+    (raised from 200/30 on 2026-09-28 — see docs/07-LOGGING-AND-DEBUGGING.html
+    §1: at 200, a worker recycle could land mid-conversion often enough to
+    silently kill in-flight PDF conversions and H5P publishes)
   - app:app   (Flask application object)
       │
       ├── conversion runs in a background threading.Thread
@@ -91,7 +94,7 @@ OCI Object Storage  (Instance Principals, region ap-hyderabad-1)
 <hr>
 <h2 id="5-job-state-model">5. Job State Model</h2>
 <p>Job state is <strong>file-based</strong>, persisted as one JSON file per job under <code>python_app/jobs/&lt;job_id&gt;.json</code>.</p>
-<ul><li>Writes are <strong>atomic</strong>: the record is written to a <code>.tmp</code> file and then <code>replace()</code>d (POSIX-atomic).</li><li>A module-level <code>threading.Lock</code> (<code>CONVERSION_JOBS_LOCK</code>) guards read/modify/write.</li><li>The design comment notes this deliberately survives Gunicorn worker recycling (<code>--max-requests 200</code>).</li></ul>
+<ul><li>Writes are <strong>atomic</strong>: the record is written to a <code>.tmp</code> file and then <code>replace()</code>d (POSIX-atomic).</li><li>A module-level <code>threading.Lock</code> (<code>CONVERSION_JOBS_LOCK</code>) guards read/modify/write.</li><li>The design comment notes this deliberately survives Gunicorn worker recycling (<code>--max-requests</code>, now 3000/300 — see §1's cross-reference above): the on-disk JSON record itself is safe across a recycle, but the in-flight <em>computation</em> was not, until the fixes in <code>docs/07-LOGGING-AND-DEBUGGING.html</code> §1 (higher <code>--max-requests</code>, plus a startup reconciliation sweep that marks any job abandoned by a killed worker as <code>error</code> instead of leaving it stuck at <code>processing</code> forever).</li></ul>
 <p>A job record contains:</p>
 <pre><code>{
   &quot;status&quot;: &quot;processing | done | error | published&quot;,

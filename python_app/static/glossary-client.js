@@ -59,7 +59,10 @@
     var escaped = validTerms.map(function(g) {
       return g.term.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     });
-    var pattern = new RegExp('\\b(' + escaped.join('|') + ')\\b', 'gi');
+    // Unicode-aware whole-word match. JS \b only knows ASCII word characters,
+    // so it never matches Hindi/Marathi (or any non-Latin) terms; treat
+    // letters, combining marks (matras) and digits as word characters instead.
+    var pattern = new RegExp('(?<![\\p{L}\\p{M}\\p{N}_])(' + escaped.join('|') + ')(?![\\p{L}\\p{M}\\p{N}_])', 'giu');
 
     // Build lookup map: lowercase term → { term, definition }
     var termMap = {};

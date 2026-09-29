@@ -27,8 +27,19 @@ from __future__ import annotations
 import abc
 import json
 import threading
+import time
 from pathlib import Path
 from typing import Optional
+
+
+def _now() -> float:
+    """Epoch seconds, used to stamp every job write with `updated_at` (and
+    `created_at` on first write) so staleness can be measured later -- e.g.
+    by the reconciliation sweep in conversion_job.reconcile_stuck_jobs, which
+    needs to tell "still genuinely converting" apart from "abandoned by a
+    process that died mid-conversion" without any of the record shapes below
+    having carried a timestamp before this."""
+    return time.time()
 
 
 class JobStore(abc.ABC):
@@ -65,6 +76,14 @@ class JobStore(abc.ABC):
         Returns True if a record existed and was removed, False if there was
         nothing to delete. Safe to call on an unknown job_id.
         """
+
+    @abc.abstractmethod
+    def list_job_ids(self) -> list[str]:
+        """Return every known job_id. Used by the startup reconciliation sweep
+        (see conversion_job.reconcile_stuck_jobs) to find jobs abandoned by a
+        prior process that died mid-conversion (e.g. a gunicorn worker recycle
+        killing the in-process conversion thread) -- those jobs are otherwise
+        stuck at status="processing" forever, with no error ever surfaced."""
 
 
 class FileJobStore(JobStore):
@@ -121,6 +140,9 @@ class FileJobStore(JobStore):
     # --- JobStore interface -------------------------------------------------
     def create_job(self, job_id: str, record: dict) -> None:
         with self._lock:
+            now = _now()
+            record.setdefault("created_at", now)
+            record["updated_at"] = now
             self._write_file(job_id, record)
             self._ensure_index()
             self._index_ref(record, job_id)
@@ -131,6 +153,11 @@ class FileJobStore(JobStore):
 
     def update_job(self, job_id: str, record: dict) -> None:
         with self._lock:
+            existing = self._read_file(job_id)
+            record.setdefault(
+                "created_at", (existing or {}).get("created_at") or _now()
+            )
+            record["updated_at"] = _now()
             self._write_file(job_id, record)
             self._ensure_index()
             self._index_ref(record, job_id)
@@ -143,6 +170,7 @@ class FileJobStore(JobStore):
                 return
             job["stage"] = stage
             job["detail"] = detail
+            job["updated_at"] = _now()
             prog = job.get("progress") or {}
             if extra:
                 prog.update(extra)
@@ -183,6 +211,10 @@ class FileJobStore(JobStore):
                 if ref and self._ref_index.get(ref) == job_id:
                     del self._ref_index[ref]
             return existed
+
+    def list_job_ids(self) -> list[str]:
+        with self._lock:
+            return [p.stem for p in self._jobs_dir.glob("*.json")]
 
 
 class ServiceJobStore(JobStore):
@@ -255,6 +287,9 @@ class ServiceJobStore(JobStore):
 
     # --- JobStore interface -------------------------------------------------
     def create_job(self, job_id: str, record: dict) -> None:
+        now = _now()
+        record.setdefault("created_at", now)
+        record["updated_at"] = now
         self._persist(self._r, job_id, record)
 
     def get_job(self, job_id: str) -> Optional[dict]:
@@ -262,6 +297,9 @@ class ServiceJobStore(JobStore):
 
     def update_job(self, job_id: str, record: dict) -> None:
         # Idempotent full-record overwrite (terminal states carry the whole record).
+        existing = self.get_job(job_id)
+        record.setdefault("created_at", (existing or {}).get("created_at") or _now())
+        record["updated_at"] = _now()
         self._persist(self._r, job_id, record)
 
     def set_progress(self, job_id: str, stage: str, detail: str,
@@ -271,6 +309,7 @@ class ServiceJobStore(JobStore):
         def _apply(job: dict) -> dict:
             job["stage"] = stage
             job["detail"] = detail
+            job["updated_at"] = _now()
             prog = job.get("progress") or {}
             if extra:
                 prog.update(extra)
@@ -330,6 +369,10 @@ class ServiceJobStore(JobStore):
             if ref:
                 self._r.delete(self._ref_key(ref))
         return existed
+
+    def list_job_ids(self) -> list[str]:
+        members = self._r.smembers(self._jobs_set_key())
+        return [m.decode("utf-8") if isinstance(m, bytes) else m for m in members]
 
 
 def _build_redis_client(config_module):

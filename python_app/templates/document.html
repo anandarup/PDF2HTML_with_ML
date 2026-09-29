@@ -436,6 +436,19 @@
       clear: right;
       max-width: 45%;
       padding: 0;
+      /* Without this, a later sibling block (e.g. a <ul> whose own box
+         spans the full column width, with the float only narrowing its
+         *line boxes* around it) paints ON TOP of this floated figure in
+         normal stacking order, since it comes later in source order and
+         both are at the default (auto) stacking level. That silently
+         intercepted every click/double-click meant for the image or its
+         caption whenever the figure was immediately followed by a list —
+         editors could not open the caption dialog or reach the image's
+         resize/delete controls at all in that layout (see position:relative
+         above, already present, which this z-index now takes advantage of
+         to raise the figure into its own stacking context above later
+         in-flow content, with no effect on the float's text-wrap geometry). */
+      z-index: 1;
     }
 
     .document-body .figure-wrap:nth-of-type(even) {
@@ -4737,12 +4750,13 @@
             return rows;
           }
 
-          // Word-boundary, case-insensitive existence test against the chapter
-          // text — mirrors the server highlighter's \b(term)\b + IGNORECASE.
+          // Whole-word, case-insensitive existence test against the chapter
+          // text — mirrors the server highlighter. Unicode-aware because JS \b
+          // is ASCII-only and would never match Hindi/Marathi terms.
           function termExistsInDocument(term, docText) {
             var esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
             try {
-              return new RegExp('\\b' + esc + '\\b', 'i').test(docText);
+              return new RegExp('(?<![\\p{L}\\p{M}\\p{N}_])' + esc + '(?![\\p{L}\\p{M}\\p{N}_])', 'iu').test(docText);
             } catch (e) {
               return docText.toLowerCase().indexOf(term.toLowerCase()) !== -1;
             }
