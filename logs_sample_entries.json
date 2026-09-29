@@ -1,0 +1,407 @@
+[
+  {
+    "event_type": "conversion_start",
+    "core_metadata": {
+      "timestamp": "2026-09-28T10:15:30.123Z",
+      "level": "INFO",
+      "logger": "pdf2webview",
+      "pid": 1224458
+    },
+    "job_context": {
+      "job_id": "00bc7716",
+      "ref_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "upload_ref": "upload_001",
+      "stage": "queued",
+      "attempt": 1
+    },
+    "payload_metrics": {
+      "pdf_metadata": {
+        "filename": "Chap 5 (1).pdf",
+        "pdf_stem": "Chap 5 (1)",
+        "file_size_bytes": 2457600,
+        "page_count": 24,
+        "has_ocr_text": true,
+        "is_scanned": false,
+        "pdf_version": "1.4"
+      }
+    }
+  },
+  {
+    "event_type": "conversion_complete",
+    "core_metadata": {
+      "timestamp": "2026-09-28T10:16:45.456Z",
+      "level": "INFO",
+      "logger": "pdf2webview",
+      "pid": 1224458
+    },
+    "job_context": {
+      "job_id": "00bc7716",
+      "ref_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "stage": "completed"
+    },
+    "payload_metrics": {
+      "pdf_metadata": {
+        "filename": "Chap 5 (1).pdf",
+        "pdf_stem": "Chap 5 (1)",
+        "file_size_bytes": 2457600,
+        "page_count": 24
+      },
+      "content_metrics": {
+        "embedded_images_count": 8,
+        "embedded_fonts_count": 2,
+        "text_chars_count": 45000,
+        "tables_detected": 3,
+        "figures_detected": 4
+      },
+      "complexity_score": {
+        "overall": 42.5,
+        "layout_density": 0.56,
+        "font_variety": 3,
+        "color_depth": "grayscale",
+        "has_math_formulas": false,
+        "has_cjk_text": false,
+        "has_right_to_left": false
+      }
+    },
+    "performance_metrics": {
+      "total_conversion_time_ms": 75321,
+      "stage_timings": {
+        "preprocessing_ms": 1234,
+        "text_extraction_ms": 23456,
+        "font_analysis_ms": 3456,
+        "layout_analysis_ms": 12345,
+        "ocr_processing_ms": 5678,
+        "image_extraction_ms": 8901,
+        "dom_generation_ms": 11234,
+        "styling_application_ms": 4567,
+        "post_processing_ms": 2345
+      },
+      "resource_usage": {
+        "peak_memory_mb": 342.8,
+        "avg_cpu_percent": 38.2,
+        "disk_io_bytes": 5123456,
+        "image_processing_time_ms": 15678,
+        "html_file_size_bytes": 1567890,
+        "total_output_size_bytes": 3456789
+      },
+      "throughput_metrics": {
+        "pages_per_second": 0.32,
+        "bytes_per_second": 32654.3,
+        "queue_wait_time_ms": 2345,
+        "concurrency_level": 2
+      }
+    }
+  },
+  {
+    "event_type": "conversion_complete",
+    "core_metadata": {
+      "timestamp": "2026-09-28T11:30:15.789Z",
+      "level": "INFO",
+      "logger": "pdf2webview",
+      "pid": 1230218
+    },
+    "job_context": {
+      "job_id": "b73ebd4e",
+      "ref_id": "b2c3d4e5-f6g7-8901-bcde-f23456789012",
+      "stage": "completed"
+    },
+    "payload_metrics": {
+      "pdf_metadata": {
+        "filename": "01 Do belo ki Katha.pdf",
+        "pdf_stem": "01 Do belo ki Katha",
+        "file_size_bytes": 10485760,
+        "page_count": 150
+      },
+      "content_metrics": {
+        "embedded_images_count": 45,
+        "embedded_fonts_count": 8,
+        "text_chars_count": 280000,
+        "tables_detected": 12,
+        "figures_detected": 18
+      },
+      "complexity_score": {
+        "overall": 78.3,
+        "layout_density": 0.82,
+        "font_variety": 7,
+        "color_depth": "color",
+        "has_math_formulas": true,
+        "has_cjk_text": false,
+        "has_right_to_left": true
+      }
+    },
+    "performance_metrics": {
+      "total_conversion_time_ms": 324567,
+      "stage_timings": {
+        "preprocessing_ms": 4567,
+        "text_extraction_ms": 78901,
+        "font_analysis_ms": 12345,
+        "layout_analysis_ms": 45678,
+        "ocr_processing_ms": 23456,
+        "image_extraction_ms": 56789,
+        "dom_generation_ms": 67890,
+        "styling_application_ms": 23456,
+        "post_processing_ms": 12345
+      },
+      "resource_usage": {
+        "peak_memory_mb": 892.4,
+        "avg_cpu_percent": 67.8,
+        "disk_io_bytes": 23456789,
+        "image_processing_time_ms": 78901,
+        "html_file_size_bytes": 4567890,
+        "total_output_size_bytes": 12345678
+      },
+      "throughput_metrics": {
+        "pages_per_second": 0.46,
+        "bytes_per_second": 32345.6,
+        "queue_wait_time_ms": 4567,
+        "concurrency_level": 4
+      }
+    }
+  },
+  {
+    "event_type": "conversion_failed",
+    "core_metadata": {
+      "timestamp": "2026-09-28T12:05:22.333Z",
+      "level": "ERROR",
+      "logger": "pdf2webview",
+      "pid": 1224458
+    },
+    "job_context": {
+      "job_id": "c8d9e0f1",
+      "ref_id": "c3d4e5f6-g7h8-9012-cdef-345678901234",
+      "stage": "failed",
+      "attempt": 2
+    },
+    "payload_metrics": {
+      "pdf_metadata": {
+        "filename": "corporate-presentation.pdf",
+        "pdf_stem": "corporate-presentation",
+        "file_size_bytes": 8388608,
+        "page_count": 85,
+        "has_ocr_text": false,
+        "is_scanned": false,
+        "pdf_version": "1.7"
+      }
+    },
+    "performance_metrics": {
+      "total_conversion_time_ms": 45678,
+      "stage_timings": {
+        "preprocessing_ms": 2345,
+        "text_extraction_ms": 12345,
+        "font_analysis_ms": 5678
+      }
+    },
+    "errors_warnings": {
+      "error_type": "missing_fonts",
+      "error_code": "PDF_FONT_MISSING",
+      "error_message": "Required proprietary fonts not available in system font repository",
+      "stack_trace": "Traceback (most recent call last):\n  File \"/opt/pdf2html/app/python_app/tools/extract_pdf.py\", line 145, in extract_pdf_content\n    raise PDFFontMissingError(f\"Missing fonts: {', '.join(missing_fonts)}\")\napp.tools.extract_pdf.PDFFontMissingError: Missing fonts: 'CorporateSans-Bold', 'CorporateSerif-Italic', 'BrandDisplay-Light'",
+      "recovery_action": "Attempted font substitution with similar system fonts, but layout fidelity would be compromised",
+      "missing_fonts": ["CorporateSans-Bold", "CorporateSerif-Italic", "BrandDisplay-Light"],
+      "warnings": [
+        {
+          "code": "FONT_MISMATCH_SEVERE",
+          "message": "Missing proprietary fonts affect visual fidelity and text layout",
+          "severity": "high"
+        },
+        {
+          "code": "LAYOUT_ALTERATION",
+          "message": "Font substitution will alter page layout and text flow",
+          "severity": "medium"
+        }
+      ]
+    }
+  },
+  {
+    "event_type": "conversion_failed",
+    "core_metadata": {
+      "timestamp": "2026-09-28T12:25:45.666Z",
+      "level": "ERROR",
+      "logger": "pdf2webview",
+      "pid": 1230218
+    },
+    "job_context": {
+      "job_id": "d2e3f4a5",
+      "ref_id": "d4e5f6g7-h8i9-0123-defg-456789012345",
+      "stage": "failed",
+      "attempt": 3
+    },
+    "payload_metrics": {
+      "pdf_metadata": {
+        "filename": "scanned-research-paper.pdf",
+        "pdf_stem": "scanned-research-paper",
+        "file_size_bytes": 52428800,
+        "page_count": 320,
+        "has_ocr_text": false,
+        "is_scanned": true,
+        "pdf_version": "1.4"
+      }
+    },
+    "performance_metrics": {
+      "total_conversion_time_ms": 298765,
+      "stage_timings": {
+        "preprocessing_ms": 4567,
+        "text_extraction_ms": 0,
+        "font_analysis_ms": 0,
+        "layout_analysis_ms": 23456,
+        "ocr_processing_ms": 234567,
+        "image_extraction_ms": 45678
+      },
+      "resource_usage": {
+        "peak_memory_mb": 1542.8,
+        "avg_cpu_percent": 89.3
+      }
+    },
+    "errors_warnings": {
+      "error_type": "memory_error",
+      "error_code": "MEMORY_LIMIT_EXCEEDED",
+      "error_message": "Conversion exceeded memory limit during OCR processing of large scanned document",
+      "stack_trace": "Traceback (most recent call last):\n  File \"/opt/pdf2html/app/python_app/tools/ocr_processor.py\", line 234, in process_scanned_pages\n    raise MemoryError(f\"OCR memory limit exceeded: {memory_usage_mb:.1f}MB > {memory_limit_mb}MB\")\nMemoryError: OCR memory limit exceeded: 1542.8MB > 1024MB",
+      "recovery_action": "Job marked for retry with lower-resolution OCR settings",
+      "memory_exceeded": {
+        "limit_mb": 1024,
+        "usage_mb": 1542.8,
+        "stage": "ocr_processing"
+      },
+      "timeout_exceeded": {
+        "timeout_seconds": 300,
+        "elapsed_seconds": 298.7,
+        "stage": "ocr_processing"
+      },
+      "warnings": [
+        {
+          "code": "SCANNED_DOCUMENT_LARGE",
+          "message": "Document is scanned imagery (320 pages) requiring heavy OCR processing",
+          "severity": "high"
+        },
+        {
+          "code": "MEMORY_INTENSIVE",
+          "message": "OCR processing requires high memory allocation for image buffers",
+          "severity": "high"
+        }
+      ]
+    }
+  },
+  {
+    "event_type": "infra_snapshot",
+    "core_metadata": {
+      "timestamp": "2026-09-28T12:41:53.650Z",
+      "level": "WARNING",
+      "logger": "pdf2webview",
+      "pid": 1230218
+    },
+    "job_context": {
+      "job_id": "62de4c06",
+      "ref_id": "5512468c-a0a3-4465-a8f3-9da52bfcb536"
+    },
+    "infrastructure_metrics": {
+      "host_metrics": {
+        "hostname": "worker-node-01",
+        "cpu_cores": 4,
+        "total_memory_mb": 8192,
+        "available_memory_mb": 1024,
+        "disk_usage": {
+          "/opt/pdf2html/app/output": {
+            "total_gb": 200,
+            "free_gb": 78.4,
+            "used_pct": 60.8
+          },
+          "/opt/pdf2html/app/uploads": {
+            "total_gb": 100,
+            "free_gb": 24.6,
+            "used_pct": 75.4
+          },
+          "/tmp": {
+            "total_gb": 20,
+            "free_gb": 8.2,
+            "used_pct": 59.0
+          }
+        },
+        "load_average": [3.45, 2.89, 2.34],
+        "network_io": {
+          "bytes_sent": 4567890123,
+          "bytes_recv": 5678901234
+        }
+      },
+      "worker_metrics": {
+        "worker_id": "worker-1230218",
+        "node_id": "node-01",
+        "uptime_seconds": 28800,
+        "jobs_processed": 156,
+        "jobs_failed": 8,
+        "avg_processing_time_ms": 65432
+      },
+      "queue_metrics": {
+        "queue_length": 15,
+        "processing_count": 3,
+        "oldest_job_age_seconds": 7200,
+        "throughput_jobs_per_hour": 32,
+        "error_rate_percent": 5.1
+      }
+    },
+    "errors_warnings": {
+      "error_type": "timeout_error",
+      "error_code": "STUCK_JOB_TIMEOUT",
+      "error_message": "Job appears stuck at 'checking' stage for longer than threshold",
+      "warnings": [
+        {
+          "code": "WORKER_RECYCLE_DETECTED",
+          "message": "Multiple stuck jobs detected, likely due to worker process recycling",
+          "severity": "medium"
+        },
+        {
+          "code": "RESOURCE_CONTENTION",
+          "message": "High system load (3.45) may be affecting job processing",
+          "severity": "medium"
+        }
+      ]
+    }
+  },
+  {
+    "event_type": "conversion_failed",
+    "core_metadata": {
+      "timestamp": "2026-09-28T12:48:12.999Z",
+      "level": "ERROR",
+      "logger": "pdf2webview",
+      "pid": 1224458
+    },
+    "job_context": {
+      "job_id": "e7f8a9b0",
+      "ref_id": "e5f6g7h8-i9j0-1234-efgh-567890123456",
+      "stage": "failed",
+      "attempt": 1
+    },
+    "payload_metrics": {
+      "pdf_metadata": {
+        "filename": "corrupted-manual.pdf",
+        "pdf_stem": "corrupted-manual",
+        "file_size_bytes": 1234567,
+        "page_count": 48,
+        "has_ocr_text": true,
+        "is_scanned": false,
+        "pdf_version": "1.3"
+      }
+    },
+    "performance_metrics": {
+      "total_conversion_time_ms": 12345,
+      "stage_timings": {
+        "preprocessing_ms": 2345
+      }
+    },
+    "errors_warnings": {
+      "error_type": "corrupted_pdf",
+      "error_code": "PDF_XREF_CORRUPTED",
+      "error_message": "PDF cross-reference table is corrupted or malformed",
+      "stack_trace": "Traceback (most recent call last):\n  File \"/opt/pdf2html/app/python_app/tools/extract_pdf.py\", line 89, in check_pdf_suitability\n    raise PDFSuitabilityError(f\"Corrupted xref table at offset {xref_offset}\")\napp.tools.extract_pdf.PDFSuitabilityError: Corrupted xref table at offset 0x123456",
+      "recovery_action": "Attempted PDF repair with ghostscript but repair failed",
+      "corrupted_xref_tables": true,
+      "warnings": [
+        {
+          "code": "PDF_REPAIR_ATTEMPTED",
+          "message": "Attempted automatic PDF repair but file appears severely corrupted",
+          "severity": "high"
+        }
+      ]
+    }
+  }
+]

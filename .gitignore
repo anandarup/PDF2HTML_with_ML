@@ -32,6 +32,9 @@ token.json
 python_app/learner_progress.json
 python_app/jobs/
 python_app/uploads/
+# Runtime application logs + infra snapshots (see python_app/app_logging.py,
+# docs/07-LOGGING-AND-DEBUGGING.md) — generated on the VM, never committed.
+logs/
 *.bak
 *.bak.*
 __pycache__/

@@ -1,0 +1,832 @@
+{
+  "description": "PDF2HTML Microservice Structured Log Schema",
+  "version": "1.0.0",
+  "schema": {
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "conversion_start",
+        "conversion_stage",
+        "conversion_complete",
+        "conversion_failed",
+        "job_queued",
+        "job_processing",
+        "job_completed",
+        "job_failed",
+        "infra_snapshot",
+        "worker_heartbeat",
+        "cleanup_triggered",
+        "webhook_sent"
+      ],
+      "description": "Type of logging event"
+    },
+    
+    "core_metadata": {
+      "type": "object",
+      "required": ["timestamp", "level", "logger", "pid"],
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp with milliseconds"
+        },
+        "level": {
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+          "description": "Log severity level"
+        },
+        "logger": {
+          "type": "string",
+          "description": "Logger name (e.g., 'pdf2webview', 'conversion_job')"
+        },
+        "pid": {
+          "type": "integer",
+          "description": "Process ID"
+        }
+      }
+    },
+    
+    "job_context": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string",
+          "description": "Unique job identifier (8-char hex)"
+        },
+        "ref_id": {
+          "type": "string",
+          "description": "Unique reference ID (UUID v4)"
+        },
+        "upload_ref": {
+          "type": "string",
+          "description": "Upload reference identifier"
+        },
+        "stage": {
+          "type": "string",
+          "description": "Current processing stage",
+          "enum": [
+            "queued",
+            "checking",
+            "extracting",
+            "analyzing", 
+            "building",
+            "publishing",
+            "completed",
+            "failed",
+            "cleanup"
+          ]
+        },
+        "attempt": {
+          "type": "integer",
+          "description": "Retry attempt number (1-indexed)"
+        }
+      }
+    },
+    
+    "payload_metrics": {
+      "type": "object",
+      "properties": {
+        "pdf_metadata": {
+          "type": "object",
+          "properties": {
+            "filename": {
+              "type": "string",
+              "description": "Original PDF filename"
+            },
+            "pdf_stem": {
+              "type": "string",
+              "description": "PDF filename without extension"
+            },
+            "file_size_bytes": {
+              "type": "integer",
+              "description": "PDF file size in bytes"
+            },
+            "page_count": {
+              "type": "integer",
+              "description": "Total number of pages in PDF"
+            },
+            "has_ocr_text": {
+              "type": "boolean",
+              "description": "Whether PDF contains OCR'd text layer"
+            },
+            "is_scanned": {
+              "type": "boolean",
+              "description": "Whether PDF is scanned/imagery"
+            },
+            "pdf_version": {
+              "type": "string",
+              "description": "PDF specification version (e.g., '1.4', '1.7')"
+            }
+          }
+        },
+        "content_metrics": {
+          "type": "object",
+          "properties": {
+            "embedded_images_count": {
+              "type": "integer",
+              "description": "Number of embedded images in PDF"
+            },
+            "embedded_fonts_count": {
+              "type": "integer",
+              "description": "Number of embedded fonts in PDF"
+            },
+            "text_chars_count": {
+              "type": "integer",
+              "description": "Total characters in extracted text"
+            },
+            "tables_detected": {
+              "type": "integer",
+              "description": "Number of tables detected in PDF"
+            },
+            "figures_detected": {
+              "type": "integer",
+              "description": "Number of figures/diagrams detected"
+            }
+          }
+        },
+        "complexity_score": {
+          "type": "object",
+          "properties": {
+            "overall": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Overall document complexity (0-100)"
+            },
+            "layout_density": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1,
+              "description": "Layout density score (0-1)"
+            },
+            "font_variety": {
+              "type": "integer",
+              "description": "Number of distinct font families used"
+            },
+            "color_depth": {
+              "type": "string",
+              "enum": ["bw", "grayscale", "color"],
+              "description": "Document color depth classification"
+            },
+            "has_math_formulas": {
+              "type": "boolean",
+              "description": "Whether document contains mathematical formulas"
+            },
+            "has_cjk_text": {
+              "type": "boolean",
+              "description": "Whether document contains CJK characters"
+            },
+            "has_right_to_left": {
+              "type": "boolean",
+              "description": "Whether document contains RTL text"
+            }
+          }
+        }
+      }
+    },
+    
+    "performance_metrics": {
+      "type": "object",
+      "properties": {
+        "total_conversion_time_ms": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Total conversion time in milliseconds"
+        },
+        "stage_timings": {
+          "type": "object",
+          "properties": {
+            "preprocessing_ms": {
+              "type": "number",
+              "description": "Time spent in preprocessing/validation"
+            },
+            "text_extraction_ms": {
+              "type": "number",
+              "description": "Time spent extracting text from PDF"
+            },
+            "font_analysis_ms": {
+              "type": "number",
+              "description": "Time spent analyzing and mapping fonts"
+            },
+            "layout_analysis_ms": {
+              "type": "number",
+              "description": "Time spent analyzing document layout"
+            },
+            "ocr_processing_ms": {
+              "type": "number",
+              "description": "Time spent in OCR processing (if applicable)"
+            },
+            "image_extraction_ms": {
+              "type": "number",
+              "description": "Time spent extracting embedded images"
+            },
+            "dom_generation_ms": {
+              "type": "number",
+              "description": "Time spent generating DOM/HTML structure"
+            },
+            "styling_application_ms": {
+              "type": "number",
+              "description": "Time spent applying CSS/styles"
+            },
+            "post_processing_ms": {
+              "type": "number",
+              "description": "Time spent in post-processing"
+            }
+          }
+        },
+        "resource_usage": {
+          "type": "object",
+          "properties": {
+            "peak_memory_mb": {
+              "type": "number",
+              "description": "Peak memory usage during conversion (MB)"
+            },
+            "avg_cpu_percent": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Average CPU utilization percentage"
+            },
+            "disk_io_bytes": {
+              "type": "integer",
+              "description": "Total disk I/O bytes read/written"
+            },
+            "image_processing_time_ms": {
+              "type": "number",
+              "description": "Time spent processing images"
+            },
+            "html_file_size_bytes": {
+              "type": "integer",
+              "description": "Generated HTML file size in bytes"
+            },
+            "total_output_size_bytes": {
+              "type": "integer",
+              "description": "Total output directory size in bytes"
+            }
+          }
+        },
+        "throughput_metrics": {
+          "type": "object",
+          "properties": {
+            "pages_per_second": {
+              "type": "number",
+              "description": "Conversion throughput (pages/second)"
+            },
+            "bytes_per_second": {
+              "type": "number",
+              "description": "Processing throughput (bytes/second)"
+            },
+            "queue_wait_time_ms": {
+              "type": "number",
+              "description": "Time job spent waiting in queue"
+            },
+            "concurrency_level": {
+              "type": "integer",
+              "description": "Number of concurrent conversions running"
+            }
+          }
+        }
+      }
+    },
+    
+    "errors_warnings": {
+      "type": "object",
+      "properties": {
+        "error_type": {
+          "type": "string",
+          "enum": [
+            "validation_error",
+            "extraction_error",
+            "ocr_error",
+            "memory_error",
+            "timeout_error",
+            "io_error",
+            "corrupted_pdf",
+            "missing_fonts",
+            "unsupported_feature",
+            "network_error",
+            "storage_error",
+            "webhook_error"
+          ],
+          "description": "Category of error encountered"
+        },
+        "error_code": {
+          "type": "string",
+          "description": "Machine-readable error code"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "Human-readable error description"
+        },
+        "stack_trace": {
+          "type": "string",
+          "description": "Full exception stack trace (if applicable)"
+        },
+        "recovery_action": {
+          "type": "string",
+          "description": "Action taken to recover from error"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Warning code"
+              },
+              "message": {
+                "type": "string",
+                "description": "Warning message"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["low", "medium", "high"],
+                "description": "Warning severity level"
+              }
+            }
+          }
+        },
+        "missing_fonts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "List of font names missing from system"
+        },
+        "corrupted_xref_tables": {
+          "type": "boolean",
+          "description": "Whether PDF has corrupted xref tables"
+        },
+        "ocr_failures": {
+          "type": "object",
+          "properties": {
+            "failed_pages": {
+              "type": "array",
+              "items": {
+                "type": "integer"
+              },
+              "description": "Page numbers where OCR failed"
+            },
+            "confidence_scores": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "description": "OCR confidence scores per page"
+            },
+            "language_detection": {
+              "type": "string",
+              "description": "Detected language for OCR"
+            }
+          }
+        },
+        "memory_exceeded": {
+          "type": "object",
+          "properties": {
+            "limit_mb": {
+              "type": "number",
+              "description": "Memory limit in MB"
+            },
+            "usage_mb": {
+              "type": "number",
+              "description": "Memory usage at time of failure"
+            },
+            "stage": {
+              "type": "string",
+              "description": "Processing stage when memory exceeded"
+            }
+          }
+        },
+        "timeout_exceeded": {
+          "type": "object",
+          "properties": {
+            "timeout_seconds": {
+              "type": "number",
+              "description": "Timeout threshold in seconds"
+            },
+            "elapsed_seconds": {
+              "type": "number",
+              "description": "Time elapsed before timeout"
+            },
+            "stage": {
+              "type": "string",
+              "description": "Processing stage when timeout occurred"
+            }
+          }
+        }
+      }
+    },
+    
+    "infrastructure_metrics": {
+      "type": "object",
+      "properties": {
+        "host_metrics": {
+          "type": "object",
+          "properties": {
+            "hostname": {
+              "type": "string",
+              "description": "Hostname of the worker node"
+            },
+            "cpu_cores": {
+              "type": "integer",
+              "description": "Number of CPU cores available"
+            },
+            "total_memory_mb": {
+              "type": "number",
+              "description": "Total system memory in MB"
+            },
+            "available_memory_mb": {
+              "type": "number",
+              "description": "Available memory at snapshot time"
+            },
+            "disk_usage": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "total_gb": {
+                    "type": "number",
+                    "description": "Total disk space in GB"
+                  },
+                  "free_gb": {
+                    "type": "number",
+                    "description": "Free disk space in GB"
+                  },
+                  "used_pct": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "description": "Disk usage percentage"
+                  }
+                }
+              }
+            },
+            "load_average": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "maxItems": 3,
+              "description": "System load average (1min, 5min, 15min)"
+            },
+            "network_io": {
+              "type": "object",
+              "properties": {
+                "bytes_sent": {
+                  "type": "integer",
+                  "description": "Total bytes sent"
+                },
+                "bytes_recv": {
+                  "type": "integer",
+                  "description": "Total bytes received"
+                }
+              }
+            }
+          }
+        },
+        "worker_metrics": {
+          "type": "object",
+          "properties": {
+            "worker_id": {
+              "type": "string",
+              "description": "Worker process identifier"
+            },
+            "node_id": {
+              "type": "string",
+              "description": "Node/container identifier"
+            },
+            "uptime_seconds": {
+              "type": "number",
+              "description": "Worker uptime in seconds"
+            },
+            "jobs_processed": {
+              "type": "integer",
+              "description": "Total jobs processed by this worker"
+            },
+            "jobs_failed": {
+              "type": "integer",
+              "description": "Total jobs failed by this worker"
+            },
+            "avg_processing_time_ms": {
+              "type": "number",
+              "description": "Average job processing time"
+            }
+          }
+        },
+        "queue_metrics": {
+          "type": "object",
+          "properties": {
+            "queue_length": {
+              "type": "integer",
+              "description": "Current number of jobs in queue"
+            },
+            "processing_count": {
+              "type": "integer",
+              "description": "Number of jobs currently processing"
+            },
+            "oldest_job_age_seconds": {
+              "type": "number",
+              "description": "Age of oldest job in queue"
+            },
+            "throughput_jobs_per_hour": {
+              "type": "number",
+              "description": "Jobs processed per hour"
+            },
+            "error_rate_percent": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Percentage of jobs that failed"
+            }
+          }
+        }
+      }
+    },
+    
+    "webhook_integration": {
+      "type": "object",
+      "properties": {
+        "webhook_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Webhook endpoint URL"
+        },
+        "webhook_status": {
+          "type": "string",
+          "enum": ["pending", "sent", "delivered", "failed", "retrying"],
+          "description": "Current webhook delivery status"
+        },
+        "http_status": {
+          "type": "integer",
+          "description": "HTTP status code from webhook endpoint"
+        },
+        "response_time_ms": {
+          "type": "number",
+          "description": "Webhook response time in milliseconds"
+        },
+        "retry_count": {
+          "type": "integer",
+          "description": "Number of webhook delivery retries"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "Webhook delivery error message"
+        }
+      }
+    }
+  },
+  
+  "examples": {
+    "conversion_start": {
+      "event_type": "conversion_start",
+      "core_metadata": {
+        "timestamp": "2026-09-28T12:30:45.123Z",
+        "level": "INFO",
+        "logger": "pdf2webview",
+        "pid": 123456
+      },
+      "job_context": {
+        "job_id": "abc12345",
+        "ref_id": "550e8400-e29b-41d4-a716-446655440000",
+        "stage": "queued",
+        "attempt": 1
+      },
+      "payload_metrics": {
+        "pdf_metadata": {
+          "filename": "technical_report.pdf",
+          "pdf_stem": "technical_report",
+          "file_size_bytes": 5242880,
+          "page_count": 42,
+          "has_ocr_text": true,
+          "is_scanned": false,
+          "pdf_version": "1.7"
+        }
+      }
+    },
+    
+    "conversion_complete": {
+      "event_type": "conversion_complete",
+      "core_metadata": {
+        "timestamp": "2026-09-28T12:32:15.456Z",
+        "level": "INFO",
+        "logger": "pdf2webview",
+        "pid": 123456
+      },
+      "job_context": {
+        "job_id": "abc12345",
+        "ref_id": "550e8400-e29b-41d4-a716-446655440000",
+        "stage": "completed"
+      },
+      "payload_metrics": {
+        "pdf_metadata": {
+          "filename": "technical_report.pdf",
+          "pdf_stem": "technical_report",
+          "file_size_bytes": 5242880,
+          "page_count": 42
+        },
+        "content_metrics": {
+          "embedded_images_count": 12,
+          "embedded_fonts_count": 3,
+          "text_chars_count": 125000,
+          "tables_detected": 8,
+          "figures_detected": 6
+        },
+        "complexity_score": {
+          "overall": 65.5,
+          "layout_density": 0.72,
+          "font_variety": 5,
+          "color_depth": "color",
+          "has_math_formulas": true,
+          "has_cjk_text": false,
+          "has_right_to_left": false
+        }
+      },
+      "performance_metrics": {
+        "total_conversion_time_ms": 90456,
+        "stage_timings": {
+          "preprocessing_ms": 2345,
+          "text_extraction_ms": 15678,
+          "font_analysis_ms": 4567,
+          "layout_analysis_ms": 23456,
+          "ocr_processing_ms": 0,
+          "image_extraction_ms": 12345,
+          "dom_generation_ms": 15678,
+          "styling_application_ms": 6789,
+          "post_processing_ms": 3456
+        },
+        "resource_usage": {
+          "peak_memory_mb": 512.3,
+          "avg_cpu_percent": 45.6,
+          "disk_io_bytes": 10485760,
+          "image_processing_time_ms": 23456,
+          "html_file_size_bytes": 2097152,
+          "total_output_size_bytes": 5242880
+        },
+        "throughput_metrics": {
+          "pages_per_second": 0.46,
+          "bytes_per_second": 57968.2,
+          "queue_wait_time_ms": 1234,
+          "concurrency_level": 3
+        }
+      }
+    },
+    
+    "conversion_failed_missing_fonts": {
+      "event_type": "conversion_failed",
+      "core_metadata": {
+        "timestamp": "2026-09-28T12:35:22.789Z",
+        "level": "ERROR",
+        "logger": "pdf2webview",
+        "pid": 123457
+      },
+      "job_context": {
+        "job_id": "def67890",
+        "ref_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+        "stage": "failed"
+      },
+      "payload_metrics": {
+        "pdf_metadata": {
+          "filename": "presentation.pdf",
+          "pdf_stem": "presentation",
+          "file_size_bytes": 1048576,
+          "page_count": 15
+        }
+      },
+      "performance_metrics": {
+        "total_conversion_time_ms": 23456,
+        "stage_timings": {
+          "preprocessing_ms": 1234,
+          "text_extraction_ms": 5678,
+          "font_analysis_ms": 4567
+        }
+      },
+      "errors_warnings": {
+        "error_type": "missing_fonts",
+        "error_code": "PDF_FONT_MISSING",
+        "error_message": "Required fonts not found in system or embedded in PDF",
+        "stack_trace": "Traceback (most recent call last):\n  File \"/opt/pdf2html/app/python_app/convert.py\", line 145, in convert_pdf_to_html\n    extract_pdf_content(pdf_path, output_dir, progress_callback=progress_callback)\n  File \"/opt/pdf2html/app/python_app/tools/extract_pdf.py\", line 89, in extract_pdf_content\n    raise PDFFontMissingError(f\"Missing fonts: {missing_fonts}\")\napp.tools.extract_pdf.PDFFontMissingError: Missing fonts: ['HelveticaNeue-Light', 'Futura-Bold']",
+        "missing_fonts": ["HelveticaNeue-Light", "Futura-Bold"],
+        "warnings": [
+          {
+            "code": "FONT_SUBSTITUTION",
+            "message": "Attempting to substitute missing fonts with system alternatives",
+            "severity": "medium"
+          }
+        ]
+      }
+    },
+    
+    "infra_snapshot_memory_exceeded": {
+      "event_type": "infra_snapshot",
+      "core_metadata": {
+        "timestamp": "2026-09-28T12:40:33.111Z",
+        "level": "WARNING",
+        "logger": "pdf2webview",
+        "pid": 123458
+      },
+      "job_context": {
+        "job_id": "ghi24680",
+        "ref_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
+      },
+      "infrastructure_metrics": {
+        "host_metrics": {
+          "hostname": "worker-node-1",
+          "cpu_cores": 8,
+          "total_memory_mb": 16384,
+          "available_memory_mb": 2048,
+          "disk_usage": {
+            "/opt/pdf2html/app/output": {
+              "total_gb": 100,
+              "free_gb": 45.6,
+              "used_pct": 54.4
+            },
+            "/opt/pdf2html/app/uploads": {
+              "total_gb": 50,
+              "free_gb": 12.3,
+              "used_pct": 75.4
+            }
+          },
+          "load_average": [2.34, 1.89, 1.56],
+          "network_io": {
+            "bytes_sent": 1234567890,
+            "bytes_recv": 2345678901
+          }
+        },
+        "worker_metrics": {
+          "worker_id": "worker-123458",
+          "node_id": "node-1",
+          "uptime_seconds": 86400,
+          "jobs_processed": 245,
+          "jobs_failed": 12,
+          "avg_processing_time_ms": 45067
+        }
+      },
+      "errors_warnings": {
+        "error_type": "memory_error",
+        "error_code": "MEMORY_LIMIT_EXCEEDED",
+        "error_message": "Conversion exceeded memory limit of 1024 MB",
+        "memory_exceeded": {
+          "limit_mb": 1024,
+          "usage_mb": 1123.4,
+          "stage": "dom_generation"
+        }
+      }
+    },
+    
+    "worker_heartbeat": {
+      "event_type": "worker_heartbeat",
+      "core_metadata": {
+        "timestamp": "2026-09-28T12:45:00.000Z",
+        "level": "DEBUG",
+        "logger": "pdf2webview",
+        "pid": 123459
+      },
+      "infrastructure_metrics": {
+        "worker_metrics": {
+          "worker_id": "worker-123459",
+          "node_id": "node-2",
+          "uptime_seconds": 43200,
+          "jobs_processed": 123,
+          "jobs_failed": 5,
+          "avg_processing_time_ms": 56789
+        },
+        "queue_metrics": {
+          "queue_length": 8,
+          "processing_count": 3,
+          "oldest_job_age_seconds": 3600,
+          "throughput_jobs_per_hour": 45,
+          "error_rate_percent": 4.1
+        }
+      }
+    }
+  },
+  
+  "best_practices": {
+    "log_levels": {
+      "DEBUG": "Detailed diagnostic information for developers",
+      "INFO": "Normal operational events and milestones",
+      "WARNING": "Potential issues that don't prevent operation",
+      "ERROR": "Errors that prevent a specific operation but allow system to continue",
+      "CRITICAL": "Severe errors that require immediate attention"
+    },
+    
+    "context_enrichment": {
+      "required_context": "Always include job_context for conversion-related logs",
+      "trace_id": "Use consistent trace_id for end-to-end request tracing",
+      "correlation_id": "Include correlation_id for distributed tracing across services"
+    },
+    
+    "performance_logging": {
+      "timing_granularity": "Log stage timings at millisecond precision",
+      "resource_metrics": "Include memory, CPU, disk I/O metrics for performance analysis",
+      "throughput_calculation": "Calculate and log throughput metrics for capacity planning"
+    },
+    
+    "error_logging": {
+      "structured_errors": "Always include error_type, error_code, error_message",
+      "stack_traces": "Include full stack traces for ERROR and CRITICAL levels",
+      "recovery_actions": "Document recovery actions taken after errors"
+    }
+  }
+}

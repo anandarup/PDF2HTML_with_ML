@@ -1,0 +1,10 @@
+[Unit]
+Description=Run PDF2HTML retention sweep daily
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

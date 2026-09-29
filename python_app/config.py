@@ -171,6 +171,31 @@ RETENTION_TTL_DAYS = _env_int("RETENTION_TTL_DAYS", 30)  # Phase 7 cleanup
 # that hasn't set the token yet; set it before exposing this route publicly.
 DELETE_API_TOKEN = _env("DELETE_API_TOKEN", "")
 
+# ---------------------------------------------------------------------------
+# Developer analytics dashboard (/t-dashboard.html and its data API).
+#
+# Unlike the rest of the app (unauthenticated at Flask, gated at the API
+# Gateway), the dashboard is protected here with HTTP Basic Auth so it can be
+# exposed at a top-level URL without leaking operational data. Credentials are
+# read from the environment only and never logged or echoed by summary().
+#
+# If DASHBOARD_PASSWORD is empty (the default), the dashboard routes return 503
+# rather than serving unauthenticated -- fail closed, so a misconfigured deploy
+# never accidentally exposes it. Set both vars to enable it.
+# ---------------------------------------------------------------------------
+DASHBOARD_USER = _env("DASHBOARD_USER", "admin")
+DASHBOARD_PASSWORD = _env("DASHBOARD_PASSWORD", "")
+
+# Secret used to sign the dashboard's session cookie (custom login form, so the
+# browser's native Basic-Auth popup is replaced by a designed, centered login
+# page). Read from the environment in production; if unset we derive a stable
+# per-process random key so the app still runs -- sessions just won't survive a
+# restart (acceptable: users simply log in again). Set DASHBOARD_SECRET_KEY in
+# .env to make sessions persist across restarts/replicas.
+DASHBOARD_SECRET_KEY = _env("DASHBOARD_SECRET_KEY", "")
+# How long a dashboard login stays valid (seconds). Default 12h.
+DASHBOARD_SESSION_TTL = _env_int("DASHBOARD_SESSION_TTL", 12 * 3600)
+
 # Escape hatch for running a real conversion without touching object storage.
 # Defaults to True, which is the long-standing behaviour: convert.py uploads a
 # job's images and HTML to the buckets whenever the OCI SDK is importable, and
@@ -187,6 +212,31 @@ OCI_UPLOADS_ENABLED = _env_bool("OCI_UPLOADS_ENABLED", True)
 # than display it. Disable to save storage; the split view then relies on the
 # preserved source PDF alone.
 SPLIT_VIEW_PAGE_RASTERS = _env_bool("SPLIT_VIEW_PAGE_RASTERS", True)
+
+
+# ---------------------------------------------------------------------------
+# Application logging + infra snapshots (debugging intermittent failures).
+#
+# All app output previously went to stdout only (captured by journald with
+# no time-based retention). This adds a persistent, rotated file log plus an
+# automatic infra snapshot (CPU/mem/disk/process list) captured at the moment
+# a conversion or publish job fails, so an intermittent failure leaves a
+# forensic trail instead of just "it worked on retry."
+# ---------------------------------------------------------------------------
+LOG_DIR = Path(_env("LOG_DIR", str(_BASE_DIR.parent / "logs")))
+LOG_LEVEL = _env("LOG_LEVEL", "INFO").upper()
+# Kept in sync with logrotate's rotation count (see deploy/logrotate/pdf2html)
+# -- this is a safety net if logrotate isn't installed/running, not the
+# primary retention mechanism.
+LOG_RETENTION_DAYS = _env_int("LOG_RETENTION_DAYS", 7)
+LOG_MAX_BYTES = _env_int("LOG_MAX_BYTES", 20 * 1024 * 1024)  # 20 MB per file
+LOG_BACKUP_COUNT = _env_int("LOG_BACKUP_COUNT", LOG_RETENTION_DAYS)
+
+# Infra snapshots are written as one JSON-lines file per day under
+# LOG_DIR/snapshots/, so `grep <job_id>` across a week of files finds the
+# exact moment(s) a given job's environment was captured.
+SNAPSHOT_DIR = Path(_env("SNAPSHOT_DIR", str(LOG_DIR / "snapshots")))
+SNAPSHOT_RETENTION_DAYS = _env_int("SNAPSHOT_RETENTION_DAYS", 7)
 
 
 def summary() -> dict:
@@ -214,6 +264,8 @@ def summary() -> dict:
         "datalab_processing_location": DATALAB_PROCESSING_LOCATION,
         # Report only whether a token is set, never the token itself.
         "delete_api_token_configured": bool(DELETE_API_TOKEN),
+        # Report only whether dashboard auth is configured, never the password.
+        "dashboard_auth_configured": bool(DASHBOARD_PASSWORD),
     }
 
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=PDF2HTML retention sweep (uploads, expired jobs, infra snapshots)
+After=network.target
+
+[Service]
+Type=oneshot
+User=diksha-dev-poc-user
+Group=diksha-dev-poc-user
+WorkingDirectory=/opt/pdf2html/app/python_app
+Environment="PATH=/opt/pdf2html/venv/bin:/usr/bin"
+EnvironmentFile=/opt/pdf2html/app/.env
+ExecStart=/opt/pdf2html/venv/bin/python3 /opt/pdf2html/app/python_app/cleanup_job.py

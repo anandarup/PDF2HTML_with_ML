@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PDF2HTML — Analytics</title>
+<script src="/static/vendor/react.production.min.js"></script>
+<script src="/static/vendor/react-dom.production.min.js"></script>
+<script src="/static/vendor/prop-types.min.js"></script>
+<script src="/static/vendor/lodash.min.js"></script>
+<script src="/static/vendor/Recharts.min.js"></script>
+<script src="/static/vendor/tailwind.js"></script>
+<script src="/static/vendor/babel.min.js"></script>
+<style>
+  html, body { background: #0a0e14; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #0f141c; }
+  ::-webkit-scrollbar-thumb { background: #2a3441; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #3a4553; }
+  .tabular { font-variant-numeric: tabular-nums; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Monaco, "Cascadia Code", monospace; }
+  @keyframes pulse-red { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { box-shadow: 0 0 0 4px rgba(239,68,68,0); } }
+  .failed-pulse { animation: pulse-red 2s infinite; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useMemo } = React;
+const {
+  ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, Cell
+} = Recharts;
+
+// ===========================================================================
+// SHARED CONSTANTS
+// ===========================================================================
+const ERROR_TYPES = [
+  { code: "ERR_MISSING_FONT",   label: "Missing Fonts",     color: "#f59e0b" },
+  { code: "ERR_TIMEOUT",        label: "Timeout / Memory",  color: "#ef4444" },
+  { code: "ERR_XREF_CORRUPT",   label: "Corrupted XRef",    color: "#a855f7" },
+  { code: "ERR_OCR_FAILURE",    label: "OCR Failure",       color: "#ec4899" },
+  { code: "ERR_UNSUPPORTED",    label: "Unsupported Feat.", color: "#14b8a6" },
+  { code: "ERR_STORAGE",        label: "Storage / IO",      color: "#6366f1" },
+];
+const STATUS = {
+  success: { label: "Success", color: "#10b981", badge: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
+  warning: { label: "Warning", color: "#f59e0b", badge: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
+  error:   { label: "Error",   color: "#ef4444", badge: "bg-red-500/15 text-red-400 border-red-500/30" },
+};
+const FILES = [
+  "Chap 5 (1).pdf", "01 Do belo ki Katha.pdf", "corporate-presentation.pdf",
+  "scanned-research-paper.pdf", "corrupted-manual.pdf", "annual-report-2026.pdf",
+  "user-guide-v3.pdf", "invoice-batch-Q3.pdf", "physics-notes.pdf", "lab-manual.pdf",
+];
+
+function hex8() { return Math.random().toString(16).slice(2, 10).padEnd(8, "0"); }
+function uuid() {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => {
+    const r = (Math.random() * 16) | 0; return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+  });
+}
+function fmtBytes(b) {
+  if (b < 1024) return b + " B";
+  if (b < 1048576) return (b / 1024).toFixed(1) + " KB";
+  return (b / 1048576).toFixed(1) + " MB";
+}
+function fmtDuration(ms) {
+  if (ms === 0) return "—";
+  if (ms < 1000) return ms.toFixed(0) + " ms";
+  return (ms / 1000).toFixed(1) + " s";
+}
+function fmtMs(ms) {
+  if (ms === 0) return "—";
+  if (ms < 1000) return ms.toFixed(0) + "ms";
+  return (ms / 1000).toFixed(1) + "s";
+}
+
+// ===========================================================================
+// MOCK EXECUTIONS
+// ===========================================================================
+const STAGE_DEFS = [
+  ["preprocessing",   "Preprocessing"],
+  ["parsing",         "PDF Parsing"],
+  ["font_analysis",   "Font Extraction"],
+  ["ocr_processing",  "OCR Processing"],
+  ["layout_analysis", "Layout Analysis"],
+  ["dom_generation",  "HTML Render"],
+];
+const STAGE_TIMING_KEYS = {
+  preprocessing: "preprocessing_ms", parsing: "text_extraction_ms",
+  font_analysis: "font_analysis_ms", ocr_processing: "ocr_processing_ms",
+  layout_analysis: "layout_analysis_ms", dom_generation: "dom_generation_ms",
+};
+
+function buildStages(durs, failIdx) {
+  let start = 0;
+  return STAGE_DEFS.map(([id, label], i) => {
+    let status = "ok";
+    if (failIdx >= 0 && i > failIdx) status = "skipped";
+    else if (failIdx === i) status = "error";
+    const dur = status === "skipped" ? 0 : durs[i];
+    const s = { id, label, start, dur, status };
+    start += dur;
+    return s;
+  });
+}
+function makeTrace({ filename, status, pages, fileSize, worker, payload, durs, failIdx, error, logs }) {
+  return {
+    job_id: hex8(), ref_id: uuid(), filename, status,
+    worker, payload: { ...payload, file_size_bytes: fileSize, page_count: pages },
+    stages: buildStages(durs, failIdx), error, logs,
+  };
+}
+
+const FAILED_SCAN = makeTrace({
+  filename: "scanned-research-paper.pdf", status: "error", pages: 320, fileSize: 52428800,
+  worker: { worker_id: "worker-1230218", node_id: "node-01", hostname: "oci-pdf-worker-01",
+    cpu_cores: 4, avg_cpu_pct: 89.3, total_memory_mb: 8192, mem_limit_mb: 2048,
+    peak_mem_mb: 2103.4, python: "3.11.6", queue_backend: "oci-queue" },
+  payload: { pdf_version: "1.4", is_scanned: true, has_ocr_text: false, encrypted: false,
+    embedded_fonts: 0, embedded_images: 320, tables_detected: 0, color_depth: "grayscale", has_cjk: false, complexity: 91.2 },
+  durs: [4567, 18230, 1240, 210400, 64328, 0], failIdx: 4,
+  error: { type: "memory_error", code: "MEMORY_LIMIT_EXCEEDED", failed_stage: "layout_analysis",
+    message: "Layout analysis exceeded worker memory limit (2103.4 MB > 2048 MB) while building the page-region graph for a 320-page scanned document." },
+  logs: [
+    { t: "12:20:33.011", lvl: "INFO",  msg: "Starting conversion attempt=3", key: "start" },
+    { t: "12:20:33.014", lvl: "INFO",  msg: "PDF suitability check: 320 pages, 50.0 MB, version 1.4", key: "suitability" },
+    { t: "12:20:37.578", lvl: "INFO",  msg: "[parsing] docling: xref table OK, 320 page objects resolved", key: "parsing_done" },
+    { t: "12:20:55.808", lvl: "WARN",  msg: "[font_analysis] no embedded fonts found; document is image-only (scanned)", key: "font_warn" },
+    { t: "12:20:57.048", lvl: "INFO",  msg: "[ocr_processing] engine=tesseract lang=eng dpi=300, dispatching 320 pages", key: "ocr_start" },
+    { t: "12:23:44.901", lvl: "INFO",  msg: "[ocr_processing] 240/320 pages complete (rss=1788.1MB)", key: "ocr_mid" },
+    { t: "12:24:07.440", lvl: "INFO",  msg: "[ocr_processing] 320/320 pages complete, text layer synthesized", key: "ocr_done" },
+    { t: "12:24:07.441", lvl: "INFO",  msg: "[layout_analysis] building page-region adjacency graph for 320 pages", key: "layout_start" },
+    { t: "12:24:58.220", lvl: "WARN",  msg: "[layout_analysis] rss=1962.3MB approaching cgroup limit 2048MB", key: "layout_warn" },
+    { t: "12:25:11.768", lvl: "ERROR", msg: "MemoryError: OCR memory limit exceeded: 2103.4MB > 2048MB", key: "layout_end" },
+    { t: "12:25:11.769", lvl: "ERROR", msg: "  File \"tools/layout.py\", line 88, in cluster_regions", key: "trace1" },
+    { t: "12:25:11.812", lvl: "WARN",  msg: "Infra snapshot captured (conversion_failed)", key: "snapshot" },
+    { t: "12:25:11.813", lvl: "ERROR", msg: "Conversion failed stage=layout_analysis, marking terminal error state", key: "terminal" },
+    { t: "12:25:11.850", lvl: "INFO",  msg: "[dom_generation] SKIPPED (upstream failure)", key: "render" },
+  ],
+});
+
+const SUCCESS_SCAN = makeTrace({
+  filename: "scanned-research-paper.pdf", status: "success", pages: 320, fileSize: 52428800,
+  worker: { worker_id: "worker-highmem-04", node_id: "node-hm-01", hostname: "oci-pdf-highmem-04",
+    cpu_cores: 8, avg_cpu_pct: 62.1, total_memory_mb: 32768, mem_limit_mb: 8192,
+    peak_mem_mb: 3184.6, python: "3.11.6", queue_backend: "oci-queue-highmem" },
+  payload: { pdf_version: "1.4", is_scanned: true, has_ocr_text: false, encrypted: false,
+    embedded_fonts: 0, embedded_images: 320, tables_detected: 6, color_depth: "grayscale", has_cjk: false, complexity: 91.2 },
+  durs: [4210, 17980, 1180, 142300, 38760, 44120], failIdx: -1, error: null,
+  logs: [
+    { t: "12:41:02.004", lvl: "INFO",  msg: "Starting conversion attempt=1 queue=highmem", key: "start" },
+    { t: "12:41:02.009", lvl: "INFO",  msg: "PDF suitability check: 320 pages, 50.0 MB, version 1.4", key: "suitability" },
+    { t: "12:41:06.219", lvl: "INFO",  msg: "[parsing] docling: xref table OK, 320 page objects resolved", key: "parsing_done" },
+    { t: "12:41:24.199", lvl: "WARN",  msg: "[font_analysis] no embedded fonts found; document is image-only (scanned)", key: "font_warn" },
+    { t: "12:41:25.379", lvl: "INFO",  msg: "[ocr_processing] engine=tesseract lang=eng dpi=200 (lowered), dispatching 320 pages", key: "ocr_start" },
+    { t: "12:43:00.100", lvl: "INFO",  msg: "[ocr_processing] 240/320 pages complete (rss=2410.7MB)", key: "ocr_mid" },
+    { t: "12:43:20.100", lvl: "INFO",  msg: "[ocr_processing] 320/320 pages complete, text layer synthesized", key: "ocr_done" },
+    { t: "12:43:20.101", lvl: "INFO",  msg: "[layout_analysis] building page-region adjacency graph for 320 pages", key: "layout_start" },
+    { t: "12:43:47.679", lvl: "INFO",  msg: "[layout_analysis] region graph built, rss=3184.6MB (limit 8192MB OK)", key: "layout_end" },
+    { t: "12:44:26.439", lvl: "INFO",  msg: "[dom_generation] rendered 320 pages, 6 tables, output 8.4MB", key: "render" },
+    { t: "12:44:26.560", lvl: "INFO",  msg: "Conversion completed successfully in 248.6s", key: "terminal" },
+  ],
+});
+
+function randomTrace(status, pages, fileSize, filename) {
+  const failIdx = status === "error" ? 1 + Math.floor(Math.random() * 4) : -1;
+  const durs = [
+    2000 + Math.random() * 4000, 5000 + Math.random() * 20000, 800 + Math.random() * 3000,
+    pages > 100 ? 20000 + Math.random() * 120000 : 2000 + Math.random() * 8000,
+    8000 + Math.random() * 40000, 5000 + Math.random() * 30000,
+  ];
+  const errType = status === "error" ? ERROR_TYPES[Math.floor(Math.random() * ERROR_TYPES.length)].code
+    : (status === "warning" ? "ERR_MISSING_FONT" : null);
+  return makeTrace({
+    filename, status, pages, fileSize,
+    worker: { worker_id: "worker-" + hex8().slice(0,7), node_id: "node-0" + (1 + Math.floor(Math.random()*3)),
+      hostname: "oci-pdf-worker-0" + (1 + Math.floor(Math.random()*3)), cpu_cores: 4,
+      avg_cpu_pct: 30 + Math.random()*60, total_memory_mb: 8192, mem_limit_mb: 2048,
+      peak_mem_mb: 300 + Math.random()*1600, python: "3.11.6", queue_backend: "oci-queue" },
+    payload: { pdf_version: ["1.3","1.4","1.7"][Math.floor(Math.random()*3)],
+      is_scanned: Math.random() < 0.3, has_ocr_text: Math.random() < 0.7, encrypted: false,
+      embedded_fonts: Math.floor(Math.random()*8), embedded_images: Math.floor(Math.random()*50),
+      tables_detected: Math.floor(Math.random()*12), color_depth: ["bw","grayscale","color"][Math.floor(Math.random()*3)],
+      has_cjk: false, complexity: Math.round(20 + Math.random()*75) },
+    durs, failIdx,
+    error: errType ? { type: "error", code: errType, failed_stage: STAGE_DEFS[Math.max(failIdx,0)][0], message: errType + " encountered during conversion." } : null,
+    logs: [
+      { t: "—", lvl: "INFO", msg: "Starting conversion", key: "start" },
+      { t: "—", lvl: status === "error" ? "ERROR" : "INFO", msg: status === "error" ? (errType + " raised") : "Conversion completed successfully", key: "terminal" },
+    ],
+  });
+}
+function pickStatus() { const r = Math.random(); if (r < 0.82) return "success"; if (r < 0.91) return "warning"; return "error"; }
+
+const EXECUTIONS = (() => {
+  const rows = [];
+  rows.push({ trace: FAILED_SCAN, minutesAgo: 4 });
+  rows.push({ trace: SUCCESS_SCAN, minutesAgo: 2 });
+  for (let i = 0; i < 48; i++) {
+    const status = pickStatus();
+    const pages = 5 + Math.floor(Math.random() * 320);
+    const fileSize = 200_000 + Math.floor(Math.random() * 50_000_000);
+    const filename = FILES[Math.floor(Math.random() * FILES.length)];
+    rows.push({ trace: randomTrace(status, pages, fileSize, filename), minutesAgo: 6 + i * (3 + Math.random() * 8) });
+  }
+  return rows.map(r => {
+    const t = r.trace;
+    const total = t.stages.reduce((m, s) => Math.max(m, s.start + s.dur), 0);
+    return { ...t, duration_ms: total, pages_per_second: t.payload.page_count / (total / 1000), ts: new Date(Date.now() - r.minutesAgo * 60_000) };
+  }).sort((a, b) => b.ts - a.ts);
+})();
+
+function percentile(arr, p) { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.floor((p / 100) * s.length))]; }
+let KPI = (() => {
+  const total = EXECUTIONS.length;
+  const errors = EXECUTIONS.filter(e => e.status === "error").length;
+  const durations = EXECUTIONS.map(e => e.duration_ms);
+  const pps = EXECUTIONS.filter(e => e.status !== "error").map(e => e.pages_per_second);
+  return { total, errorRate: (errors / total) * 100, p95: percentile(durations, 95), p99: percentile(durations, 99), avgPps: pps.reduce((a, b) => a + b, 0) / (pps.length || 1) };
+})();
+let TIME_SERIES = (() => {
+  const buckets = {};
+  EXECUTIONS.forEach(e => { const h = Math.floor((Date.now() - e.ts) / 3_600_000); buckets[h] = buckets[h] || { success: 0, warning: 0, error: 0 }; buckets[h][e.status] += 1; });
+  const maxH = Math.max(...Object.keys(buckets).map(Number), 0);
+  const rows = [];
+  for (let h = maxH; h >= 0; h--) rows.push({ label: h === 0 ? "now" : `-${h}h`, ...(buckets[h] || { success: 0, warning: 0, error: 0 }) });
+  return rows;
+})();
+let BOTTLENECKS = (() => {
+  const counts = {};
+  EXECUTIONS.forEach(e => { if (e.error && e.error.code) counts[e.error.code] = (counts[e.error.code] || 0) + 1; });
+  return ERROR_TYPES.map(t => ({ ...t, count: counts[t.code] || 0 })).sort((a, b) => b.count - a.count);
+})();
+
+// ===========================================================================
+// LIVE DATA — replace the mock EXECUTIONS/KPI/TIME_SERIES/BOTTLENECKS with
+// values parsed from the real app log, fetched from /api/dashboard-data.
+// The endpoint shares the dashboard's Basic-Auth gate; the browser already
+// holds those credentials from loading this page, so a same-origin fetch
+// reuses them automatically (no token handling here).
+// ===========================================================================
+const ERROR_META = Object.fromEntries(ERROR_TYPES.map(t => [t.code, t]));
+
+// Build a UI-shaped "trace" from a flat real execution so TraceView/Compare
+// don't crash on fields the logs don't carry. Real logs have no per-stage
+// timings, worker specs, or per-line log streams, so we synthesize a minimal,
+// clearly-labelled single-stage trace and mark it limited-detail.
+function synthTraceFromReal(e) {
+  const durMs = e.duration_ms || 0;
+  const failed = e.status === "error";
+  const running = e.status === "running";
+  const stages = [
+    { id: "conversion", label: "Conversion", start: 0, dur: durMs,
+      status: failed ? "error" : (running ? "warn" : "ok") },
+  ];
+  return {
+    job_id: e.job_id,
+    ref_id: e.ref_id || "(none)",
+    filename: e.filename,
+    status: running ? "warning" : e.status,   // UI has no "running" badge; show as warning
+    _limitedDetail: true,
+    _running: running,
+    worker: {
+      worker_id: "(from log)", node_id: "(from log)", hostname: "(from log)",
+      cpu_cores: "—", avg_cpu_pct: 0, total_memory_mb: 0, mem_limit_mb: 0,
+      peak_mem_mb: 0, python: "—", queue_backend: "—",
+    },
+    payload: {
+      file_size_bytes: e.html_file_size_bytes || 0,
+      page_count: e.page_count || 0,
+      pdf_version: "—", is_scanned: false, has_ocr_text: false, encrypted: false,
+      embedded_fonts: 0, embedded_images: e.image_count || 0, tables_detected: 0,
+      color_depth: "—", has_cjk: false, complexity: 0,
+    },
+    stages,
+    error: failed ? {
+      type: "error", code: e.error_code || "ERR_UNKNOWN", failed_stage: "conversion",
+      message: "Conversion failed. See the app log for the full traceback (this row is reconstructed from log lines, which don't carry a structured error payload).",
+    } : null,
+    logs: [
+      { t: e.ts ? new Date(e.ts).toLocaleTimeString() : "—", lvl: "INFO", msg: "Starting conversion (reconstructed from app.log)", key: "start" },
+      running
+        ? { t: "—", lvl: "WARN", msg: "No terminal log line found — job may still be running or was abandoned by a recycled worker.", key: "terminal" }
+        : (failed
+            ? { t: "—", lvl: "ERROR", msg: (e.error_code || "error") + " — conversion failed (see app.log for traceback)", key: "terminal" }
+            : { t: "—", lvl: "INFO", msg: `Conversion finished in ${(durMs/1000).toFixed(1)}s, ${e.page_count || 0} pages`, key: "terminal" }),
+    ],
+    duration_ms: durMs,
+    pages_per_second: (e.page_count && durMs) ? e.page_count / (durMs / 1000) : 0,
+    ts: e.ts ? new Date(e.ts) : new Date(0),
+  };
+}
+
+// Recompute KPI/TIME_SERIES/BOTTLENECKS/EXECUTIONS in place from a real payload.
+function applyRealPayload(payload) {
+  const execs = (payload.executions || []).map(synthTraceFromReal).sort((a, b) => b.ts - a.ts);
+  // Reassign the module-level bindings the components read.
+  EXECUTIONS.length = 0;
+  execs.forEach(x => EXECUTIONS.push(x));
+
+  const k = payload.kpis || {};
+  KPI = {
+    total: k.total_processed || 0,
+    errorRate: k.error_rate_pct || 0,
+    p95: k.p95_latency_ms || 0,
+    p99: k.p99_latency_ms || 0,
+    avgPps: k.avg_pages_per_sec || 0,
+  };
+
+  TIME_SERIES = (payload.time_series || []).map(b => ({
+    label: b.label, success: b.success || 0, warning: b.warning || 0, error: b.error || 0,
+  }));
+
+  BOTTLENECKS = (payload.bottlenecks || []).map(b => ({
+    code: b.code,
+    label: (ERROR_META[b.code] && ERROR_META[b.code].label) || b.code,
+    color: (ERROR_META[b.code] && ERROR_META[b.code].color) || "#6366f1",
+    count: b.count || 0,
+  }));
+}
+
+function findSuccessCounterpart(exec) {
+  if (exec.job_id === FAILED_SCAN.job_id) return EXECUTIONS.find(e => e.job_id === SUCCESS_SCAN.job_id);
+  return EXECUTIONS.find(e => e.filename === exec.filename && e.status === "success" && e.job_id !== exec.job_id);
+}
+
+// ===========================================================================
+// SCHEMA EXPORT
+// ===========================================================================
+function traceToSchemaRecord(exec) {
+  const total = exec.stages.reduce((m, s) => Math.max(m, s.start + s.dur), 0);
+  const stageTimings = {};
+  exec.stages.forEach(s => { const k = STAGE_TIMING_KEYS[s.id]; if (k) stageTimings[k] = Math.round(s.dur); });
+  const record = {
+    event_type: exec.status === "error" ? "conversion_failed" : "conversion_complete",
+    core_metadata: { timestamp: exec.ts.toISOString().replace("Z", "").slice(0, 23) + "Z", level: exec.status === "error" ? "ERROR" : "INFO", logger: "pdf2webview", pid: 1230218 },
+    job_context: { job_id: exec.job_id, ref_id: exec.ref_id, stage: exec.status === "error" ? "failed" : "completed" },
+    payload_metrics: {
+      pdf_metadata: { filename: exec.filename, pdf_stem: exec.filename.replace(/\.pdf$/i, ""), file_size_bytes: exec.payload.file_size_bytes, page_count: exec.payload.page_count, has_ocr_text: exec.payload.has_ocr_text, is_scanned: exec.payload.is_scanned, pdf_version: exec.payload.pdf_version },
+      content_metrics: { embedded_images_count: exec.payload.embedded_images, embedded_fonts_count: exec.payload.embedded_fonts, tables_detected: exec.payload.tables_detected },
+      complexity_score: { overall: exec.payload.complexity, color_depth: exec.payload.color_depth, has_cjk_text: exec.payload.has_cjk },
+    },
+    performance_metrics: {
+      total_conversion_time_ms: Math.round(total), stage_timings: stageTimings,
+      resource_usage: { peak_memory_mb: exec.worker.peak_mem_mb, avg_cpu_percent: Math.round(exec.worker.avg_cpu_pct * 10) / 10 },
+      throughput_metrics: { pages_per_second: Math.round((exec.payload.page_count / (total / 1000)) * 100) / 100 },
+    },
+    infrastructure_metrics: {
+      worker_metrics: { worker_id: exec.worker.worker_id, node_id: exec.worker.node_id },
+      host_metrics: { hostname: exec.worker.hostname, cpu_cores: exec.worker.cpu_cores, total_memory_mb: exec.worker.total_memory_mb },
+    },
+  };
+  if (exec.status === "error" && exec.error) {
+    record.errors_warnings = {
+      error_type: exec.error.type, error_code: exec.error.code, error_message: exec.error.message,
+      memory_exceeded: exec.error.code === "MEMORY_LIMIT_EXCEEDED" ? { limit_mb: exec.worker.mem_limit_mb, usage_mb: exec.worker.peak_mem_mb, stage: exec.error.failed_stage } : undefined,
+    };
+  }
+  return record;
+}
+
+function downloadJson(obj, filename) {
+  const json = JSON.stringify(obj, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// Lightweight JSON syntax highlighter → returns array of {text, cls} tokens per line.
+function highlightJson(json) {
+  const esc = json
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // token regex: strings (keys/values), numbers, booleans/null
+  return esc.replace(
+    /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g,
+    (match) => {
+      let cls = "text-amber-300"; // number
+      if (/^"/.test(match)) {
+        cls = /:$/.test(match) ? "text-sky-300" : "text-emerald-300"; // key vs string
+      } else if (/true|false/.test(match)) {
+        cls = "text-purple-300";
+      } else if (/null/.test(match)) {
+        cls = "text-slate-500";
+      }
+      return `<span class="${cls}">${match}</span>`;
+    }
+  );
+}
+
+// ===========================================================================
+// LOG DIVERGENCE ALIGNMENT
+// ===========================================================================
+function alignLogs(leftLogs, rightLogs) {
+  const rightKeys = new Set(rightLogs.map(l => l.key));
+  const leftKeys = new Set(leftLogs.map(l => l.key));
+  let divergeKey = null;
+  for (const l of leftLogs) { if (l.lvl === "ERROR" || !rightKeys.has(l.key)) { divergeKey = l.key; break; } }
+  const annotate = (logs, otherKeys) => {
+    let diverged = false;
+    return logs.map(l => { if (l.key === divergeKey) diverged = true; return { ...l, diverged, shared: otherKeys.has(l.key) }; });
+  };
+  return { left: annotate(leftLogs, rightKeys), right: annotate(rightLogs, leftKeys), divergeKey };
+}
+
+// ===========================================================================
+// SHARED UI
+// ===========================================================================
+const STAGE_COLORS = {
+  ok:      { bar: "#10b981", text: "text-emerald-400", dot: "#10b981" },
+  warn:    { bar: "#f59e0b", text: "text-amber-400",   dot: "#f59e0b" },
+  error:   { bar: "#ef4444", text: "text-red-400",     dot: "#ef4444" },
+  skipped: { bar: "#374151", text: "text-slate-500",   dot: "#4b5563" },
+};
+const LVL_STYLE = { INFO: "text-slate-400", WARN: "text-amber-400", ERROR: "text-red-400" };
+
+function Panel({ title, right, children, className, alert }) {
+  return (
+    <div className={`bg-[#0f141c] border rounded-lg ${alert ? "border-red-500/40" : "border-[#1c2530]"} ${className || ""}`}>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#1c2530]">
+        <h3 className="text-sm font-semibold text-slate-200">{title}</h3>{right}
+      </div>
+      <div className="p-4">{children}</div>
+    </div>
+  );
+}
+function StatusBadge({ status }) {
+  const s = STATUS[status];
+  return (
+    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-medium ${s.badge}`}>
+      <span className="w-1.5 h-1.5 rounded-full" style={{ background: s.color }} />{s.label}
+    </span>
+  );
+}
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="bg-[#0a0e14] border border-[#2a3441] rounded-md px-3 py-2 text-xs shadow-xl">
+      <div className="text-slate-300 font-medium mb-1">{label}</div>
+      {payload.map((p, i) => (
+        <div key={i} className="flex items-center gap-2 tabular">
+          <span className="w-2 h-2 rounded-sm" style={{ background: p.color || p.fill }} />
+          <span className="text-slate-400">{p.name}</span><span className="text-slate-200 ml-auto">{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+function PayloadRow({ label, value, flag, highlight }) {
+  const color = flag === "danger" ? "text-red-400" : flag === "ok" ? "text-emerald-400" : flag === "warn" ? "text-amber-400" : "text-slate-200";
+  return (
+    <div className={`flex items-center justify-between py-1.5 border-b border-[#141a22] text-xs ${highlight ? "bg-amber-500/5 -mx-1 px-1 rounded" : ""}`}>
+      <span className="text-slate-500">{label}</span><span className={`font-medium ${color}`}>{value}</span>
+    </div>
+  );
+}
+function StatChip({ label, value, warn }) {
+  return (
+    <div className="bg-[#0a0e14] border border-[#1c2530] rounded-md px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-slate-500">{label}</div>
+      <div className={`text-sm font-semibold tabular mt-0.5 ${warn ? "text-red-400" : "text-slate-200"}`}>{value}</div>
+    </div>
+  );
+}
+
+function CopyJsonButton({ getRecord, label = "Copy trace as JSON" }) {
+  const [state, setState] = useState("idle");
+  const doCopy = async () => {
+    const json = JSON.stringify(getRecord(), null, 2);
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(json); }
+      else {
+        const ta = document.createElement("textarea");
+        ta.value = json; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta);
+      }
+      setState("copied");
+    } catch (e) { setState("error"); }
+    setTimeout(() => setState("idle"), 1800);
+  };
+  return (
+    <button onClick={doCopy}
+      className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${
+        state === "copied" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+        : state === "error" ? "border-red-500/40 bg-red-500/10 text-red-300"
+        : "border-[#2a3441] bg-[#0a0e14] text-slate-300 hover:bg-[#1c2530] hover:text-white"}`}>
+      {state === "copied" ? "✓ Copied" : state === "error" ? "✗ Copy failed" : "⧉ " + label}
+    </button>
+  );
+}
+function DownloadJsonButton({ getRecord, filename, label = "Download .json" }) {
+  const [state, setState] = useState("idle");
+  const doDownload = () => {
+    try { downloadJson(getRecord(), typeof filename === "function" ? filename() : filename); setState("done"); }
+    catch (e) { setState("error"); }
+    setTimeout(() => setState("idle"), 1800);
+  };
+  return (
+    <button onClick={doDownload}
+      className={`px-3 py-1.5 rounded-md border text-xs font-medium transition-colors ${
+        state === "done" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+        : state === "error" ? "border-red-500/40 bg-red-500/10 text-red-300"
+        : "border-[#2a3441] bg-[#0a0e14] text-slate-300 hover:bg-[#1c2530] hover:text-white"}`}>
+      {state === "done" ? "✓ Saved" : state === "error" ? "✗ Failed" : "↓ " + label}
+    </button>
+  );
+}
+
+// NEW: collapsible Raw JSON preview with syntax highlighting + line numbers.
+function RawJsonPreview({ getRecord, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  const json = useMemo(() => JSON.stringify(getRecord(), null, 2), [getRecord]);
+  const lines = json.split("\n");
+  const sizeKb = (new Blob([json]).size / 1024).toFixed(1);
+  return (
+    <div className="bg-[#0f141c] border border-[#1c2530] rounded-lg">
+      <button onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-4 py-3 border-b border-[#1c2530] text-left">
+        <div className="flex items-center gap-2">
+          <span className={`text-slate-500 transition-transform inline-block ${open ? "rotate-90" : ""}`}>▸</span>
+          <h3 className="text-sm font-semibold text-slate-200">Raw JSON Preview</h3>
+          <span className="text-[10px] text-slate-600 mono">{lines.length} lines · {sizeKb} KB · schema record</span>
+        </div>
+        <span className="text-[11px] text-slate-500">{open ? "hide" : "show"}</span>
+      </button>
+      {open && (
+        <div className="p-4">
+          <div className="flex items-center justify-end gap-2 mb-3">
+            <CopyJsonButton getRecord={getRecord} label="Copy" />
+          </div>
+          <div className="bg-black rounded-md border border-[#1c2530] overflow-auto max-h-[420px]">
+            <div className="flex text-[11px] mono leading-relaxed">
+              {/* gutter */}
+              <div className="select-none text-right text-slate-700 px-3 py-3 border-r border-[#1c2530] bg-[#08090d]">
+                {lines.map((_, i) => <div key={i}>{i + 1}</div>)}
+              </div>
+              {/* code */}
+              <pre className="px-3 py-3 text-slate-300 whitespace-pre">
+                {lines.map((ln, i) => (
+                  <div key={i} dangerouslySetInnerHTML={{ __html: highlightJson(ln) || "&nbsp;" }} />
+                ))}
+              </pre>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 mt-2 text-[10px] text-slate-600">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-sky-300" />key</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-emerald-300" />string</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-amber-300" />number</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-purple-300" />boolean</span>
+            <span className="ml-auto">read-only preview of the exact record copied/downloaded</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Waterfall({ trace, sharedTotal }) {
+  const total = sharedTotal || trace.stages.reduce((m, s) => Math.max(m, s.start + s.dur), 0);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center text-[10px] text-slate-600 mono mb-1">
+        <div className="w-28 shrink-0" />
+        <div className="flex-1 flex justify-between"><span>0s</span><span>{fmtMs(total * 0.5)}</span><span>{fmtMs(total)}</span></div>
+        <div className="w-14 shrink-0" />
+      </div>
+      {trace.stages.map(s => {
+        const c = STAGE_COLORS[s.status];
+        const leftPct = (s.start / total) * 100;
+        const widthPct = Math.max((s.dur / total) * 100, s.dur > 0 ? 0.8 : 0);
+        const isFail = s.status === "error";
+        return (
+          <div key={s.id} className={`flex items-center rounded-md ${isFail ? "bg-red-500/5" : ""}`}>
+            <div className="w-28 shrink-0 flex items-center gap-2 pr-2">
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: c.dot }} />
+              <span className={`text-[11px] truncate ${isFail ? "text-red-300 font-medium" : "text-slate-300"}`}>{s.label}</span>
+            </div>
+            <div className="flex-1 relative h-6 bg-[#0a0e14] rounded border border-[#141a22]">
+              {s.status === "skipped" ? (
+                <div className="absolute inset-0 flex items-center justify-center text-[10px] text-slate-600 mono">skipped</div>
+              ) : (
+                <div className={`absolute h-full rounded flex items-center px-2 ${isFail ? "failed-pulse" : ""}`}
+                  style={{ left: leftPct + "%", width: widthPct + "%", background: c.bar, minWidth: 4 }} title={`${s.label}: ${fmtMs(s.dur)}`}>
+                  {widthPct > 14 && <span className="text-[10px] text-black/70 font-semibold mono truncate">{fmtMs(s.dur)}</span>}
+                </div>
+              )}
+            </div>
+            <div className={`w-14 shrink-0 text-right text-[11px] mono ${c.text}`}>{fmtMs(s.dur)}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function LogStream({ trace, height = "h-72" }) {
+  const [filter, setFilter] = useState("all");
+  const logs = filter === "all" ? trace.logs : trace.logs.filter(l => l.lvl === filter.toUpperCase());
+  return (
+    <div>
+      <div className="flex items-center gap-1 mb-3">
+        {["all", "info", "warn", "error"].map(f => (
+          <button key={f} onClick={() => setFilter(f)}
+            className={`px-2 py-0.5 rounded text-[11px] mono capitalize transition-colors ${filter === f ? "bg-[#1c2530] text-slate-100" : "text-slate-500 hover:text-slate-300"}`}>{f}</button>
+        ))}
+        <span className="ml-auto text-[10px] text-slate-600 mono">ref_id={trace.ref_id.slice(0, 13)}…</span>
+      </div>
+      <div className={`bg-black rounded-md border border-[#1c2530] p-3 ${height} overflow-y-auto mono text-[11px] leading-relaxed`}>
+        {logs.map((l, i) => (
+          <div key={i} className={`flex gap-2 ${l.lvl === "ERROR" ? "bg-red-500/10 -mx-1 px-1 rounded" : ""}`}>
+            <span className="text-slate-600 shrink-0">{l.t}</span>
+            <span className={`shrink-0 w-11 ${LVL_STYLE[l.lvl]}`}>{l.lvl}</span>
+            <span className={l.lvl === "ERROR" ? "text-red-300" : "text-slate-300"}>{l.msg}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DiffLogStream({ annotated, side, height = "h-64" }) {
+  const tint = side === "left" ? "bg-red-500/10" : "bg-emerald-500/10";
+  return (
+    <div className={`bg-black rounded-md border border-[#1c2530] p-3 ${height} overflow-y-auto mono text-[11px] leading-relaxed`}>
+      {annotated.map((l, i) => {
+        const isDivergeRow = l.diverged && (i === 0 || !annotated[i - 1].diverged);
+        return (
+          <React.Fragment key={i}>
+            {isDivergeRow && (
+              <div className="flex items-center gap-2 my-1 select-none">
+                <div className="flex-1 h-px bg-amber-500/40" />
+                <span className="text-[9px] uppercase tracking-wider text-amber-400">▼ diverges here</span>
+                <div className="flex-1 h-px bg-amber-500/40" />
+              </div>
+            )}
+            <div className={`flex gap-2 -mx-1 px-1 rounded ${l.lvl === "ERROR" ? "bg-red-500/15" : l.diverged ? tint : ""} ${!l.diverged && l.shared ? "opacity-60" : ""}`}>
+              <span className="text-slate-600 shrink-0">{l.t}</span>
+              <span className={`shrink-0 w-11 ${LVL_STYLE[l.lvl]}`}>{l.lvl}</span>
+              <span className={l.lvl === "ERROR" ? "text-red-300" : l.diverged ? "text-slate-200" : "text-slate-400"}>{l.msg}</span>
+            </div>
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+// ===========================================================================
+// VIEW: DASHBOARD
+// ===========================================================================
+function KpiCard({ label, value, sub, accent, trend }) {
+  return (
+    <div className="bg-[#0f141c] border border-[#1c2530] rounded-lg p-4 flex flex-col gap-1">
+      <div className="text-[11px] uppercase tracking-wider text-slate-500 font-medium">{label}</div>
+      <div className="flex items-baseline gap-2">
+        <span className="text-2xl font-semibold tabular" style={{ color: accent || "#e2e8f0" }}>{value}</span>
+        {trend && <span className={`text-xs tabular ${trend.startsWith("-") ? "text-emerald-400" : "text-red-400"}`}>{trend}</span>}
+      </div>
+      {sub && <div className="text-xs text-slate-500 tabular">{sub}</div>}
+    </div>
+  );
+}
+function Dashboard({ onOpenTrace }) {
+  const [statusFilter, setStatusFilter] = useState("all");
+  const rows = useMemo(() => statusFilter === "all" ? EXECUTIONS : EXECUTIONS.filter(e => e.status === statusFilter), [statusFilter]);
+  return (
+    <main className="max-w-[1400px] mx-auto px-6 py-6 flex flex-col gap-5">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <KpiCard label="Total Processed" value={KPI.total.toLocaleString()} sub="jobs in log window" />
+        <KpiCard label="Error Rate" value={KPI.errorRate.toFixed(1) + "%"} accent={KPI.errorRate > 10 ? "#ef4444" : "#f59e0b"} sub="of total jobs" />
+        <KpiCard label="P95 Latency" value={fmtDuration(KPI.p95)} accent="#818cf8" sub={"P99 " + fmtDuration(KPI.p99)} />
+        <KpiCard label="P99 Latency" value={fmtDuration(KPI.p99)} accent="#a855f7" sub="worst-case tail" />
+        <KpiCard label="Avg Pages/Sec" value={KPI.avgPps.toFixed(2)} accent="#10b981" sub="successful jobs" />
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <Panel title="Conversion Volume Over Time" className="lg:col-span-2"
+          right={<div className="flex items-center gap-3 text-[11px]">{Object.entries(STATUS).map(([k, v]) => (
+            <span key={k} className="flex items-center gap-1.5 text-slate-400"><span className="w-2 h-2 rounded-sm" style={{ background: v.color }} />{v.label}</span>))}</div>}>
+          <div style={{ height: 260 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={TIME_SERIES} margin={{ top: 5, right: 5, left: -18, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1c2530" vertical={false} />
+                <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={{ stroke: "#1c2530" }} tickLine={false} />
+                <YAxis tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip />} cursor={{ fill: "#ffffff08" }} />
+                <Bar dataKey="success" stackId="a" fill={STATUS.success.color} name="Success" />
+                <Bar dataKey="warning" stackId="a" fill={STATUS.warning.color} name="Warning" />
+                <Bar dataKey="error" stackId="a" fill={STATUS.error.color} name="Error" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+        <Panel title="Bottleneck Analysis" right={<span className="text-[11px] text-slate-500">by error type</span>}>
+          <div style={{ height: 260 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={BOTTLENECKS} layout="vertical" margin={{ top: 4, right: 16, left: 4, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1c2530" horizontal={false} />
+                <XAxis type="number" tick={{ fill: "#64748b", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="label" width={100} tick={{ fill: "#94a3b8", fontSize: 11 }} axisLine={false} tickLine={false} />
+                <Tooltip content={<ChartTooltip />} cursor={{ fill: "#ffffff08" }} />
+                <Bar dataKey="count" name="Occurrences" radius={[0, 3, 3, 0]}>{BOTTLENECKS.map((b, i) => <Cell key={i} fill={b.color} />)}</Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </Panel>
+      </div>
+      <Panel title="Recent Executions"
+        right={<div className="flex items-center gap-1 bg-[#0a0e14] border border-[#1c2530] rounded-md p-0.5">
+          {["all", "success", "warning", "error"].map(f => (
+            <button key={f} onClick={() => setStatusFilter(f)}
+              className={`px-2.5 py-1 rounded text-[11px] font-medium capitalize transition-colors ${statusFilter === f ? "bg-[#1c2530] text-slate-100" : "text-slate-500 hover:text-slate-300"}`}>{f}</button>))}
+        </div>}>
+        <div className="overflow-x-auto -mx-4 -mb-4">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="text-slate-500 border-b border-[#1c2530]">
+                <th className="font-medium px-4 py-2.5">Timestamp</th><th className="font-medium px-4 py-2.5">Trace ID</th>
+                <th className="font-medium px-4 py-2.5">File</th><th className="font-medium px-4 py-2.5 text-right">Size</th>
+                <th className="font-medium px-4 py-2.5 text-right">Pages</th><th className="font-medium px-4 py-2.5 text-right">Duration</th>
+                <th className="font-medium px-4 py-2.5">Status</th><th className="font-medium px-4 py-2.5"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.job_id} className="border-b border-[#141a22] hover:bg-[#131a24] transition-colors">
+                  <td className="px-4 py-2.5 text-slate-400 tabular whitespace-nowrap">{r.ts.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
+                  <td className="px-4 py-2.5"><span className="mono text-[11px] text-indigo-300 bg-indigo-500/10 px-1.5 py-0.5 rounded">{r.job_id}</span></td>
+                  <td className="px-4 py-2.5 text-slate-300 max-w-[180px] truncate" title={r.filename}>{r.filename}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-400 tabular whitespace-nowrap">{fmtBytes(r.payload.file_size_bytes)}</td>
+                  <td className="px-4 py-2.5 text-right text-slate-400 tabular">{r.payload.page_count}</td>
+                  <td className={`px-4 py-2.5 text-right tabular whitespace-nowrap ${r.duration_ms > 100000 ? "text-amber-400" : "text-slate-400"}`}>{fmtDuration(r.duration_ms)}</td>
+                  <td className="px-4 py-2.5"><div className="flex flex-col gap-0.5"><StatusBadge status={r.status} />{r.error && <span className="mono text-[10px] text-slate-500">{r.error.code}</span>}</div></td>
+                  <td className="px-4 py-2.5"><button onClick={() => onOpenTrace(r.job_id)}
+                    className="px-2 py-1 rounded border border-[#2a3441] text-[11px] text-slate-300 hover:bg-[#1c2530] hover:text-white transition-colors whitespace-nowrap">View Trace →</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </main>
+  );
+}
+
+// ===========================================================================
+// VIEW: TRACE
+// ===========================================================================
+function TraceView({ trace, onBack, onCompare }) {
+  const p = trace.payload, w = trace.worker;
+  const total = trace.stages.reduce((m, s) => Math.max(m, s.start + s.dur), 0);
+  const counterpart = findSuccessCounterpart(trace);
+  const isError = trace.status === "error";
+  const getRecord = () => traceToSchemaRecord(trace);
+  return (
+    <main className="max-w-[1200px] mx-auto px-6 py-6 flex flex-col gap-5">
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="text-slate-500 hover:text-slate-200 text-sm">← Back</button>
+          <div>
+            <div className="flex items-center gap-2"><h1 className="text-lg font-semibold text-slate-100">{trace.filename}</h1><StatusBadge status={trace.status} /></div>
+            <div className="text-xs text-slate-500 mono mt-0.5">job_id={trace.job_id} · ref_id={trace.ref_id}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <CopyJsonButton getRecord={getRecord} />
+          <DownloadJsonButton getRecord={getRecord} filename={() => `trace-${trace.job_id}.json`} />
+          {counterpart && (
+            <button onClick={() => onCompare(trace.job_id, counterpart.job_id)}
+              className="px-3 py-1.5 rounded-md border border-indigo-500/40 bg-indigo-500/10 text-indigo-300 text-xs font-medium hover:bg-indigo-500/20 transition-colors">⇄ Compare with successful run</button>
+          )}
+        </div>
+      </div>
+      {trace._limitedDetail && (
+        <div className="bg-sky-500/10 border border-sky-500/30 rounded-lg p-3 flex gap-3">
+          <div className="text-sky-400 text-base leading-none mt-0.5">ℹ</div>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            This trace is reconstructed from the app log, which records start/finish/failure per job but not
+            per-stage timings, worker resource specs, or a full log stream. Fields shown as “—” aren’t captured
+            in the logs today. The waterfall shows total conversion time as a single stage.
+            {trace._running && " This job has a start line but no terminal line — it may still be running, or was abandoned by a recycled worker."}
+          </p>
+        </div>
+      )}
+      {isError && trace.error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 flex gap-3">
+          <div className="text-red-400 text-lg leading-none mt-0.5">⚠</div>
+          <div>
+            <div className="text-sm font-semibold text-red-300 flex items-center gap-2">{trace.error.code}
+              <span className="mono text-[11px] text-red-400/70 font-normal">at stage “{trace.error.failed_stage}”</span></div>
+            <p className="text-xs text-slate-400 mt-1 leading-relaxed">{trace.error.message}</p>
+          </div>
+        </div>
+      )}
+      <Panel title="Execution Waterfall" right={<span className="text-[11px] text-slate-500 mono">total {fmtMs(total)}</span>}>
+        <Waterfall trace={trace} />
+      </Panel>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <Panel title="Environment Context">
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <StatChip label="Peak Memory" value={w.peak_mem_mb.toFixed(0) + " MB"} warn={w.peak_mem_mb > w.mem_limit_mb} />
+            <StatChip label="Mem Limit" value={w.mem_limit_mb + " MB"} />
+            <StatChip label="Avg CPU" value={w.avg_cpu_pct.toFixed(0) + "%"} warn={w.avg_cpu_pct > 85} />
+            <StatChip label="CPU Cores" value={w.cpu_cores} />
+          </div>
+          <PayloadRow label="Worker ID" value={w.worker_id} /><PayloadRow label="Node ID" value={w.node_id} />
+          <PayloadRow label="Hostname" value={w.hostname} /><PayloadRow label="Queue Backend" value={w.queue_backend} />
+          <div className="mt-3">
+            <div className="flex justify-between text-[10px] text-slate-500 mono mb-1"><span>memory vs limit</span>
+              <span className={w.peak_mem_mb > w.mem_limit_mb ? "text-red-400" : "text-emerald-400"}>{w.peak_mem_mb.toFixed(0)} / {w.mem_limit_mb} MB</span></div>
+            <div className="h-2 bg-[#1c2530] rounded-full overflow-hidden relative">
+              <div className={`h-full ${w.peak_mem_mb > w.mem_limit_mb ? "bg-red-500" : "bg-emerald-500"}`} style={{ width: Math.min((w.peak_mem_mb / w.mem_limit_mb) * 100, 100) + "%" }} /></div>
+          </div>
+        </Panel>
+        <Panel title="Payload Analysis">
+          <PayloadRow label="File Size" value={fmtBytes(p.file_size_bytes)} />
+          <PayloadRow label="Page Count" value={p.page_count} flag={p.page_count > 100 ? "warn" : undefined} />
+          <PayloadRow label="PDF Version" value={p.pdf_version} />
+          <PayloadRow label="Contains scanned pages" value={p.is_scanned ? "Yes" : "No"} flag={p.is_scanned ? "warn" : "ok"} />
+          <PayloadRow label="Has OCR text layer" value={p.has_ocr_text ? "Yes" : "No"} flag={p.has_ocr_text ? "ok" : "warn"} />
+          <PayloadRow label="Encrypted" value={p.encrypted ? "Yes" : "No"} flag={p.encrypted ? "danger" : "ok"} />
+          <PayloadRow label="Embedded fonts" value={p.embedded_fonts} flag={p.embedded_fonts === 0 ? "warn" : undefined} />
+          <PayloadRow label="Embedded images" value={p.embedded_images} /><PayloadRow label="Tables detected" value={p.tables_detected} />
+          <PayloadRow label="Color depth" value={p.color_depth} />
+          <div className="mt-3 bg-[#0a0e14] border border-[#1c2530] rounded-md px-3 py-2">
+            <div className="flex justify-between text-[10px] text-slate-500 mono mb-1"><span>complexity score</span><span className="text-amber-400">{p.complexity} / 100</span></div>
+            <div className="h-2 bg-[#1c2530] rounded-full overflow-hidden"><div className="h-full bg-gradient-to-r from-amber-500 to-red-500" style={{ width: p.complexity + "%" }} /></div>
+          </div>
+        </Panel>
+        <Panel title="Diagnosis" alert={isError}>
+          {isError ? (
+            <div className="text-xs text-slate-400 space-y-3 leading-relaxed">
+              <div className="flex gap-2"><span className="text-red-400 mono">1.</span><span>{p.page_count}-page <span className="text-amber-300">scanned</span> doc with <span className="text-amber-300">no text layer</span> forced full OCR plus a large region graph.</span></div>
+              <div className="flex gap-2"><span className="text-red-400 mono">2.</span><span>Layout analysis crossed the <span className="text-red-300 mono">{w.mem_limit_mb}MB</span> cgroup limit (peak {w.peak_mem_mb.toFixed(0)}MB).</span></div>
+              <div className="flex gap-2"><span className="text-emerald-400 mono">→</span><span className="text-slate-300">Route scanned docs &gt;200pp to a high-memory queue at lower OCR DPI.</span></div>
+            </div>
+          ) : (
+            <div className="text-xs text-slate-400 space-y-2 leading-relaxed">
+              <div className="flex gap-2"><span className="text-emerald-400 mono">✓</span><span>Completed all 6 stages in {fmtMs(total)}.</span></div>
+              <div className="flex gap-2"><span className="text-emerald-400 mono">✓</span><span>Peak memory {w.peak_mem_mb.toFixed(0)}MB stayed under the {w.mem_limit_mb}MB limit.</span></div>
+            </div>
+          )}
+        </Panel>
+      </div>
+      <Panel title="Raw Log Stream" right={<span className="text-[11px] text-slate-500 mono">stdout · stderr</span>}>
+        <LogStream trace={trace} />
+      </Panel>
+      {/* NEW: collapsible raw JSON preview of the schema record */}
+      <RawJsonPreview getRecord={getRecord} />
+    </main>
+  );
+}
+
+// ===========================================================================
+// VIEW: COMPARE
+// ===========================================================================
+function DiffStat({ label, a, b, betterLower = true, fmt = (x) => x }) {
+  const delta = b - a;
+  const improved = betterLower ? delta < 0 : delta > 0;
+  return (
+    <div className="grid grid-cols-3 items-center py-2 border-b border-[#141a22] text-xs">
+      <span className="text-slate-500">{label}</span>
+      <span className="text-center text-slate-300 tabular">{fmt(a)}</span>
+      <span className={`text-right tabular ${improved ? "text-emerald-400" : delta === 0 ? "text-slate-400" : "text-red-400"}`}>
+        {fmt(b)} {delta !== 0 && <span className="text-[10px]">({improved ? "↓" : "↑"})</span>}
+      </span>
+    </div>
+  );
+}
+function CompareView({ left, right, onBack }) {
+  const sharedTotal = Math.max(
+    left.stages.reduce((m, s) => Math.max(m, s.start + s.dur), 0),
+    right.stages.reduce((m, s) => Math.max(m, s.start + s.dur), 0));
+  const lt = left.stages.reduce((m, s) => Math.max(m, s.start + s.dur), 0);
+  const rt = right.stages.reduce((m, s) => Math.max(m, s.start + s.dur), 0);
+  const aligned = useMemo(() => alignLogs(left.logs, right.logs), [left.job_id, right.job_id]);
+  const comparisonRecord = () => ({ comparison: { filename: left.filename }, failed: traceToSchemaRecord(left), successful: traceToSchemaRecord(right) });
+  return (
+    <main className="max-w-[1400px] mx-auto px-6 py-6 flex flex-col gap-5">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3">
+          <button onClick={onBack} className="text-slate-500 hover:text-slate-200 text-sm">← Back</button>
+          <div><h1 className="text-lg font-semibold text-slate-100">Run Comparison</h1>
+            <div className="text-xs text-slate-500 mono mt-0.5">{left.filename} · failed vs successful</div></div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          <CopyJsonButton getRecord={comparisonRecord} label="Copy comparison as JSON" />
+          <DownloadJsonButton getRecord={comparisonRecord} filename={() => `compare-${left.job_id}-vs-${right.job_id}.json`} label="Download comparison .json" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-5">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 flex items-center justify-between">
+          <div><div className="text-sm font-semibold text-red-300">Failed run</div><div className="text-[11px] text-slate-500 mono">{left.job_id} · {left.worker.hostname}</div></div><StatusBadge status="error" />
+        </div>
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-3 flex items-center justify-between">
+          <div><div className="text-sm font-semibold text-emerald-300">Successful run</div><div className="text-[11px] text-slate-500 mono">{right.job_id} · {right.worker.hostname}</div></div><StatusBadge status="success" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-5">
+        <Panel title="Waterfall — Failed" alert right={<span className="text-[11px] text-red-400 mono">{fmtMs(lt)}</span>}><Waterfall trace={left} sharedTotal={sharedTotal} /></Panel>
+        <Panel title="Waterfall — Success" right={<span className="text-[11px] text-emerald-400 mono">{fmtMs(rt)}</span>}><Waterfall trace={right} sharedTotal={sharedTotal} /></Panel>
+      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Panel title="Key Metrics" right={<span className="text-[11px] text-slate-500">failed → success</span>}>
+          <div className="grid grid-cols-3 text-[10px] uppercase tracking-wider text-slate-600 pb-1 border-b border-[#1c2530]"><span>metric</span><span className="text-center">failed</span><span className="text-right">success</span></div>
+          <DiffStat label="Total duration" a={lt} b={rt} fmt={fmtMs} />
+          <DiffStat label="Peak memory (MB)" a={left.worker.peak_mem_mb} b={right.worker.peak_mem_mb} fmt={(x) => x.toFixed(0)} />
+          <DiffStat label="Mem limit (MB)" a={left.worker.mem_limit_mb} b={right.worker.mem_limit_mb} betterLower={false} />
+          <DiffStat label="Avg CPU (%)" a={left.worker.avg_cpu_pct} b={right.worker.avg_cpu_pct} fmt={(x) => x.toFixed(0)} />
+          <DiffStat label="CPU cores" a={left.worker.cpu_cores} b={right.worker.cpu_cores} betterLower={false} />
+          <DiffStat label="Tables detected" a={left.payload.tables_detected} b={right.payload.tables_detected} betterLower={false} />
+        </Panel>
+        <Panel title="What Changed">
+          <div className="text-xs text-slate-400 space-y-3 leading-relaxed">
+            <div className="flex gap-2"><span className="text-indigo-400 mono">▸</span><span>Routed from <span className="mono text-slate-300">{left.worker.queue_backend}</span> (limit {left.worker.mem_limit_mb}MB) to <span className="mono text-emerald-300">{right.worker.queue_backend}</span> (limit {right.worker.mem_limit_mb}MB).</span></div>
+            <div className="flex gap-2"><span className="text-indigo-400 mono">▸</span><span>OCR DPI lowered <span className="mono">300 → 200</span>, cutting OCR time ~32% and lowering resident memory.</span></div>
+            <div className="flex gap-2"><span className="text-emerald-400 mono">✓</span><span>Peak memory {right.worker.peak_mem_mb.toFixed(0)}MB now fits; <span className="text-emerald-300">HTML Render completed</span> instead of being skipped.</span></div>
+          </div>
+        </Panel>
+      </div>
+      <div className="grid grid-cols-2 gap-5">
+        <Panel title="Log Stream — Failed" alert right={<span className="text-[10px] text-amber-400 mono">divergence aligned</span>}>
+          <DiffLogStream annotated={aligned.left} side="left" />
+        </Panel>
+        <Panel title="Log Stream — Success"><DiffLogStream annotated={aligned.right} side="right" /></Panel>
+      </div>
+      <p className="text-[11px] text-slate-600 leading-relaxed -mt-1">
+        Log rows are aligned by stage key. Shared prefix rows are dimmed; the amber marker is where the two runs first diverge
+        (the failed run hits a memory error in layout analysis while the successful run continues to HTML render).
+      </p>
+    </main>
+  );
+}
+
+// ===========================================================================
+// ROOT
+// ===========================================================================
+function App() {
+  const [view, setView] = useState({ name: "dashboard" });
+  // dataState: "loading" | "live" | "mock" (fell back) ; bump forces re-render
+  const [dataState, setDataState] = React.useState("loading");
+  const [, forceRender] = React.useReducer(x => x + 1, 0);
+  const [generatedAt, setGeneratedAt] = React.useState(null);
+
+  const loadLive = React.useCallback(() => {
+    setDataState("loading");
+    fetch("/api/dashboard-data", { headers: { "Accept": "application/json" }, credentials: "same-origin" })
+      .then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(payload => {
+        applyRealPayload(payload);
+        setGeneratedAt(payload.generated_at || null);
+        setDataState("live");
+        forceRender();
+      })
+      .catch(() => {
+        // Keep the mock data already in the bindings; label it clearly.
+        setDataState("mock");
+        forceRender();
+      });
+  }, []);
+
+  React.useEffect(() => { loadLive(); }, [loadLive]);
+
+  const byId = (id) => EXECUTIONS.find(e => e.job_id === id);
+  return (
+    <div className="min-h-screen text-slate-200" style={{ fontFamily: "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif" }}>
+      <header className="border-b border-[#1c2530] bg-[#0a0e14]/90 backdrop-blur sticky top-0 z-20">
+        <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={() => setView({ name: "dashboard" })} className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-md bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">P2</div>
+              <div className="text-left"><div className="text-sm font-semibold text-slate-100">PDF2HTML · Analytics</div><div className="text-[11px] text-slate-500">Conversion service health & diagnostics</div></div>
+            </button>
+            <nav className="flex items-center gap-1.5 text-xs text-slate-500 ml-2">
+              <span className="text-slate-600">/</span>
+              <button onClick={() => setView({ name: "dashboard" })} className={view.name === "dashboard" ? "text-slate-200" : "hover:text-slate-300"}>dashboard</button>
+              {view.name === "trace" && (<><span className="text-slate-600">/</span><span className="text-slate-200 mono">{byId(view.id).job_id}</span></>)}
+              {view.name === "compare" && (<><span className="text-slate-600">/</span><span className="text-slate-200">compare</span></>)}
+            </nav>
+          </div>
+          <div className="flex items-center gap-3">
+            {dataState === "loading" && <span className="flex items-center gap-1.5 text-xs text-slate-400"><span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />Loading…</span>}
+            {dataState === "live" && <span className="flex items-center gap-1.5 text-xs text-slate-400"><span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />Live · app.log{generatedAt ? " · " + new Date(generatedAt).toLocaleTimeString() : ""}</span>}
+            {dataState === "mock" && <span className="flex items-center gap-1.5 text-xs text-amber-400"><span className="w-2 h-2 rounded-full bg-amber-400" />Sample data (log fetch failed)</span>}
+            <button onClick={loadLive} title="Refresh from app.log"
+              className="px-2 py-1 rounded border border-[#2a3441] text-[11px] text-slate-300 hover:bg-[#1c2530] hover:text-white transition-colors">↻ Refresh</button>
+            <a href="/t-dashboard/logout" title="Clear credentials and sign out"
+              className="px-2 py-1 rounded border border-[#2a3441] text-[11px] text-slate-300 hover:bg-red-500/15 hover:text-red-300 hover:border-red-500/40 transition-colors">⇥ Logout</a>
+          </div>
+        </div>
+      </header>
+      {view.name === "dashboard" && <Dashboard onOpenTrace={(id) => setView({ name: "trace", id })} />}
+      {view.name === "trace" && <TraceView trace={byId(view.id)} onBack={() => setView({ name: "dashboard" })} onCompare={(a, b) => setView({ name: "compare", a, b })} />}
+      {view.name === "compare" && <CompareView left={byId(view.a)} right={byId(view.b)} onBack={() => setView({ name: "trace", id: view.a })} />}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

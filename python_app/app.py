@@ -13,8 +13,11 @@ Then open http://localhost:5000 in your browser.
 from __future__ import annotations
 
 import json
+import functools
+import hmac
 import os
 import threading
+import time
 import traceback
 import uuid
 from pathlib import Path
@@ -26,14 +29,18 @@ from flask import (
     request,
     jsonify,
     send_from_directory,
+    Response,
+    session,
+    redirect,
 )
 
-from flask import redirect
-
 import config
+from app_logging import capture_infra_snapshot, get_logger, job_context, prune_old_files
 from state.job_store import build_job_store
 from storage.output_store import build_output_store
 from queue_backend.job_queue import build_job_queue
+
+log = get_logger(__name__)
 # NOTE: `conversion_job` (which imports the heavy ML stack via convert.py) is
 # imported LAZILY inside the queue handler, not at module load. This lets the
 # API container ship WITHOUT the ML dependencies (docling/paddle/whisper): under
@@ -42,6 +49,13 @@ from queue_backend.job_queue import build_job_queue
 # happens on the first enqueue — where the ML stack is present anyway.
 
 app = Flask(__name__, static_folder="static", template_folder="web_templates")
+
+# Secret key for signing the dashboard session cookie. Prefer the configured
+# value (persists sessions across restarts/replicas); otherwise fall back to a
+# per-process random key so the app still runs (sessions just don't survive a
+# restart). Only the dashboard login uses Flask sessions today.
+import secrets as _secrets
+app.secret_key = config.DASHBOARD_SECRET_KEY or _secrets.token_hex(32)
 
 # Configuration — sourced from config.py (env-driven, with defaults that
 # preserve the current single-VM behavior). Kept as module-level names below
@@ -61,6 +75,58 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
+log.info(
+    "Application starting",
+    extra={"pid": os.getpid(), "config_summary": config.summary()},
+)
+
+
+@app.before_request
+def _log_request_start():
+    request._log_started_at = time.monotonic()
+
+
+@app.after_request
+def _log_request_end(response):
+    # Skip high-frequency polling/health endpoints to keep the log readable;
+    # everything else (uploads, publish, export, media) is logged with timing
+    # and status code, which is exactly what's needed to correlate a slow or
+    # failing request with a worker restart in the same window.
+    path = request.path
+    if path in ("/healthz", "/readyz") or path.startswith("/convert-status/"):
+        return response
+    started = getattr(request, "_log_started_at", None)
+    elapsed_ms = round((time.monotonic() - started) * 1000, 1) if started else None
+    log.info(
+        "%s %s -> %s",
+        request.method, path, response.status_code,
+        extra={
+            "method": request.method,
+            "path": path,
+            "status_code": response.status_code,
+            "elapsed_ms": elapsed_ms,
+            "remote_addr": request.headers.get("X-Real-IP", request.remote_addr),
+        },
+    )
+    return response
+
+
+@app.teardown_request
+def _log_request_exception(exc):
+    # teardown_request sees exceptions that propagated all the way out of a
+    # view (i.e. not caught by the view's own try/except) -- this is the
+    # "something truly unexpected happened" signal, worth an infra snapshot.
+    if exc is not None:
+        log.exception(
+            "Unhandled exception in request",
+            exc_info=exc,
+            extra={"method": request.method, "path": request.path},
+        )
+        capture_infra_snapshot(
+            "unhandled_request_exception",
+            method=request.method, path=request.path, error=str(exc),
+        )
+
 # Job state — accessed through the JobStore abstraction (Phase 1). The default
 # FileJobStore reproduces the original jobs/*.json behavior exactly and adds a
 # ref_id index; STATE_BACKEND selects the implementation (Phase 2 adds Redis+DB).
@@ -70,6 +136,30 @@ CONVERSION_JOBS_LOCK = threading.Lock()  # retained for compatibility (unused by
 
 job_store = build_job_store(config)
 output_store = build_output_store(config)
+
+# Startup reconciliation: every gunicorn worker boot (including a recycle
+# triggered by --max-requests) runs this once. It marks any job left stuck at
+# status="processing" by a PREVIOUS worker that died mid-conversion as
+# "error" instead of leaving it hanging forever with no feedback to the
+# editor. See conversion_job.reconcile_stuck_jobs for the full rationale --
+# this directly addresses the root cause of the intermittent conversion
+# failures (a gunicorn worker recycle killing the in-process conversion
+# thread silently).
+#
+# Only meaningful under QUEUE_BACKEND=thread: that's the only mode where a
+# conversion runs INSIDE this process, so only there can this process's own
+# death have silently orphaned a job. Under QUEUE_BACKEND=queue, conversions
+# run in a separate worker.py process and OCI Queue's visibility timeout
+# already redelivers on worker death -- a different, already-correct
+# recovery path; running this sweep there would be redundant and would force
+# an import of the heavy ML stack (via conversion_job -> convert.py) into
+# what may be a lightweight, ML-dependency-free API-only container.
+if config.QUEUE_BACKEND == "thread":
+    try:
+        from conversion_job import reconcile_stuck_jobs
+        reconcile_stuck_jobs(job_store)
+    except Exception:
+        get_logger(__name__).exception("Startup reconciliation sweep failed")
 
 # Conversion is dispatched through a queue seam. The default ThreadQueue runs
 # the job in a daemon thread in-process (identical to the original behavior);
@@ -102,6 +192,241 @@ def _write_job(job_id: str, data: dict) -> None:
 def index():
     """Serve the main drag-and-drop upload page."""
     return render_template("index.html")
+
+
+# The developer analytics dashboard (log analytics / trace deep-dive). A single
+# self-contained HTML file served as-is from web_templates/ -- served via
+# send_from_directory (not render_template) so no Jinja processing touches its
+# inline React/JSX.
+WEB_TEMPLATES_DIR = Path(__file__).resolve().parent / "web_templates"
+
+
+def _check_dashboard_credentials(username: str, password: str) -> bool:
+    """Constant-time check of dashboard credentials against config."""
+    expected_user = config.DASHBOARD_USER
+    expected_pw = config.DASHBOARD_PASSWORD
+    if not expected_pw:
+        return False
+    return (
+        hmac.compare_digest(username or "", expected_user)
+        and hmac.compare_digest(password or "", expected_pw)
+    )
+
+
+def _dashboard_session_valid() -> bool:
+    """True if the current request carries a valid, unexpired dashboard session
+    cookie. The cookie is Flask's signed session, so it can't be forged without
+    the secret key; we additionally enforce our own TTL."""
+    if not session.get("dash_auth"):
+        return False
+    login_at = session.get("dash_login_at", 0)
+    try:
+        if (time.time() - float(login_at)) > config.DASHBOARD_SESSION_TTL:
+            return False
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def require_dashboard_auth(view):
+    """Gate a view behind the dashboard login.
+
+    Accepts EITHER a valid signed session cookie (set by the designed login
+    form) OR HTTP Basic Auth credentials (so API clients / curl still work with
+    -u user:pass). Fails CLOSED: if no password is configured at all, returns
+    503 rather than exposing the route.
+
+    When unauthenticated:
+      - a browser page request (Accept: text/html) is redirected to the
+        designed /t-dashboard/login page (?next=<original path>);
+      - anything else (the JSON API) gets a 401.
+    """
+    @functools.wraps(view)
+    def wrapper(*args, **kwargs):
+        if not config.DASHBOARD_PASSWORD:
+            return jsonify({
+                "error": "dashboard_auth_not_configured",
+                "detail": "Set DASHBOARD_PASSWORD (and optionally DASHBOARD_USER) to enable this route.",
+            }), 503
+
+        # 1) Valid session cookie?
+        if _dashboard_session_valid():
+            return view(*args, **kwargs)
+
+        # 2) Basic Auth fallback (for curl / programmatic API access).
+        auth = request.authorization
+        if auth is not None and auth.type == "basic" and _check_dashboard_credentials(
+            auth.username or "", auth.password or ""
+        ):
+            return view(*args, **kwargs)
+
+        # 3) Unauthenticated. HTML -> designed login page; else -> 401 JSON.
+        wants_html = "text/html" in (request.headers.get("Accept") or "")
+        if wants_html:
+            return redirect("/t-dashboard/login?next=" + quote(request.full_path.rstrip("?")))
+        return jsonify({"error": "unauthorized", "detail": "Log in at /t-dashboard/login."}), 401
+
+    return wrapper
+
+
+# Designed, centered login page (replaces the browser's native Basic-Auth
+# popup). Lives in web_templates/ and is rendered by string, not Jinja, to keep
+# it dependency-free and self-contained.
+_LOGIN_PAGE = """<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign in · PDF2HTML Analytics</title>
+<style>
+  * {{ box-sizing: border-box; }}
+  html, body {{ height: 100%; margin: 0; }}
+  body {{
+    background: radial-gradient(1200px 600px at 50% -10%, #141b26 0%, #0a0e14 55%);
+    font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    color: #e2e8f0; display: flex; align-items: center; justify-content: center;
+  }}
+  .card {{
+    width: 100%; max-width: 380px; margin: 24px;
+    background: #0f141c; border: 1px solid #1c2530; border-radius: 16px;
+    padding: 32px 28px; box-shadow: 0 20px 60px rgba(0,0,0,.45);
+  }}
+  .brand {{ display: flex; align-items: center; gap: 12px; margin-bottom: 22px; }}
+  .logo {{ width: 40px; height: 40px; border-radius: 10px;
+    background: linear-gradient(135deg, #6366f1, #a855f7);
+    display: flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 700; font-size: 15px; }}
+  .title {{ font-size: 15px; font-weight: 600; color: #f1f5f9; }}
+  .sub {{ font-size: 12px; color: #64748b; margin-top: 1px; }}
+  label {{ display: block; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .06em; color: #64748b; margin: 16px 0 6px; }}
+  input {{
+    width: 100%; padding: 11px 12px; border-radius: 10px;
+    background: #0a0e14; border: 1px solid #2a3441; color: #e2e8f0;
+    font-size: 14px; outline: none; transition: border-color .15s, box-shadow .15s;
+  }}
+  input:focus {{ border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.2); }}
+  button {{
+    width: 100%; margin-top: 22px; padding: 11px; border: none; cursor: pointer;
+    border-radius: 10px; font-size: 14px; font-weight: 600; color: #fff;
+    background: linear-gradient(135deg, #6366f1, #7c3aed);
+    transition: filter .15s;
+  }}
+  button:hover {{ filter: brightness(1.08); }}
+  .err {{ margin-top: 16px; padding: 9px 12px; border-radius: 9px; font-size: 12.5px;
+    background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3); color: #fca5a5; }}
+  .foot {{ margin-top: 18px; font-size: 11px; color: #475569; text-align: center; }}
+</style></head>
+<body>
+  <form class="card" method="POST" action="/t-dashboard/login">
+    <input type="hidden" name="next" value="{next_val}">
+    <div class="brand">
+      <div class="logo">P2</div>
+      <div>
+        <div class="title">PDF2HTML · Analytics</div>
+        <div class="sub">Conversion service health &amp; diagnostics</div>
+      </div>
+    </div>
+    {error_block}
+    <label for="u">Username</label>
+    <input id="u" name="username" autocomplete="username" autofocus required>
+    <label for="p">Password</label>
+    <input id="p" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Sign in</button>
+    <div class="foot">Authorized personnel only</div>
+  </form>
+</body></html>"""
+
+
+def _render_login(next_url: str, error: str | None = None):
+    from markupsafe import escape
+    error_block = (
+        f'<div class="err">{escape(error)}</div>' if error else ""
+    )
+    html = _LOGIN_PAGE.format(
+        next_val=escape(next_url or "/t-dashboard.html"),
+        error_block=error_block,
+    )
+    return Response(html, 200, {"Content-Type": "text/html; charset=utf-8"})
+
+
+def _safe_next(raw: str | None) -> str:
+    """Only allow same-origin relative redirects, to avoid open-redirect abuse."""
+    if not raw:
+        return "/t-dashboard.html"
+    # Must be a path on this app: starts with a single slash, not "//" or a scheme.
+    if raw.startswith("/") and not raw.startswith("//") and "://" not in raw:
+        return raw
+    return "/t-dashboard.html"
+
+
+@app.route("/t-dashboard/login", methods=["GET", "POST"])
+def dashboard_login():
+    """Designed, centered login form + its POST handler (session-cookie auth)."""
+    if not config.DASHBOARD_PASSWORD:
+        return jsonify({"error": "dashboard_auth_not_configured"}), 503
+
+    next_url = _safe_next(request.values.get("next"))
+
+    # Already logged in? Skip straight through.
+    if _dashboard_session_valid():
+        return redirect(next_url)
+
+    if request.method == "POST":
+        username = request.form.get("username", "")
+        password = request.form.get("password", "")
+        if _check_dashboard_credentials(username, password):
+            session["dash_auth"] = True
+            session["dash_login_at"] = time.time()
+            session.permanent = False  # cookie clears when browser session ends
+            return redirect(next_url)
+        # Wrong credentials -> re-render with an error (no info leak on which field).
+        return _render_login(next_url, error="Incorrect username or password.")
+
+    return _render_login(next_url)
+
+
+@app.route("/t-dashboard.html")
+@require_dashboard_auth
+def analytics_dashboard():
+    """Serve the PDF2HTML developer analytics dashboard (login-protected)."""
+    return send_from_directory(WEB_TEMPLATES_DIR, "t-dashboard.html")
+
+
+@app.route("/api/dashboard-data")
+@require_dashboard_auth
+def dashboard_data_api():
+    """Return real conversion analytics parsed from the app log.
+
+    Same Basic-Auth gate as the dashboard page itself. Read-only: it parses
+    logs/app.log and derives KPIs, a status-over-time series, top error codes,
+    and a recent-executions table. Never raises to the client -- on any parse
+    error it returns an empty-but-valid payload so the dashboard degrades to
+    "no data" rather than erroring.
+    """
+    import dashboard_data  # local import: keeps app import light, easy to reload
+    try:
+        payload = dashboard_data.build_dashboard_payload()
+    except Exception:
+        log.exception("Failed to build dashboard data payload")
+        payload = {
+            "generated_at": None, "source": "app.log", "error": "failed_to_parse_logs",
+            "kpis": {"total_processed": 0, "error_rate_pct": 0.0, "p95_latency_ms": None,
+                     "p99_latency_ms": None, "avg_pages_per_sec": 0.0},
+            "time_series": [], "bottlenecks": [], "executions": [],
+        }
+    return jsonify(payload), 200
+
+
+@app.route("/t-dashboard/logout")
+def dashboard_logout():
+    """Clear the dashboard session cookie and return to the login page.
+
+    With cookie-based sessions this is a clean logout: we drop the signed
+    session and redirect to the designed login form. (No Basic-Auth 401 trick
+    needed anymore.)
+    """
+    session.pop("dash_auth", None)
+    session.pop("dash_login_at", None)
+    return redirect("/t-dashboard/login")
 
 
 # Project docs (including the end-user manual) live in ../docs relative to
@@ -235,6 +560,11 @@ def convert_pdf():
 
     # Accept optional external reference ID (for iframe integration)
     ref_id = request.form.get("ref_id", "").strip() or None
+
+    with job_context(job_id=job_id, ref_id=ref_id):
+        log.info(
+            "Upload received", extra={"upload_filename": file.filename, "pdf_stem": pdf_stem}
+        )
 
     # Save uploaded file via the output store (local disk today; an uploads/
     # prefix under OUTPUT_BACKEND=oci). Returns a reference the worker reads.

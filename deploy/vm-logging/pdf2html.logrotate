@@ -1,0 +1,23 @@
+# Logrotate config for PDF2HTML's application log (python_app/app_logging.py).
+#
+# Installed to /etc/logrotate.d/pdf2html on the single-VM deployment. Not used
+# by the OKE/Kubernetes deployment path (deploy/*.yaml) -- there, container
+# stdout/stderr is collected by the cluster's log pipeline instead.
+#
+# Retention: 7 daily rotations, gzip-compressed, matching
+# config.LOG_RETENTION_DAYS (python_app/config.py). The app's own
+# RotatingFileHandler (size-based, see app_logging.py) is a secondary safety
+# net in case logrotate isn't running for some reason -- this file is the
+# primary, time-based retention mechanism.
+/opt/pdf2html/app/logs/app.log {
+    daily
+    rotate 7
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    dateext
+    dateformat -%Y%m%d
+    su diksha-dev-poc-user diksha-dev-poc-user
+}
