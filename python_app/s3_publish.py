@@ -16,6 +16,7 @@ from bs4 import BeautifulSoup
 from app_logging import capture_infra_snapshot, get_logger, job_context
 from glossary_highlight import highlight_glossary_terms, GLOSSARY_CSS
 from tools.h5p_clean import empty_h5p_containers
+from tools.h5p_package import H5PPackageError, normalize_h5p_package
 
 # NOTE: previously `logging.getLogger(__name__)` -- that logger ("s3_publish")
 # had no handlers configured anywhere in the app, so every _log.info() call
@@ -465,6 +466,35 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
   // iframe where relative asset URLs no longer resolve against this page —
   // h5p.json loads but content images break. Always pass an absolute URL.
   function h5pAbs(s){try{return new URL(s,document.baseURI).href;}catch(e){return s;}}
+  function h5pFail(el,src,error){
+    var detail=error&&error.message?error.message:String(error||'Player initialization failed');
+    console.error('[PDF2HTML:H5P] '+detail,{source:src,error:error});
+    if(!el||!el.isConnected)return;
+    el.innerHTML='<div style="padding:1.5rem;border:1px solid #f59e0b;border-radius:8px;background:#fffbeb;color:#78350f;text-align:center;">'
+      +'<strong>This interactive activity could not be loaded.</strong>'
+      +'<div style="margin-top:.4rem;font-size:.85rem;">'+escAttr(detail)+'</div>'
+      +'<a href="'+escAttr(src)+'" target="_blank" rel="noopener" style="display:inline-block;margin-top:.8rem;color:#92400e;">Open activity files</a></div>';
+  }
+  function h5pWatch(el,src){
+    // h5p-standalone can create an iframe yet fail later inside frame.bundle;
+    // those deferred errors don't reject the constructor synchronously. Check
+    // the generated integration record after libraries have had time to load.
+    setTimeout(function(){
+      if(!el||!el.isConnected)return;
+      var frame=el.querySelector('iframe');
+      if(!frame)return h5pFail(el,src,new Error('H5P player iframe was not created'));
+      try{
+        var integration=frame.contentWindow&&frame.contentWindow.H5PIntegration;
+        var contents=integration&&integration.contents?Object.values(integration.contents):[];
+        var invalid=contents.some(function(c){return !c.library||/^undefined\b/.test(c.library)||!c.scripts||!c.scripts.length;});
+        if(!contents.length||invalid)h5pFail(el,src,new Error('H5P package libraries could not be resolved'));
+      }catch(e){
+        // A cross-origin frame cannot be inspected; absence of inspection is
+        // not itself a player failure, so leave it running.
+        if(e&&e.name!=='SecurityError')h5pFail(el,src,e);
+      }
+    },5000);
+  }
   function h5pMount(el,src){
     if(h5pIsPage(src)){
       el.innerHTML='<iframe src="'+escAttr(src)+'" style="width:100%;min-height:500px;border:none;border-radius:8px;" allowfullscreen></iframe>';
@@ -472,11 +502,13 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
     }
     if(window.H5PStandalone){
       try{
-        new H5PStandalone.H5P(el,{h5pJsonPath:h5pAbs(src),frameJs:H5P_FRAME_JS,frameCss:H5P_FRAME_CSS});
+        var player=new H5PStandalone.H5P(el,{h5pJsonPath:h5pAbs(src),frameJs:H5P_FRAME_JS,frameCss:H5P_FRAME_CSS});
+        if(player&&typeof player.catch==='function')player.catch(function(e){h5pFail(el,src,e);});
+        h5pWatch(el,src);
         return;
-      }catch(e){}
+      }catch(e){h5pFail(el,src,e);return;}
     }
-    el.innerHTML='<p style="text-align:center;padding:2rem;"><a href="'+escAttr(src)+'" target="_blank" rel="noopener">Open activity</a></p>';
+    h5pFail(el,src,new Error('H5P player script did not load'));
   }
 
   // --- Inline H5P activities ---
@@ -493,6 +525,41 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
     el.innerHTML='';
     h5pMount(el,src);
   });
+
+  // --- Inline Video.js players ---
+  // Some saved documents persisted the *live* Video.js DOM the editor built at
+  // runtime: a <div class="video-js vjs-paused vjs-tech ..."> wrapper holding a
+  // <video class="vjs-tech" id="..._html5_api"> plus control-bar markup. On the
+  // published page that DOM LOOKS initialised (it has the id + control classes)
+  // but has no player instance attached — so the frame and big play button
+  // render yet clicking does nothing. Reduce each such block back to a clean
+  // <video class="video-js" data-setup> element, then let Video.js initialise
+  // it fresh. Cleanly-saved bare <video class="video-js"> elements are handled
+  // by the same fresh-init pass. Popup videos are skipped (they init on open).
+  (function(){
+    if(!window.videojs)return;
+    document.querySelectorAll('.video-js').forEach(function(el){
+      if(el.closest('#mediaPopup'))return;
+      // Find the real media source from the inner tech <video>/<source>.
+      var tech=el.matches('video')?el:el.querySelector('video');
+      var srcEl=el.querySelector('source');
+      var src=(srcEl&&srcEl.getAttribute('src'))||(tech&&tech.getAttribute('src'))||'';
+      if(!src)return;
+      // Rebuild a clean <video class="video-js"> to replace the persisted DOM.
+      var fresh=document.createElement('video');
+      fresh.className='video-js vjs-big-play-centered vjs-fluid';
+      fresh.setAttribute('controls','');
+      fresh.setAttribute('preload','metadata');
+      fresh.id='vp-inline-'+Math.random().toString(36).slice(2,9);
+      var s=document.createElement('source');
+      s.setAttribute('src',src);
+      s.setAttribute('type','video/mp4');
+      fresh.appendChild(s);
+      // If el is the wrapper div, replace it; if el is a bare <video>, replace it too.
+      el.parentNode.replaceChild(fresh,el);
+      try{videojs(fresh.id,{playbackRates:[0.5,0.75,1,1.25,1.5,2],fill:true});}catch(e){}
+    });
+  })();
 
   // Wire all media-icon buttons
   document.querySelectorAll('.media-icon.has-content').forEach(function(btn){
@@ -1341,9 +1408,28 @@ READER_SHELL_SCRIPT = r'''<script>
             if(window.H5PStandalone){
               try{
                 var abs=src;try{abs=new URL(src,document.baseURI).href;}catch(e2){}
-                new H5PStandalone.H5P(el,{h5pJsonPath:abs,frameJs:'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js',frameCss:'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css'});
+                var fail=function(err){
+                  var msg=err&&err.message?err.message:String(err||'Player initialization failed');
+                  console.error('[PDF2HTML:H5P] '+msg,{source:src,error:err});
+                  if(el&&el.isConnected)el.innerHTML='<div style="padding:1.5rem;border:1px solid #f59e0b;border-radius:8px;background:#fffbeb;color:#78350f;text-align:center"><strong>This interactive activity could not be loaded.</strong><div style="margin-top:.4rem;font-size:.85rem">'+esc(msg)+'</div><a href="'+esc(src)+'" target="_blank" rel="noopener" style="display:inline-block;margin-top:.8rem;color:#92400e">Open activity files</a></div>';
+                };
+                var player=new H5PStandalone.H5P(el,{h5pJsonPath:abs,frameJs:'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js',frameCss:'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css'});
+                if(player&&typeof player.catch==='function')player.catch(fail);
+                setTimeout(function(){
+                  if(!el||!el.isConnected)return;
+                  var frame=el.querySelector('iframe');
+                  if(!frame)return fail(new Error('H5P player iframe was not created'));
+                  try{
+                    var integ=frame.contentWindow&&frame.contentWindow.H5PIntegration;
+                    var vals=integ&&integ.contents?Object.values(integ.contents):[];
+                    if(!vals.length||vals.some(function(c){return !c.library||/^undefined\b/.test(c.library)||!c.scripts||!c.scripts.length;}))fail(new Error('H5P package libraries could not be resolved'));
+                  }catch(checkErr){if(checkErr&&checkErr.name!=='SecurityError')fail(checkErr);}
+                },5000);
                 return;
-              }catch(e){}
+              }catch(e){
+                var msg=e&&e.message?e.message:String(e);
+                console.error('[PDF2HTML:H5P] '+msg,{source:src,error:e});
+              }
             }
             el.innerHTML='<p style="text-align:center;padding:2rem"><a href="'+esc(src)+'" target="_blank" rel="noopener">Open activity</a></p>';
           },60);
@@ -1438,7 +1524,15 @@ def publish_document(job_dir, filename):
             result = _publish_document_impl(output_path, html_path, job_dir, filename)
         except Exception as e:
             elapsed = round(time.monotonic() - started_at, 1)
-            _log.exception("Publish failed", extra={"elapsed_seconds": elapsed})
+            error_fields = {"elapsed_seconds": elapsed}
+            if isinstance(e, H5PPackageError):
+                error_fields.update({
+                    "event_type": "publish_failed",
+                    "error_type": "h5p_package_validation",
+                    "error_code": "ERR_H5P_INVALID_PACKAGE",
+                    "error_message": str(e),
+                })
+            _log.exception("Publish failed", extra=error_fields)
             # A failed/partial publish is exactly the kind of event that can
             # leave an H5P package (or any media) half-uploaded -- capture the
             # machine's state at the moment of failure for later correlation.
@@ -1468,6 +1562,18 @@ def _publish_document_impl(output_path: Path, html_path: Path, job_dir: str, fil
     # rather than by file, so they are handled apart from ordinary media.
     h5p_roots = _find_h5p_roots(output_path)
     h5p_file_count = 0
+
+    # Normalize legacy/unversioned H5P exports immediately before publishing as
+    # a migration safety net for documents uploaded before normalization was
+    # added to app._extract_h5p(). This mutates only library directory names in
+    # the local output and validates the complete dependency graph before any
+    # object is uploaded, preventing a partially working/blank learner bundle.
+    for rel_root in h5p_roots:
+        report = normalize_h5p_package(output_path / rel_root)
+        _log.info(
+            "H5P package normalized and validated for publish",
+            extra=report.to_log_fields(),
+        )
 
     # The .h5p/.zip archive sitting next to an unpacked package is dead weight
     # for learners (it can be hundreds of MB). Upload it only if the document

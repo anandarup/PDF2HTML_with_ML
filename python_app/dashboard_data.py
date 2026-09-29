@@ -213,8 +213,16 @@ def build_dashboard_payload(log_path: Path | None = None) -> dict[str, Any]:
             b[status] += 1
     time_series = list(buckets.values())
 
-    # Bottleneck analysis: top error codes.
+    # Bottleneck analysis: conversion errors plus any structured operational
+    # errors (e.g. ERR_H5P_INVALID_PACKAGE emitted during upload/publish).
+    # Re-read the JSONL stream here rather than retaining every unrelated HTTP
+    # access record in memory while reconstructing executions.
     code_counts = Counter(e["error_code"] for e in errors if e["error_code"])
+    source_path = log_path or (config.LOG_DIR / "app.log")
+    for record in _iter_log_records(source_path):
+        code = record.get("error_code")
+        if isinstance(code, str) and code:
+            code_counts[code] += 1
     bottlenecks = [{"code": code, "count": n} for code, n in code_counts.most_common(6)]
 
     return {

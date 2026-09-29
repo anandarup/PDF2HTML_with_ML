@@ -1002,7 +1002,20 @@ def upload_media(job_dir: str):
             h5p_folder = _extract_h5p(target_path)
         except ValueError as exc:
             # Unusable archive: drop it rather than leaving a file the player
-            # cannot load, and tell the editor why.
+            # cannot load, and tell the editor why. Emit a structured warning
+            # so H5P packaging failures are visible in app.log/dashboard
+            # diagnostics instead of appearing only as a client-side blank box.
+            log.warning(
+                "H5P package rejected",
+                extra={
+                    "event_type": "media_upload_failed",
+                    "error_type": "h5p_package_validation",
+                    "error_code": "ERR_H5P_INVALID_PACKAGE",
+                    "error_message": str(exc),
+                    "job_dir": job_dir,
+                    "upload_filename": target_path.name,
+                },
+            )
             target_path.unlink(missing_ok=True)
             return jsonify({"error": str(exc)}), 400
 
@@ -1630,6 +1643,19 @@ def _extract_h5p(h5p_path: Path) -> str:
     # the archive root, but a hand-zipped package often nests everything one
     # level down, so accept that shape too.
     inner_dir = _package_inner_dir(names, "h5p.json")
+    package_root = extract_dir / inner_dir if inner_dir else extract_dir
+
+    # h5p-standalone resolves libraries using canonical versioned directory
+    # names (e.g. H5P.Text-1.1). Some legacy/editor exports contain equivalent
+    # unversioned names (H5P.Text), which otherwise upload successfully and
+    # fail only in the browser with `library: "undefined "`. Normalize before
+    # the editor receives the URL, then validate every runtime dependency and
+    # declared JS/CSS asset so an incomplete package fails here with a useful
+    # message instead of becoming a blank learner activity.
+    from tools.h5p_package import normalize_h5p_package
+    report = normalize_h5p_package(package_root)
+    log.info("H5P package normalized and validated", extra=report.to_log_fields())
+
     return f"{folder_name}/{inner_dir}" if inner_dir else folder_name
 
 
