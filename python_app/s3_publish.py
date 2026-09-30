@@ -308,6 +308,27 @@ def _strip_editor_ui(html_content):
         r'\.publish-btn:hover\s*\{[^}]*\}', '', html_content
     )
 
+    # Remove any baked-in "Generate Captions" controls. Caption generation is an
+    # editor-only step: it depends on the /api/generate-captions route and the
+    # generateCaptions() function, both of which exist only in the running app
+    # and are stripped from published HTML. A button whose onclick calls
+    # generateCaptions() that reached the saved body would otherwise render on
+    # the learner page as a live-but-broken control (it threw "videojs is not
+    # defined" / hit a missing route). Remove the button and its status span so
+    # learners never see a caption control that cannot work.
+    html_content = re.sub(
+        r'<button[^>]*onclick="[^"]*generateCaptions\([^"]*"[^>]*>.*?</button>',
+        '', html_content, flags=re.DOTALL
+    )
+    html_content = re.sub(
+        r"<button[^>]*onclick='[^']*generateCaptions\([^']*'[^>]*>.*?</button>",
+        '', html_content, flags=re.DOTALL
+    )
+    html_content = re.sub(
+        r'<span[^>]*id="[^"]*-caption-status"[^>]*>.*?</span>',
+        '', html_content, flags=re.DOTALL
+    )
+
     # Pre-process chapter glossary terms server-side for learner view
     if 'chapter-glossary-data' in html_content:
         try:
@@ -510,6 +531,12 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
     }
     h5pFail(el,src,new Error('H5P player script did not load'));
   }
+  // Single source of truth for embedding H5P. The reader-shell popup handler
+  // (loaded after this script) reuses this exact mount instead of its own
+  // near-duplicate, so both the per-button and delegated click paths embed the
+  // activity identically and share the one honest failure state (h5pFail),
+  // rather than one of them degrading to a bare "Open activity" link.
+  window.__pdf2htmlH5PMount=h5pMount;
 
   // --- Inline H5P activities ---
   // The editor's own initialiser is stripped for the learner view, so the
@@ -570,7 +597,11 @@ LEARNER_RUNTIME_SCRIPT = r'''<script>
       if(!src)return;
       var title=document.getElementById('mediaPopupTitle');
       var body=document.getElementById('mediaPopupBody');
-      title.textContent=type.charAt(0).toUpperCase()+type.slice(1);
+      // Friendly, consistent labels so the popup title does not depend on which
+      // click handler ran (this per-button one vs the reader-shell delegated
+      // fallback). For H5P this yields "Activity", not "H5p".
+      var MI_LABELS={video:'Video',audio:'Audio',pptx:'Slides',h5p:'Activity',vlab:'Lab',url:'Link',glossary:'Glossary'};
+      title.textContent=MI_LABELS[type]||(type.charAt(0).toUpperCase()+type.slice(1));
       var content='';
       switch(type){
         case'video':
@@ -1395,43 +1426,22 @@ READER_SHELL_SCRIPT = r'''<script>
           if(/\.pdf($|\?)/i.test(src))return '<iframe src="'+esc(src)+'" style="width:100%;min-height:70vh;border:none"></iframe>';
           return '<div style="text-align:center;padding:2rem"><a href="'+esc(src)+'" download style="padding:.7rem 1.4rem;background:var(--rd-accent);color:#fff;border-radius:10px;text-decoration:none">Download presentation</a></div>';
         case'h5p':
-          // An H5P package is a directory the player reads (<src>/h5p.json);
-          // only a single pre-built page can be iframed directly.
+          // Delegate to the runtime's single H5P mount (window.__pdf2htmlH5PMount,
+          // defined in the learner-runtime script that loads before this one).
+          // It handles the .html-page-vs-package decision, absolutises the src
+          // so iframe-relative assets resolve, and routes any failure through
+          // one honest message — instead of this handler reimplementing the
+          // player and degrading to a bare "Open activity" link on failure.
           var hid='h5px-'+Date.now();
           setTimeout(function(){
             var el=document.getElementById(hid);
             if(!el)return;
-            if(/\.html?($|[?#])/i.test(src)){
-              el.innerHTML='<iframe src="'+esc(src)+'" style="width:100%;min-height:60vh;border:none;border-radius:8px" allowfullscreen></iframe>';
-              return;
-            }
-            if(window.H5PStandalone){
-              try{
-                var abs=src;try{abs=new URL(src,document.baseURI).href;}catch(e2){}
-                var fail=function(err){
-                  var msg=err&&err.message?err.message:String(err||'Player initialization failed');
-                  console.error('[PDF2HTML:H5P] '+msg,{source:src,error:err});
-                  if(el&&el.isConnected)el.innerHTML='<div style="padding:1.5rem;border:1px solid #f59e0b;border-radius:8px;background:#fffbeb;color:#78350f;text-align:center"><strong>This interactive activity could not be loaded.</strong><div style="margin-top:.4rem;font-size:.85rem">'+esc(msg)+'</div><a href="'+esc(src)+'" target="_blank" rel="noopener" style="display:inline-block;margin-top:.8rem;color:#92400e">Open activity files</a></div>';
-                };
-                var player=new H5PStandalone.H5P(el,{h5pJsonPath:abs,frameJs:'https://unpkg.com/h5p-standalone@3.8.0/dist/frame.bundle.js',frameCss:'https://unpkg.com/h5p-standalone@3.8.0/dist/styles/h5p.css'});
-                if(player&&typeof player.catch==='function')player.catch(fail);
-                setTimeout(function(){
-                  if(!el||!el.isConnected)return;
-                  var frame=el.querySelector('iframe');
-                  if(!frame)return fail(new Error('H5P player iframe was not created'));
-                  try{
-                    var integ=frame.contentWindow&&frame.contentWindow.H5PIntegration;
-                    var vals=integ&&integ.contents?Object.values(integ.contents):[];
-                    if(!vals.length||vals.some(function(c){return !c.library||/^undefined\b/.test(c.library)||!c.scripts||!c.scripts.length;}))fail(new Error('H5P package libraries could not be resolved'));
-                  }catch(checkErr){if(checkErr&&checkErr.name!=='SecurityError')fail(checkErr);}
-                },5000);
-                return;
-              }catch(e){
-                var msg=e&&e.message?e.message:String(e);
-                console.error('[PDF2HTML:H5P] '+msg,{source:src,error:e});
-              }
-            }
-            el.innerHTML='<p style="text-align:center;padding:2rem"><a href="'+esc(src)+'" target="_blank" rel="noopener">Open activity</a></p>';
+            var mount=window.__pdf2htmlH5PMount;
+            if(typeof mount==='function'){mount(el,src);return;}
+            // The shared mount should always be present; if it somehow is not,
+            // show an explained message (not a bare link) and log the cause.
+            console.error('[PDF2HTML:H5P] shared mount unavailable',{source:src});
+            el.innerHTML='<div style="padding:1.5rem;border:1px solid #f59e0b;border-radius:8px;background:#fffbeb;color:#78350f;text-align:center"><strong>This interactive activity could not be loaded.</strong><div style="margin-top:.4rem;font-size:.85rem">The activity player did not initialise.</div><a href="'+esc(src)+'" target="_blank" rel="noopener" style="display:inline-block;margin-top:.8rem;color:#92400e">Open activity files</a></div>';
           },60);
           return '<div id="'+hid+'" style="min-height:60vh"></div>';
         case'vlab':

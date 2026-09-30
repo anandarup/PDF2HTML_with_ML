@@ -8062,18 +8062,29 @@
         .then(function(res) { return res.json(); })
         .then(function(data) {
           if (data.success && data.vtt_url) {
-            if (statusEl) statusEl.textContent = 'Captions ready!';
-            // Add captions track to the Video.js player
-            var player = videojs.getPlayer(videoId);
+            // Attach the generated track to the live player. Guard the global:
+            // every other Video.js call in this app checks window.videojs first,
+            // and dereferencing a bare `videojs` here threw "videojs is not
+            // defined" whenever the library was not loaded on the page.
+            var player = (window.videojs && typeof window.videojs.getPlayer === 'function')
+              ? window.videojs.getPlayer(videoId) : null;
             if (player) {
               player.addRemoteTextTrack({ kind: 'captions', src: data.vtt_url, srclang: 'en', label: 'English', default: true }, false);
+              if (statusEl) statusEl.textContent = 'Captions ready!';
+            } else {
+              // Captions were generated and saved server-side; we just could not
+              // attach them to a live player in this context. Not an error.
+              if (statusEl) statusEl.textContent = 'Captions generated.';
             }
           } else {
-            if (statusEl) statusEl.textContent = data.error || 'Failed';
+            console.error('[PDF2HTML:captions] generation failed', data);
+            if (statusEl) statusEl.textContent = "Couldn't generate captions. Please try again.";
           }
         })
         .catch(function(err) {
-          if (statusEl) statusEl.textContent = 'Error: ' + err.message;
+          // Keep the technical detail for developers; show plain text to users.
+          console.error('[PDF2HTML:captions] ' + (err && err.message ? err.message : err), err);
+          if (statusEl) statusEl.textContent = "Caption generation isn't available here.";
         });
     }
 
