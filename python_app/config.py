@@ -214,6 +214,24 @@ OCI_UPLOADS_ENABLED = _env_bool("OCI_UPLOADS_ENABLED", True)
 SPLIT_VIEW_PAGE_RASTERS = _env_bool("SPLIT_VIEW_PAGE_RASTERS", True)
 
 
+# Publish ("Generate HTML") upload tuning.
+# A job's output is many small objects (an H5P package alone can be ~1000 tiny
+# JSON/JS/CSS files). Uploading them one at a time to OCI makes the publish
+# wall-clock time dominated by per-object round-trip latency, not bandwidth.
+# Uploading with a bounded thread pool overlaps those round-trips and cuts the
+# "Uploading files…" phase from minutes to seconds. put_object calls are
+# independent and the OCI client is safe to share across threads.
+PUBLISH_UPLOAD_WORKERS = _env_int("PUBLISH_UPLOAD_WORKERS", 10)
+
+# Conversion writes each video to the public media bucket (so learners can load
+# it) AND to the private video bucket (for a possible downstream streaming /
+# transcode pipeline). The learner URL only ever uses the media-bucket copy, so
+# the second upload doubles video transfer time for no learner-facing benefit.
+# Default False: skip the redundant video-bucket copy. Set to True only if a
+# downstream pipeline actually consumes objects from the video bucket.
+PUBLISH_UPLOAD_VIDEO_BUCKET_COPY = _env_bool("PUBLISH_UPLOAD_VIDEO_BUCKET_COPY", False)
+
+
 # ---------------------------------------------------------------------------
 # Application logging + infra snapshots (debugging intermittent failures).
 #

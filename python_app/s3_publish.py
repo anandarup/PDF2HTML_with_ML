@@ -11,8 +11,10 @@ import os
 import re
 import time
 import mimetypes
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from bs4 import BeautifulSoup
+import config
 from app_logging import capture_infra_snapshot, get_logger, job_context
 from glossary_highlight import highlight_glossary_terms, GLOSSARY_CSS
 from tools.h5p_clean import empty_h5p_containers
@@ -1600,6 +1602,14 @@ def _publish_document_impl(output_path: Path, html_path: Path, job_dir: str, fil
     video_map = {}  # relative_path -> public_url
     h5p_map = {}    # package directory -> public base URL
 
+    # Pass 1: decide what to upload and build the URL maps synchronously (no
+    # network), so the maps are fully populated before the parallel upload and
+    # no worker thread mutates shared state. Each task is (bucket, path, key).
+    upload_tasks = []  # list of (bucket, full_path, object_name)
+    upload_video_bucket_copy = getattr(
+        config, "PUBLISH_UPLOAD_VIDEO_BUCKET_COPY", False
+    )
+
     for root, _dirs, files in os.walk(str(output_path)):
         for fname in files:
             full_path = os.path.join(root, fname)
@@ -1615,7 +1625,7 @@ def _publish_document_impl(output_path: Path, html_path: Path, job_dir: str, fil
             # fetches h5p.json, content/content.json and the library files,
             # all of which _is_skip_file() would otherwise drop.
             if _h5p_package_for(relative_posix, h5p_roots):
-                _upload_file(client, namespace, MEDIA_BUCKET, full_path, object_name)
+                upload_tasks.append((MEDIA_BUCKET, full_path, object_name))
                 h5p_file_count += 1
                 continue
 
@@ -1633,14 +1643,37 @@ def _publish_document_impl(output_path: Path, html_path: Path, job_dir: str, fil
                 # is private (NoPublicAccess), so a plain object URL to it 404s
                 # for learners ("media could not be loaded"). Publish videos to
                 # the public media bucket (ObjectRead), matching images, so the
-                # embedded URL actually resolves. We still upload a copy to the
-                # video bucket for any downstream streaming/transcode pipeline.
-                _upload_file(client, namespace, VIDEO_BUCKET, full_path, object_name)
-                _upload_file(client, namespace, MEDIA_BUCKET, full_path, object_name)
+                # embedded URL actually resolves. The learner URL only ever uses
+                # this media-bucket copy; the video-bucket copy exists solely for
+                # a possible downstream streaming/transcode pipeline and is
+                # skipped by default (PUBLISH_UPLOAD_VIDEO_BUCKET_COPY) to avoid
+                # doubling video transfer time.
+                upload_tasks.append((MEDIA_BUCKET, full_path, object_name))
+                if upload_video_bucket_copy:
+                    upload_tasks.append((VIDEO_BUCKET, full_path, object_name))
                 video_map[relative] = _get_public_url(namespace, MEDIA_BUCKET, object_name)
             else:
-                _upload_file(client, namespace, MEDIA_BUCKET, full_path, object_name)
+                upload_tasks.append((MEDIA_BUCKET, full_path, object_name))
                 media_map[relative] = _get_public_url(namespace, MEDIA_BUCKET, object_name)
+
+    # Pass 2: upload in parallel. A job is typically hundreds–thousands of small
+    # objects, so wall-clock time is dominated by per-object round-trip latency;
+    # a bounded thread pool overlaps those round-trips. If any upload fails, the
+    # first exception is re-raised so publish_document()'s wrapper still marks
+    # the publish failed (a half-uploaded bundle must not report success).
+    workers = max(1, getattr(config, "PUBLISH_UPLOAD_WORKERS", 10))
+    if upload_tasks:
+        if workers == 1 or len(upload_tasks) == 1:
+            for bucket, full_path, object_name in upload_tasks:
+                _upload_file(client, namespace, bucket, full_path, object_name)
+        else:
+            with ThreadPoolExecutor(max_workers=min(workers, len(upload_tasks))) as pool:
+                futures = [
+                    pool.submit(_upload_file, client, namespace, bucket, full_path, object_name)
+                    for (bucket, full_path, object_name) in upload_tasks
+                ]
+                for future in as_completed(futures):
+                    future.result()  # re-raise the first failure
 
     # Map each package directory to its public base URL. h5p-standalone is
     # given a directory (it appends /h5p.json), so this is a prefix rewrite,
@@ -1688,6 +1721,9 @@ def _publish_document_impl(output_path: Path, html_path: Path, job_dir: str, fil
             "videos_uploaded": len(video_map),
             "h5p_packages": len(h5p_map),
             "h5p_files": h5p_file_count,
+            "objects_uploaded": len(upload_tasks),
+            "upload_workers": workers,
+            "video_bucket_copy": upload_video_bucket_copy,
         },
     )
 
